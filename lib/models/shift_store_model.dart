@@ -1,18 +1,18 @@
-class ShiftStore {
+class ShiftStoreModel {
   final int id;
   final String name;
   final String shiftStartTime;
   final String shiftEndTime;
 
-  ShiftStore({
+  ShiftStoreModel({
     required this.id,
     required this.name,
     required this.shiftStartTime,
     required this.shiftEndTime,
   });
 
-  factory ShiftStore.fromJson(Map<String, dynamic> json) {
-    return ShiftStore(
+  factory ShiftStoreModel.fromJson(Map<String, dynamic> json) {
+    return ShiftStoreModel(
       id: json['id'],
       name: json['name'],
       shiftStartTime: json['shift_start_time'],

@@ -1,11 +1,11 @@
-class User {
+class UserModel {
   final int id;
   final String name;
   final String email;
   final List<String> roles;
   final Company? company;
 
-  User({
+  UserModel({
     required this.id,
     required this.name,
     required this.email,
@@ -13,8 +13,8 @@ class User {
     this.company,
   });
 
-  factory User.fromJson(Map<String, dynamic> json) {
-    return User(
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
       id: json['id'],
       name: json['name'],
       email: json['email'],

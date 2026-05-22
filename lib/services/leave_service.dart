@@ -5,7 +5,7 @@ import '../models/leave_model.dart';
 import '../utils/constants.dart';
 
 class LeaveService {
-  Future<List<Leave>> getLeaves() async {
+  Future<List<LeaveModel>> getLeaves() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
 
@@ -20,7 +20,7 @@ class LeaveService {
     if (response.statusCode == 200) {
       final Map<String, dynamic> data = json.decode(response.body);
       final List<dynamic> leavesJson = data['data'];
-      return leavesJson.map((json) => Leave.fromJson(json)).toList();
+      return leavesJson.map((json) => LeaveModel.fromJson(json)).toList();
     } else {
       throw Exception('Failed to load leaves');
     }

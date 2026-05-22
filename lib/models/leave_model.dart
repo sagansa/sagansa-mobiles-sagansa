@@ -1,4 +1,4 @@
-class Leave {
+class LeaveModel {
   final int id;
   final int reason;
   final String reasonText;
@@ -12,7 +12,7 @@ class Leave {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  Leave({
+  LeaveModel({
     required this.id,
     required this.reason,
     required this.reasonText,
@@ -27,8 +27,8 @@ class Leave {
     required this.updatedAt,
   });
 
-  factory Leave.fromJson(Map<String, dynamic> json) {
-    return Leave(
+  factory LeaveModel.fromJson(Map<String, dynamic> json) {
+    return LeaveModel(
       id: json['id'],
       reason: int.tryParse(json['reason']?.toString() ?? '0') ?? 0,
       reasonText: json['reason_text'] ?? '',

@@ -7,7 +7,7 @@ import '../widgets/modern_date_range_picker.dart';
 import '../controllers/leave_controller.dart';
 
 class LeaveFormPage extends StatefulWidget {
-  final Leave? leave;
+  final LeaveModel? leave;
 
   const LeaveFormPage({super.key, this.leave});
 
@@ -27,9 +27,9 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
   final List<Map<String, dynamic>> _reasonList = [
     {'id': 1, 'text': 'menikah'},
     {'id': 2, 'text': 'sakit'},
-    {'id': 3, 'text': 'pulkam'},
+    {'id': 3, 'text': 'pulang kampung'},
     {'id': 4, 'text': 'libur'},
-    {'id': 5, 'text': 'Keluar meninggal'},
+    {'id': 5, 'text': 'Keluarga meninggal'},
   ];
 
   @override

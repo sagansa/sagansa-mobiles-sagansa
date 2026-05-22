@@ -1,4 +1,4 @@
-class Store {
+class StoreModel {
   final int id;
   final String nickname;
   final double latitude;
@@ -6,7 +6,7 @@ class Store {
   final double radius; // radius dalam meter untuk area yang diizinkan
   final String dailySalaryAmount;
 
-  Store({
+  StoreModel({
     required this.id,
     required this.nickname,
     required this.latitude,
@@ -15,8 +15,8 @@ class Store {
     this.dailySalaryAmount = '50000',
   });
 
-  factory Store.fromJson(Map<String, dynamic> json) {
-    return Store(
+  factory StoreModel.fromJson(Map<String, dynamic> json) {
+    return StoreModel(
       id: json['id'] ?? 0,
       nickname: json['nickname'] ?? '',
       latitude: double.parse(json['latitude']?.toString() ?? '0.0'),
