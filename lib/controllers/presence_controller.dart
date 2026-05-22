@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/store_model.dart';
 import '../models/shift_store_model.dart';
 import '../services/presence_service.dart';
+import 'dart:io';
 
 class PresenceController {
   final BuildContext context;
@@ -42,7 +43,7 @@ class PresenceController {
 
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.bestForNavigation,
-      timeLimit: Duration(seconds: 30),
+      timeLimit: const Duration(seconds: 30),
       forceAndroidLocationManager: true,
     );
 
@@ -63,21 +64,14 @@ class PresenceController {
     required bool isCheckIn,
     required Position currentPosition,
     required Store selectedStore,
-    ShiftStore? selectedShiftStore,
-    required Function onSuccess,
+    required ShiftStore? selectedShiftStore,
+    required File imageFile,
+    String? dailySalaryAmount,
+    String? dailySalaryPaymentTypeId,
+    required VoidCallback onSuccess,
     required Function(String) onError,
   }) async {
     try {
-      final now = DateTime.now();
-      final formattedDateTime = "${now.year}-"
-          "${now.month.toString().padLeft(2, '0')}-"
-          "${now.day.toString().padLeft(2, '0')} "
-          "${now.hour.toString().padLeft(2, '0')}:"
-          "${now.minute.toString().padLeft(2, '0')}:"
-          "${now.second.toString().padLeft(2, '0')}";
-
-      print('Formatted DateTime: $formattedDateTime');
-
       final Map<String, dynamic> presenceData = isCheckIn
           ? {
               'store_id': selectedStore.id.toString(),
@@ -85,21 +79,44 @@ class PresenceController {
               'status': "1",
               'latitude_in': currentPosition.latitude.toString(),
               'longitude_in': currentPosition.longitude.toString(),
-              'check_in': formattedDateTime,
+              'check_in': DateTime.now().toIso8601String(),
             }
           : {
               'latitude_out': currentPosition.latitude.toString(),
               'longitude_out': currentPosition.longitude.toString(),
-              'check_out': formattedDateTime,
+              'check_out': DateTime.now().toIso8601String(),
+              if (dailySalaryAmount != null) 'daily_salary_amount': dailySalaryAmount,
+              if (dailySalaryPaymentTypeId != null) 'daily_salary_payment_type_id': dailySalaryPaymentTypeId,
             };
 
-      print('Sending presence data: $presenceData');
+      final responseData =
+          await PresenceService.uploadImage(imageFile, isCheckIn, presenceData);
 
-      await PresenceService.submitPresence(presenceData, isCheckIn, null);
-      onSuccess();
+      if (responseData['status'] == 'success') {
+        final message = isCheckIn
+            ? 'Check-in berhasil\nStatus: ${responseData['data']['check_in_status']}'
+            : 'Check-out berhasil\nStatus: ${responseData['data']['check_out_status']}';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        onSuccess();
+      } else {
+        onError(responseData['message'] ?? 'Gagal melakukan presensi');
+      }
     } catch (e) {
-      print('Error in submitPresence controller: $e');
-      onError(e.toString().replaceAll('Exception: ', ''));
+      const errorMessage = 'Gagal mengirim data presensi';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
+        ),
+      );
+      onError(errorMessage);
     }
   }
 }

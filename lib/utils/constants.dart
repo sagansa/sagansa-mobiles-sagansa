@@ -1,12 +1,17 @@
 class ApiConstants {
   static const String baseUrl =
       String.fromEnvironment('API_URL', defaultValue: 'https://api.sagansa.id');
-  // static const String baseUrl =
-  //     String.fromEnvironment('API_URL', defaultValue: 'http://127.0.0.1:8000');
+  // static const String baseUrl = String.fromEnvironment('API_URL',
+  //     defaultValue: 'http://192.168.0.142:8001'); // wi-fi ip fxor physical android device
+  // static const String baseUrl = String.fromEnvironment('API_URL',
+  //     defaultValue: 'http://127.0.0.1:8001'); // local api service
 
   // Auth Endpoints
   static const String login = '$baseUrl/login';
   static const String logout = '$baseUrl/logout';
+
+  // General Endpoints
+  static const String appVersion = '$baseUrl/app-version';
 
   // Presence Endpoints
   static const String userPresence = '$baseUrl/user-presence';
@@ -19,6 +24,10 @@ class ApiConstants {
   // Store Endpoints
   static const String stores = '$baseUrl/stores';
   static const String shiftStores = '$baseUrl/shift-stores';
+
+  // Sales Order Delivery Endpoints
+  static const String searchSalesOrder = '$baseUrl/sales-orders/search';
+  static const String updateDeliveryStatus = '$baseUrl/sales-orders/delivery-update';
 
   static Map<String, String> headers(String? token) {
     return {

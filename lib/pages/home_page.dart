@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../models/presence_model.dart';
 import 'presence_page.dart';
-import '../services/auth_service.dart';
+import 'delivery_page.dart';
 import 'calendar_page.dart';
-import 'pos_page.dart';
 import 'leave_page.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/modern_fab.dart';
 import '../utils/constants.dart';
 import '../controllers/home_controller.dart';
+import '../services/version_service.dart';
 
 class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
   State<HomePage> createState() => HomePageState();
 }
@@ -27,136 +30,119 @@ class HomePageState extends State<HomePage> {
   List<PresenceModel> previousPresences = [];
   final int initialDisplayCount = 7;
   bool isLoading = false;
-  int _selectedIndex = 0;
+  final int _selectedIndex = 0;
   bool _hasActiveLeave = false;
+  bool isUserDataLoaded = false;
+  PresenceModel? yesterdayPresence;
+  bool isStorageStaff = false;
 
   @override
   void initState() {
     super.initState();
     _controller = HomeController(context);
-    _loadUserData();
-    _initializeData();
+    _initData();
+    
+    // Check for app updates
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VersionService().checkForUpdate(context);
+    });
   }
 
-  Future<void> _loadUserData() async {
+  Future<void> _initData() async {
+    setState(() {
+      isLoading = true;
+    });
+
     try {
+      developer.log('Loading user data from SharedPreferences');
+      // Load user data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final userString = prefs.getString('user');
 
-      print(
-          'Raw user string from SharedPreferences: $userString'); // Tambah log
+      if (userString == null) {
+        throw Exception('User data not found');
+      }
 
-      if (userString != null) {
-        final userData = json.decode(userString);
-        print('Decoded user data: $userData'); // Tambah log
+      final userData = json.decode(userString);
+      developer.log('User data loaded: ${userData['name']}');
+      final userRoles = List<String>.from(userData['roles'] ?? []);
+      final hasStorageStaffRole = userRoles.contains('storage-staff');
 
+      // Load presence data
+      developer.log('Loading presence data');
+      final presenceData = await _controller.loadPresenceData();
+      developer.log('Presence data loaded: ${json.encode(presenceData)}');
+
+      final todayData = presenceData['data']?['today'];
+      final previousData = presenceData['data']?['previous'] as List? ?? [];
+
+      developer.log('Today presence: $todayData');
+      developer.log('Previous presences: $previousData');
+
+      if (mounted) {
         setState(() {
           userName = userData['name'] ?? '';
-          if (userData['company'] != null) {
-            print('Company data: ${userData['company']}'); // Tambah log
-            companyName = userData['company']['name'] ?? 'SAGANSA';
+          companyName = userData['company']?['name'] ?? 'SAGANSA';
+          isStorageStaff = hasStorageStaffRole;
+          try {
+            todayPresence =
+                todayData != null ? PresenceModel.fromJson(todayData) : null;
+            yesterdayPresence = previousData.isNotEmpty
+                ? PresenceModel.fromJson(previousData[0])
+                : null;
+            previousPresences = previousData
+                .map((item) {
+                  try {
+                    return PresenceModel.fromJson(item);
+                  } catch (e) {
+                    developer.log('Error parsing presence item', error: e);
+                    return null;
+                  }
+                })
+                .whereType<PresenceModel>()
+                .toList();
+          } catch (e) {
+            developer.log('Error processing presence data', error: e);
+            todayPresence = null;
+            yesterdayPresence = null;
+            previousPresences = [];
           }
+          isUserDataLoaded = true;
         });
-
-        // Log nilai setelah setState
-        print('Updated values - Name: $userName, Company: $companyName');
-      } else {
-        print('No user data found in SharedPreferences');
       }
-    } catch (e) {
-      print('Error in _loadUserData: $e');
-    }
-  }
-
-  Future<void> _initializeData() async {
-    try {
-      // Load presence data
-      await _loadPresenceData();
 
       // Check active leave
+      developer.log('Checking active leave');
       final hasActiveLeave = await _controller.checkActiveLeave();
-      setState(() {
-        _hasActiveLeave = hasActiveLeave;
-      });
-    } catch (e) {
-      if (e.toString().contains('User data not found')) {
-        _logout();
+      if (mounted) {
+        setState(() {
+          _hasActiveLeave = hasActiveLeave;
+        });
       }
-    }
-  }
-
-  Future<void> _loadPresenceData() async {
-    setState(() => isLoading = true);
-    try {
-      final data = await _controller.loadPresenceData();
-      setState(() {
-        todayPresence = data['todayPresence'] != null
-            ? PresenceModel.fromJson(data['todayPresence'])
-            : null;
-        previousPresences = (data['previousPresences'] as List?)
-                ?.map((item) => PresenceModel.fromJson(item))
-                .toList() ??
-            [];
-      });
+      developer.log('Active leave status: $_hasActiveLeave');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      developer.log('Error in _initData',
+          error: e, stackTrace: StackTrace.current);
+      if (mounted) {
+        if (e.toString().contains('User data not found')) {
+          _logout();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
+      }
     } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  Future<void> _logout() async {
-    try {
-      await _controller.logout();
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/login',
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() {
+          isLoading = false;
+        });
       }
     }
   }
 
-  // Tambahkan pull to refresh
   Future<void> _onRefresh() async {
-    try {
-      setState(() {
-        isLoading = true;
-      });
-
-      // Reload user data
-      await _loadUserData();
-
-      // Reload presence data
-      await _loadPresenceData();
-
-      // Check active leave
-      final hasActiveLeave = await _controller.checkActiveLeave();
-      setState(() {
-        _hasActiveLeave = hasActiveLeave;
-      });
-    } catch (e) {
-      print('Error refreshing data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memperbarui data')),
-      );
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
+    await _initData();
   }
 
   Future<void> _doPresence() async {
@@ -184,8 +170,8 @@ class HomePageState extends State<HomePage> {
       );
 
       final url = todayPresence == null
-          ? '${ApiConstants.baseUrl}${ApiConstants.checkIn}'
-          : '${ApiConstants.baseUrl}${ApiConstants.checkOut}';
+          ? ApiConstants.checkIn
+          : ApiConstants.checkOut;
 
       final Map<String, dynamic> requestBody = todayPresence == null
           ? {
@@ -234,10 +220,72 @@ class HomePageState extends State<HomePage> {
     _loadPresenceData();
   }
 
+  Future<void> _loadPresenceData() async {
+    setState(() => isLoading = true);
+    try {
+      final response = await _controller.loadPresenceData();
+      developer.log('Raw API response in HomePage: ${json.encode(response)}',
+          name: 'HomePage');
+
+      if (mounted) {
+        setState(() {
+          if (response['data']?['today'] != null) {
+            todayPresence = PresenceModel.fromJson(response['data']['today']);
+            developer.log(
+                'Today presence set: ${json.encode(response['data']['today'])}',
+                name: 'HomePage');
+          } else {
+            todayPresence = null;
+          }
+
+          final previousData = response['data']?['previous'] as List? ?? [];
+          previousPresences =
+              previousData.map((item) => PresenceModel.fromJson(item)).toList();
+          yesterdayPresence =
+              previousPresences.isNotEmpty ? previousPresences[0] : null;
+        });
+      }
+    } catch (e) {
+      developer.log('Error in _loadPresenceData: $e',
+          error: e, name: 'HomePage');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _controller.logout();
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/login',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   void _showAllPresenceHistory() {
     if (previousPresences.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Belum ada riwayat presensi')),
+        const SnackBar(content: Text('Belum ada riwayat presensi')),
       );
     } else {
       // Gabungkan presensi hari ini dan sebelumnya
@@ -266,7 +314,7 @@ class HomePageState extends State<HomePage> {
           children: [
             // Store dan Shift info di tengah
             Text(presence.store,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -277,7 +325,7 @@ class HomePageState extends State<HomePage> {
                   color: Colors.grey[600],
                 ),
                 textAlign: TextAlign.center),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -286,15 +334,15 @@ class HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Check In',
+                      const Text('Check In',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           )),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Container(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: presence
                               .getStatusColor(presence.checkInStatus)
@@ -310,18 +358,18 @@ class HomePageState extends State<HomePage> {
                           ),
                         ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.calendar_today, size: 14),
-                          SizedBox(width: 4),
+                          const Icon(Icons.calendar_today, size: 14),
+                          const SizedBox(width: 4),
                           Text(checkInDateTime['date']!),
                         ],
                       ),
                       Row(
                         children: [
-                          Icon(Icons.access_time, size: 14),
-                          SizedBox(width: 4),
+                          const Icon(Icons.access_time, size: 14),
+                          const SizedBox(width: 4),
                           Text(checkInDateTime['time']!),
                         ],
                       ),
@@ -332,23 +380,23 @@ class HomePageState extends State<HomePage> {
                   height: 80,
                   width: 1,
                   color: Colors.grey[300],
-                  margin: EdgeInsets.symmetric(horizontal: 16),
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
                 ),
                 // Check Out Column
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('Check Out',
+                      const Text('Check Out',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           )),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Builder(builder: (context) {
                         if (checkOutDateTime != null) {
                           return Container(
-                            padding: EdgeInsets.symmetric(
+                            padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: presence
@@ -371,7 +419,7 @@ class HomePageState extends State<HomePage> {
                           String status = presence.checkOutStatus ?? '-';
                           if (status == 'tidak_absen') {
                             return Container(
-                              padding: EdgeInsets.symmetric(
+                              padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: presence
@@ -389,7 +437,7 @@ class HomePageState extends State<HomePage> {
                             );
                           }
                           return Container(
-                            padding: EdgeInsets.symmetric(
+                            padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             child: Text('-',
                                 style: TextStyle(
@@ -399,20 +447,20 @@ class HomePageState extends State<HomePage> {
                           );
                         }
                       }),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Icon(Icons.calendar_today, size: 14),
-                          SizedBox(width: 4),
+                          const Icon(Icons.calendar_today, size: 14),
+                          const SizedBox(width: 4),
                           Text(checkOutDateTime?['date'] ?? '-'),
                         ],
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Icon(Icons.access_time, size: 14),
-                          SizedBox(width: 4),
+                          const Icon(Icons.access_time, size: 14),
+                          const SizedBox(width: 4),
                           Text(checkOutDateTime?['time'] ?? '-'),
                         ],
                       ),
@@ -455,7 +503,7 @@ class HomePageState extends State<HomePage> {
       case 1:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => LeavePage()),
+          MaterialPageRoute(builder: (context) => const LeavePage()),
         );
         break;
       case 2:
@@ -474,192 +522,224 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  Widget _buildUserProfile() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Colors.grey[200],
-                  child: Icon(Icons.person, color: Colors.grey[800]),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        userName.isNotEmpty ? userName : 'Loading...',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        companyName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+  Widget _buildPresenceSection() {
+    return todayPresence != null
+        ? _buildPresenceCard(todayPresence!)
+        : Card(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.fingerprint_outlined,
+                    size: 48,
+                    color: Colors.grey[400],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Belum ada presensi untuk hari ini',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Silakan lakukan presensi dengan menekan tombol di bawah',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
-    );
+          );
   }
 
   @override
   Widget build(BuildContext context) {
-    bool showPOSButton =
-        todayPresence != null && todayPresence!.checkOut == null;
-
     return Scaffold(
       appBar: AppBar(
-        leading: showPOSButton
-            ? IconButton(
-                icon: Icon(Icons.point_of_sale),
-                onPressed: () {
+        leading: Builder(
+          builder: (context) => InkWell(
+            onTap: () {
+              Scaffold.of(context).openDrawer();
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Image.asset(
+                'assets/images/new-logo.png',
+                width: 24,
+                height: 24,
+                fit: BoxFit.contain,
+                color: Theme.of(context).primaryColor,
+                colorBlendMode: BlendMode.srcIn,
+              ),
+            ),
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              userName,
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
+            ),
+            Text(
+              companyName,
+              style: TextStyle(fontSize: 12, color: Colors.grey[300]),
+            ),
+          ],
+        ),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+             DrawerHeader(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(0xFF121212),
+                    child: Image.asset(
+                      'assets/images/new-logo.png',
+                      width: 32,
+                      height: 32,
+                      color: Theme.of(context).primaryColor,
+                      colorBlendMode: BlendMode.srcIn,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    userName,
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    companyName,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.home),
+              title: const Text('Beranda'),
+              onTap: () => Navigator.pop(context),
+            ),
+            if (isStorageStaff)
+              ListTile(
+                leading: const Icon(Icons.local_shipping),
+                title: const Text('Pengiriman Online'),
+                onTap: () {
+                  Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => POSPage()),
+                    MaterialPageRoute(builder: (context) => const DeliveryPage()),
                   );
                 },
-              )
-            : null,
-        centerTitle: true,
-        title: Text('Home'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: () async {
-              // Tampilkan dialog konfirmasi
-              final shouldLogout = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Konfirmasi Logout'),
-                  content: Text('Apakah Anda yakin ingin keluar?'),
-                  actions: [
-                    TextButton(
-                      child: Text('Batal'),
-                      onPressed: () => Navigator.pop(context, false),
-                    ),
-                    TextButton(
-                      child: Text('Logout'),
-                      onPressed: () => Navigator.pop(context, true),
-                    ),
-                  ],
-                ),
-              );
-
-              // Jika user menekan tombol logout
-              if (shouldLogout == true) {
-                try {
-                  final authService = AuthService();
-                  await authService.logout();
-
-                  // Kembali ke halaman login
-                  if (mounted) {
-                    Navigator.pushNamedAndRemoveUntil(
-                      context,
-                      '/login', // Pastikan route ini sudah didefinisikan
-                      (route) => false,
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content:
-                            Text(e.toString().replaceAll('Exception: ', '')),
-                        backgroundColor: Colors.red,
+              ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Pengaturan'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Implementasi halaman pengaturan
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.help),
+              title: const Text('Bantuan'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Implementasi halaman bantuan
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Konfirmasi'),
+                    content: const Text('Apakah Anda yakin ingin keluar?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Batal'),
                       ),
-                    );
-                  }
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Ya'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed == true) {
+                  await _logout();
                 }
-              }
-            },
-          ),
-        ],
+              },
+            ),
+          ],
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _onRefresh,
         child: SingleChildScrollView(
-          physics: AlwaysScrollableScrollPhysics(),
+          physics: const AlwaysScrollableScrollPhysics(),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildUserProfile(),
-                SizedBox(height: 24),
-                todayPresence != null
-                    ? _buildPresenceCard(todayPresence!)
-                    : Card(
-                        child: Container(
-                          padding: EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.fingerprint_outlined,
-                                size: 48,
-                                color: Colors.grey[400],
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'Belum ada presensi untuk hari ini',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'Silakan lakukan presensi dengan menekan tombol di bawah',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                SizedBox(height: 24),
+                _buildPresenceSection(),
+                const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    const Text(
                       'Riwayat Presensi:',
                       style:
                           TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     TextButton(
                       onPressed: _showAllPresenceHistory,
-                      child: Text('Lihat Semua'),
+                      child: const Text('Lihat Semua'),
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 previousPresences.isNotEmpty
                     ? ListView.builder(
                         shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(),
                         itemCount:
                             previousPresences.length > initialDisplayCount
                                 ? initialDisplayCount
@@ -668,7 +748,7 @@ class HomePageState extends State<HomePage> {
                           return _buildPresenceCard(previousPresences[index]);
                         },
                       )
-                    : Container(
+                    : SizedBox(
                         width: double.infinity,
                         height: 200, // Memberikan tinggi tetap
                         child: Center(
@@ -680,7 +760,7 @@ class HomePageState extends State<HomePage> {
                                 size: 48,
                                 color: Colors.grey[400],
                               ),
-                              SizedBox(height: 16),
+                              const SizedBox(height: 16),
                               Text(
                                 'Belum ada riwayat presensi',
                                 style: TextStyle(

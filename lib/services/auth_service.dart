@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 
 class AuthService {
-  static const List<String> allowedRoles = ['admin', 'staff', 'supervisor'];
+  static const List<String> allowedRoles = ['admin', 'staff', 'supervisor', 'storage-staff'];
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
@@ -65,6 +65,15 @@ class AuthService {
     } else {
       print('Data user tidak ditemukan dalam response');
     }
+
+    // Simpan full login data untuk HomeController
+    await prefs.setString(
+      AppConstants.loginDataKey,
+      json.encode({
+        'success': true,
+        'data': data,
+      }),
+    );
   }
 
   Future<bool> hasRole(String roleToCheck) async {
@@ -96,7 +105,7 @@ class AuthService {
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     final tokenType = prefs.getString('token_type');
-    final accessToken = prefs.getString('access_token');
+    final accessToken = prefs.getString('token');
 
     if (tokenType != null && accessToken != null) {
       return '$tokenType $accessToken';
@@ -107,6 +116,9 @@ class AuthService {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove('token');
+    await prefs.remove('token_type');
+    await prefs.remove('user');
+    await prefs.remove(AppConstants.loginDataKey);
   }
 }

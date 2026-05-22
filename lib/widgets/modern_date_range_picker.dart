@@ -11,14 +11,14 @@ class ModernDateRangePicker extends StatelessWidget {
   final String? errorText;
 
   const ModernDateRangePicker({
-    Key? key,
+    super.key,
     this.startDate,
     this.endDate,
     required this.onDateRangeSelected,
     this.minDate,
     this.maxDate,
     this.errorText,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +40,7 @@ class ModernDateRangePicker extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(Icons.date_range, color: Colors.grey[600]),
-                    SizedBox(width: 8),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _formatDateRange(startDate, endDate),
@@ -98,7 +98,7 @@ class ModernDateRangePicker extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4, left: 12),
             child: Text(
               errorText!,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.red,
                 fontSize: 12,
               ),

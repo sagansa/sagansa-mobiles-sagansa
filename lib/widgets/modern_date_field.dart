@@ -11,7 +11,7 @@ class ModernDateField extends StatelessWidget {
   final bool enabled;
 
   const ModernDateField({
-    Key? key,
+    super.key,
     required this.labelText,
     required this.value,
     required this.onChanged,
@@ -19,14 +19,14 @@ class ModernDateField extends StatelessWidget {
     this.lastDate,
     this.errorText,
     this.enabled = true,
-  }) : super(key: key);
+  });
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: value ?? DateTime.now(),
       firstDate: firstDate ?? DateTime.now(),
-      lastDate: lastDate ?? DateTime.now().add(Duration(days: 365)),
+      lastDate: lastDate ?? DateTime.now().add(const Duration(days: 365)),
     );
 
     if (picked != null) {
@@ -42,20 +42,21 @@ class ModernDateField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         labelText: labelText,
-        prefixIcon: Icon(Icons.calendar_today),
+        prefixIcon: const Icon(Icons.calendar_today),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: Colors.grey),
+          borderSide: const BorderSide(color: Colors.grey),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: Colors.black),
+          borderSide: const BorderSide(color: Colors.black),
         ),
         errorText: errorText,
-        contentPadding: EdgeInsets.symmetric(vertical: 15, horizontal: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
       ),
       readOnly: true,
       enabled: enabled,

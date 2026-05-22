@@ -8,23 +8,23 @@ class CustomFAB extends StatelessWidget {
   final Color? iconColor;
 
   const CustomFAB({
-    Key? key,
+    super.key,
     required this.onPressed,
     required this.icon,
     this.tooltip,
-    this.backgroundColor = Colors.black,
-    this.iconColor = Colors.white,
-  }) : super(key: key);
+    this.backgroundColor,
+    this.iconColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
       onPressed: onPressed,
-      backgroundColor: backgroundColor,
+      backgroundColor: backgroundColor ?? Theme.of(context).floatingActionButtonTheme.backgroundColor,
+      foregroundColor: iconColor ?? Theme.of(context).floatingActionButtonTheme.foregroundColor,
       tooltip: tooltip,
       child: Icon(
         icon,
-        color: iconColor,
       ),
     );
   }

@@ -59,7 +59,7 @@ class LeaveController {
   bool validateDates(DateTime? fromDate, DateTime? untilDate) {
     if (fromDate == null || untilDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pilih tanggal cuti')),
+        const SnackBar(content: Text('Pilih tanggal cuti')),
       );
       return false;
     }
@@ -69,7 +69,7 @@ class LeaveController {
   bool validateReason(int? selectedReason) {
     if (selectedReason == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pilih jenis cuti')),
+        const SnackBar(content: Text('Pilih jenis cuti')),
       );
       return false;
     }

@@ -8,7 +8,7 @@ import '../widgets/modern_bottom_nav.dart';
 class CalendarPage extends StatefulWidget {
   final List<PresenceModel> presences;
 
-  const CalendarPage({Key? key, required this.presences}) : super(key: key);
+  const CalendarPage({super.key, required this.presences});
 
   @override
   _CalendarPageState createState() => _CalendarPageState();
@@ -36,7 +36,7 @@ class _CalendarPageState extends State<CalendarPage> {
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memuat data')),
+        const SnackBar(content: Text('Gagal memuat data')),
       );
     }
   }
@@ -48,7 +48,7 @@ class _CalendarPageState extends State<CalendarPage> {
       final checkInTime = DateTime.parse(presence.checkIn).toLocal();
       final checkOutTime = presence.checkOut != null
           ? DateTime.parse(presence.checkOut!).toLocal()
-          : checkInTime.add(Duration(hours: 8));
+          : checkInTime.add(const Duration(hours: 8));
 
       appointments.add(Appointment(
         startTime: checkInTime,
@@ -107,12 +107,12 @@ class _CalendarPageState extends State<CalendarPage> {
         context: context,
         builder: (context) {
           return Container(
-            constraints: BoxConstraints(
+            constraints: const BoxConstraints(
               minHeight: 200,
               maxHeight: 300,
             ),
             width: double.infinity,
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -126,8 +126,8 @@ class _CalendarPageState extends State<CalendarPage> {
                       color: Colors.grey[600],
                     ),
                   ),
-                  SizedBox(height: 16),
-                  Container(
+                  const SizedBox(height: 16),
+                  SizedBox(
                     width: double.infinity,
                     child: _getContentForDate(details.date!),
                   ),
@@ -157,7 +157,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
     return Center(
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 60),
+        padding: const EdgeInsets.symmetric(vertical: 60),
         child: Text(
           'Tidak ada data untuk tanggal ini',
           style: TextStyle(
@@ -178,29 +178,30 @@ class _CalendarPageState extends State<CalendarPage> {
 
       return Container(
         width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               presence.store,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text('Shift: ${presence.shiftStore}'),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Check In',
+                    const Text('Check In',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     Text(_formatDateTime(DateTime.parse(presence.checkIn))),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: presence
                             .getStatusColor(presence.checkInStatus)
@@ -221,13 +222,13 @@ class _CalendarPageState extends State<CalendarPage> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('Check Out',
+                      const Text('Check Out',
                           style: TextStyle(fontWeight: FontWeight.bold)),
                       Text(_formatDateTime(DateTime.parse(presence.checkOut!))),
                       if (presence.checkOutStatus != null)
                         Container(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: presence
                                 .getStatusColor(presence.checkOutStatus!)
@@ -258,31 +259,31 @@ class _CalendarPageState extends State<CalendarPage> {
     try {
       final leave = _leaves.firstWhere(
         (l) =>
-            (date.isAfter(l.fromDate.subtract(Duration(days: 1))) ||
+            (date.isAfter(l.fromDate.subtract(const Duration(days: 1))) ||
                 _isSameDay(date, l.fromDate)) &&
-            (date.isBefore(l.untilDate.add(Duration(days: 1))) ||
+            (date.isBefore(l.untilDate.add(const Duration(days: 1))) ||
                 _isSameDay(date, l.untilDate)),
       );
 
       return Container(
         width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Cuti: ${leave.reasonText}',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text('Status: ${leave.statusText}'),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               'Tanggal: ${_formatDate(leave.fromDate)} - ${_formatDate(leave.untilDate)}',
             ),
             if (leave.notes != null && leave.notes!.isNotEmpty) ...[
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text('Catatan: ${leave.notes}'),
             ],
           ],
@@ -314,20 +315,20 @@ class _CalendarPageState extends State<CalendarPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: Text('Kalender')),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text('Kalender')),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Kalender'),
+        title: const Text('Kalender'),
       ),
       body: SfCalendar(
         view: CalendarView.month,
         dataSource: AppointmentDataSource(_appointments),
         onTap: _onTap,
-        monthViewSettings: MonthViewSettings(
+        monthViewSettings: const MonthViewSettings(
           appointmentDisplayMode: MonthAppointmentDisplayMode.indicator,
           showAgenda: true,
           agendaViewHeight: 200,
@@ -351,7 +352,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ),
           ),
         ),
-        timeSlotViewSettings: TimeSlotViewSettings(
+        timeSlotViewSettings: const TimeSlotViewSettings(
           startHour: 0,
           endHour: 24,
           timeFormat: 'HH:mm',

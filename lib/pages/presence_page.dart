@@ -8,12 +8,14 @@ import '../pages/home_page.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../controllers/presence_controller.dart';
-import '../services/location_validator_service.dart';
+
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class PresencePage extends StatefulWidget {
   final bool isCheckIn;
 
-  const PresencePage({Key? key, required this.isCheckIn}) : super(key: key);
+  const PresencePage({super.key, required this.isCheckIn});
 
   @override
   _PresencePageState createState() => _PresencePageState();
@@ -31,8 +33,12 @@ class _PresencePageState extends State<PresencePage> {
   bool isLocationValid = false;
   bool isTimeValid = true;
   late PresenceController _presenceController;
-  final LocationValidatorService _locationValidator =
-      LocationValidatorService();
+
+  File? _imageFile;
+  final ImagePicker _picker = ImagePicker();
+
+  final TextEditingController _salaryAmountController = TextEditingController(text: '50000');
+  int? _selectedPaymentTypeId = 2; // Default Tunai (2)
 
   @override
   void initState() {
@@ -89,6 +95,10 @@ class _PresencePageState extends State<PresencePage> {
         if (nearestStore != null) {
           selectedStore = nearestStore;
           isLocationValid = shortestDistance <= nearestStore.radius;
+          
+          if (!widget.isCheckIn) {
+            _salaryAmountController.text = nearestStore.dailySalaryAmount;
+          }
 
           // Tampilkan snackbar dengan informasi jarak
           String message = isLocationValid
@@ -128,7 +138,7 @@ class _PresencePageState extends State<PresencePage> {
 
       if (!isTimeValid) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content:
                 Text('Waktu checkout hanya diperbolehkan sampai jam 02:00'),
             backgroundColor: Colors.red,
@@ -139,38 +149,34 @@ class _PresencePageState extends State<PresencePage> {
   }
 
   Future<void> _validateAndSubmitPresence() async {
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Harap ambil foto selfie terlebih dahulu'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
-      final isLocationValid = await _locationValidator.validateLocation();
 
-      if (!isLocationValid) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text('Lokasi tidak valid atau terdeteksi penggunaan fake GPS'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-            action: SnackBarAction(
-              label: 'Pengaturan',
-              textColor: Colors.white,
-              onPressed: () => _locationValidator.showLocationSettings(),
-            ),
-          ),
-        );
-        return;
-      }
 
-      // Lanjutkan dengan proses presensi normal
+      // Modifikasi pemanggilan submitPresence untuk mengirim foto
       await _presenceController.submitPresence(
         isCheckIn: widget.isCheckIn,
         currentPosition: currentPosition!,
         selectedStore: selectedStore!,
         selectedShiftStore: selectedShiftStore,
+        imageFile: _imageFile!, // Tambahkan parameter imageFile
+        dailySalaryAmount: widget.isCheckIn ? null : _salaryAmountController.text,
+        dailySalaryPaymentTypeId: widget.isCheckIn ? null : _selectedPaymentTypeId.toString(),
         onSuccess: () {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => HomePage()),
+            MaterialPageRoute(builder: (context) => const HomePage()),
             (route) => false,
           );
         },
@@ -181,7 +187,9 @@ class _PresencePageState extends State<PresencePage> {
         },
       );
     } catch (e) {
-      // ... handle error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     } finally {
       setState(() => isLoading = false);
     }
@@ -205,9 +213,9 @@ class _PresencePageState extends State<PresencePage> {
 
       // Sesuaikan zoom berdasarkan jarak
       double zoom = 18.0;
-      if (distance > 1000)
+      if (distance > 1000) {
         zoom = 14.0;
-      else if (distance > 500)
+      } else if (distance > 500)
         zoom = 15.0;
       else if (distance > 200)
         zoom = 16.0;
@@ -217,10 +225,32 @@ class _PresencePageState extends State<PresencePage> {
     }
   }
 
+  Future<void> _takePhoto() async {
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front, // Menggunakan kamera depan
+        imageQuality: 50, // Kompres kualitas gambar
+      );
+
+      if (photo != null) {
+        setState(() {
+          _imageFile = File(photo.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mengambil foto: ${e.toString()}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    bool isButtonEnabled =
-        selectedStore != null && currentPosition != null && isLocationValid;
+    bool isButtonEnabled = selectedStore != null &&
+        currentPosition != null &&
+        isLocationValid &&
+        _imageFile != null;
 
     if (widget.isCheckIn) {
       isButtonEnabled = isButtonEnabled && selectedShiftStore != null;
@@ -233,7 +263,7 @@ class _PresencePageState extends State<PresencePage> {
         title: Text(widget.isCheckIn ? 'Check In' : 'Check Out'),
         actions: [
           IconButton(
-            icon: Icon(Icons.my_location),
+            icon: const Icon(Icons.my_location),
             onPressed: _getCurrentLocation,
           ),
         ],
@@ -247,6 +277,38 @@ class _PresencePageState extends State<PresencePage> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              if (_imageFile != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    _imageFile!,
+                                    height: 200,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              ElevatedButton.icon(
+                                onPressed: _takePhoto,
+                                icon: const Icon(Icons.camera_alt),
+                                label: Text(_imageFile == null
+                                    ? 'Ambil Foto Selfie'
+                                    : 'Ambil Ulang Foto'),
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size(double.infinity, 45),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       if (widget.isCheckIn) ...[
                         ModernDropdown<Store>(
                           value: selectedStore,
@@ -285,22 +347,21 @@ class _PresencePageState extends State<PresencePage> {
                             _updateMapView();
                           },
                         ),
-                        SizedBox(height: 16),
-                        if (isLocationValid)
-                          ModernDropdown<ShiftStore>(
-                            value: selectedShiftStore,
-                            hint: 'Pilih Shift',
-                            items: shiftStores,
-                            getLabel: (shift) => shift.name,
-                            onChanged: (value) {
-                              setState(() {
-                                selectedShiftStore = value;
-                              });
-                            },
-                          ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
+                        ModernDropdown<ShiftStore>(
+                          value: selectedShiftStore,
+                          hint: 'Pilih Shift',
+                          items: shiftStores,
+                          getLabel: (shift) => shift.name,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedShiftStore = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
                       ],
-                      Container(
+                      SizedBox(
                         height: 300,
                         child: Stack(
                           children: [
@@ -316,8 +377,8 @@ class _PresencePageState extends State<PresencePage> {
                               children: [
                                 TileLayer(
                                   urlTemplate:
-                                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  subdomains: ['a', 'b', 'c'],
+                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName: 'id.sagansa.presence',
                                 ),
                                 if (selectedStore != null)
                                   CircleLayer(
@@ -340,15 +401,17 @@ class _PresencePageState extends State<PresencePage> {
                                       Marker(
                                         point: LatLng(currentPosition!.latitude,
                                             currentPosition!.longitude),
-                                        child: Icon(Icons.person_pin_circle,
-                                            color: Colors.red, size: 40.0),
+                                        child: const Icon(
+                                            Icons.person_pin_circle,
+                                            color: Colors.red,
+                                            size: 40.0),
                                       ),
                                     // Marker untuk store yang dipilih
                                     if (selectedStore != null)
                                       Marker(
                                         point: LatLng(selectedStore!.latitude,
                                             selectedStore!.longitude),
-                                        child: Icon(Icons.store,
+                                        child: const Icon(Icons.store,
                                             color: Colors.blue, size: 40.0),
                                       ),
                                   ],
@@ -358,12 +421,12 @@ class _PresencePageState extends State<PresencePage> {
                             if (isLoadingLocation)
                               Center(
                                 child: Container(
-                                  padding: EdgeInsets.all(16),
+                                  padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Column(
+                                  child: const Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       CircularProgressIndicator(),
@@ -376,7 +439,7 @@ class _PresencePageState extends State<PresencePage> {
                           ],
                         ),
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       if (selectedStore != null)
                         Card(
                           child: Padding(
@@ -384,33 +447,33 @@ class _PresencePageState extends State<PresencePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
+                                const Text(
                                   'Lokasi Toko:',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                   ),
                                 ),
-                                SizedBox(height: 8),
+                                const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Icon(Icons.store, color: Colors.grey),
-                                    SizedBox(width: 8),
+                                    const Icon(Icons.store, color: Colors.grey),
+                                    const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
                                         selectedStore!.nickname,
-                                        style: TextStyle(fontSize: 15),
+                                        style: const TextStyle(fontSize: 15),
                                       ),
                                     ),
                                   ],
                                 ),
                                 if (currentPosition != null) ...[
-                                  SizedBox(height: 8),
+                                  const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      Icon(Icons.location_on,
+                                      const Icon(Icons.location_on,
                                           color: Colors.grey),
-                                      SizedBox(width: 8),
+                                      const SizedBox(width: 8),
                                       Text(
                                         'Jarak: ${Geolocator.distanceBetween(
                                           currentPosition!.latitude,
@@ -418,11 +481,11 @@ class _PresencePageState extends State<PresencePage> {
                                           selectedStore!.latitude,
                                           selectedStore!.longitude,
                                         ).toStringAsFixed(2)} meter',
-                                        style: TextStyle(fontSize: 15),
+                                        style: const TextStyle(fontSize: 15),
                                       ),
                                     ],
                                   ),
-                                  SizedBox(height: 8),
+                                  const SizedBox(height: 8),
                                   Row(
                                     children: [
                                       Icon(
@@ -433,7 +496,7 @@ class _PresencePageState extends State<PresencePage> {
                                             ? Colors.green
                                             : Colors.red,
                                       ),
-                                      SizedBox(width: 8),
+                                      const SizedBox(width: 8),
                                       Text(
                                         isLocationValid
                                             ? 'Anda berada di area toko'
@@ -456,29 +519,81 @@ class _PresencePageState extends State<PresencePage> {
                   ),
                 ),
               ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    spreadRadius: 0,
-                    blurRadius: 10,
-                    offset: Offset(0, -5),
+              ),
+              if (!widget.isCheckIn) ...[
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Daily Salary',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _salaryAmountController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Amount (Rp)',
+                            border: OutlineInputBorder(),
+                            prefixText: 'Rp ',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int>(
+                          value: _selectedPaymentTypeId,
+                          decoration: const InputDecoration(
+                            labelText: 'Payment Type',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 1, child: Text('Transfer')),
+                            DropdownMenuItem(value: 2, child: Text('Tunai')),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedPaymentTypeId = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
+              ],
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.18),
+                    ),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      spreadRadius: 0,
+                      blurRadius: 12,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(16),
+                child: ModernButton(
+                  text: widget.isCheckIn ? 'Check In' : 'Check Out',
+                  onPressed: isButtonEnabled ? _validateAndSubmitPresence : null,
+                  isLoading: isLoading,
+                ),
               ),
-              padding: EdgeInsets.all(16),
-              child: ModernButton(
-                text: widget.isCheckIn ? 'Check In' : 'Check Out',
-                onPressed: isButtonEnabled ? _validateAndSubmitPresence : null,
-                isLoading: isLoading,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
     );
   }
 }

@@ -8,13 +8,13 @@ class ModernDropdown<T> extends StatelessWidget {
   final void Function(T?) onChanged;
 
   const ModernDropdown({
-    Key? key,
+    super.key,
     required this.value,
     required this.hint,
     required this.items,
     required this.getLabel,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +25,7 @@ class ModernDropdown<T> extends StatelessWidget {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
         ),
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
       items: items.map((item) {
         return DropdownMenuItem(

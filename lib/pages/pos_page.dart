@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 class POSPage extends StatefulWidget {
+  const POSPage({super.key});
+
   @override
   _POSPageState createState() => _POSPageState();
 }
@@ -10,9 +12,9 @@ class _POSPageState extends State<POSPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Point of Sales'),
+        title: const Text('Point of Sales'),
       ),
-      body: Center(
+      body: const Center(
         child: Text(
           'POS',
           style: TextStyle(

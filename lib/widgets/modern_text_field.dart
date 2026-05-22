@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../utils/themes.dart';
 
 class ModernTextField extends StatelessWidget {
   final String labelText;
@@ -12,9 +13,10 @@ class ModernTextField extends StatelessWidget {
   final bool enableSuggestions;
   final List<TextInputFormatter>? inputFormatters;
   final Widget? suffixIcon;
+  final Iterable<String>? autofillHints;
 
   const ModernTextField({
-    Key? key,
+    super.key,
     required this.labelText,
     required this.controller,
     required this.prefixIcon,
@@ -25,27 +27,31 @@ class ModernTextField extends StatelessWidget {
     this.enableSuggestions = false,
     this.inputFormatters,
     this.suffixIcon,
-  }) : super(key: key);
+    this.autofillHints,
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      style: const TextStyle(color: AppTheme.textLight),
       decoration: InputDecoration(
         labelText: labelText,
-        prefixIcon: Icon(prefixIcon),
+        labelStyle: const TextStyle(color: AppTheme.textMuted),
+        prefixIcon: Icon(prefixIcon, color: AppTheme.goldAccent),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: Colors.grey),
+          borderSide: BorderSide(color: Colors.grey[800]!),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(color: Colors.black),
+          borderSide: const BorderSide(color: AppTheme.goldAccent, width: 2),
         ),
-        contentPadding: EdgeInsets.symmetric(vertical: 15, horizontal: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
         suffixIcon: suffixIcon,
       ),
       keyboardType: keyboardType,
@@ -54,6 +60,7 @@ class ModernTextField extends StatelessWidget {
       autocorrect: autocorrect,
       enableSuggestions: enableSuggestions,
       inputFormatters: inputFormatters,
+      autofillHints: autofillHints,
     );
   }
 }

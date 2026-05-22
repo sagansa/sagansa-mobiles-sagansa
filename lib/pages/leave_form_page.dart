@@ -9,7 +9,7 @@ import '../controllers/leave_controller.dart';
 class LeaveFormPage extends StatefulWidget {
   final Leave? leave;
 
-  const LeaveFormPage({Key? key, this.leave}) : super(key: key);
+  const LeaveFormPage({super.key, this.leave});
 
   @override
   _LeaveFormPageState createState() => _LeaveFormPageState();
@@ -108,7 +108,7 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -128,7 +128,7 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
                           }
                         },
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       ModernDateRangePicker(
                         startDate: _fromDate,
                         endDate: _untilDate,
@@ -139,10 +139,10 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
                           });
                         },
                         minDate: DateTime.now(),
-                        maxDate: DateTime.now().add(Duration(days: 365)),
+                        maxDate: DateTime.now().add(const Duration(days: 365)),
                         errorText: dateRangeError,
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       ModernTextFormField(
                         labelText: 'Catatan',
                         controller: _notesController,
@@ -169,17 +169,17 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
                     color: Colors.black.withOpacity(0.1),
                     spreadRadius: 0,
                     blurRadius: 10,
-                    offset: Offset(0, -5),
+                    offset: const Offset(0, -5),
                   ),
                 ],
               ),
-              padding: EdgeInsets.only(
+              padding: const EdgeInsets.only(
                 left: 16,
                 right: 16,
                 bottom: 8,
                 top: 8,
               ),
-              margin: EdgeInsets.only(top: 8),
+              margin: const EdgeInsets.only(top: 8),
               child: ModernButton(
                 text: widget.leave == null ? 'Simpan' : 'Update',
                 onPressed: _isLoading ? null : _submitForm,

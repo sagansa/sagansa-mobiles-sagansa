@@ -7,6 +7,8 @@ import '../widgets/modern_fab.dart';
 import 'leave_form_page.dart';
 
 class LeavePage extends StatefulWidget {
+  const LeavePage({super.key});
+
   @override
   _LeavePageState createState() => _LeavePageState();
 }
@@ -31,7 +33,7 @@ class _LeavePageState extends State<LeavePage> {
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memuat data cuti')),
+        const SnackBar(content: Text('Gagal memuat data cuti')),
       );
     }
   }
@@ -53,21 +55,21 @@ class _LeavePageState extends State<LeavePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Leave'),
+        title: const Text('Leave'),
         centerTitle: true,
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadLeaves,
               child: ListView.builder(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 itemCount: _leaves.length,
                 itemBuilder: (context, index) {
                   final leave = _leaves[index];
                   return Card(
                     elevation: 2,
-                    margin: EdgeInsets.only(bottom: 16),
+                    margin: const EdgeInsets.only(bottom: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -86,7 +88,7 @@ class _LeavePageState extends State<LeavePage> {
                         }
                       },
                       child: Padding(
-                        padding: EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -96,14 +98,14 @@ class _LeavePageState extends State<LeavePage> {
                                 Expanded(
                                   child: Text(
                                     leave.reasonText,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),
                                 Container(
-                                  padding: EdgeInsets.symmetric(
+                                  padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 6,
                                   ),
@@ -113,7 +115,7 @@ class _LeavePageState extends State<LeavePage> {
                                   ),
                                   child: Text(
                                     leave.statusText,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -122,12 +124,12 @@ class _LeavePageState extends State<LeavePage> {
                                 ),
                               ],
                             ),
-                            SizedBox(height: 12),
+                            const SizedBox(height: 12),
                             Row(
                               children: [
-                                Icon(Icons.date_range,
+                                const Icon(Icons.date_range,
                                     size: 16, color: Colors.grey),
-                                SizedBox(width: 8),
+                                const SizedBox(width: 8),
                                 Text(
                                   '${DateFormat('dd MMM yyyy').format(leave.fromDate)} - ${DateFormat('dd MMM yyyy').format(leave.untilDate)}',
                                   style: TextStyle(
@@ -138,13 +140,13 @@ class _LeavePageState extends State<LeavePage> {
                             ),
                             if (leave.notes != null &&
                                 leave.notes!.isNotEmpty) ...[
-                              SizedBox(height: 8),
+                              const SizedBox(height: 8),
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.notes,
+                                  const Icon(Icons.notes,
                                       size: 16, color: Colors.grey),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       leave.notes!,
@@ -176,7 +178,7 @@ class _LeavePageState extends State<LeavePage> {
         onPressed: () async {
           final result = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => LeaveFormPage()),
+            MaterialPageRoute(builder: (context) => const LeaveFormPage()),
           );
           if (result == true) {
             _loadLeaves();

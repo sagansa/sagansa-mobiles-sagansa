@@ -51,5 +51,7 @@
 	<string>Aplikasi memerlukan akses lokasi untuk melakukan presensi</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Aplikasi ini membutuhkan akses lokasi untuk fitur pencarian lokasi terdekat</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Aplikasi membutuhkan akses kamera untuk mengambil foto saat presensi</string>
 </dict>
 </plist>

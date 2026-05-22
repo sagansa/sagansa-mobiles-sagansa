@@ -11,11 +11,11 @@ class ModernBottomNav extends StatelessWidget {
   final List<PresenceModel>? presences;
 
   const ModernBottomNav({
-    Key? key,
+    super.key,
     required this.currentIndex,
     required this.onTap,
     this.presences,
-  }) : super(key: key);
+  });
 
   void _handleNavigation(BuildContext context, int index) {
     if (index == currentIndex) return;
@@ -24,13 +24,13 @@ class ModernBottomNav extends StatelessWidget {
       case 0:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => HomePage()),
+          MaterialPageRoute(builder: (context) => const HomePage()),
         );
         break;
       case 1:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => LeavePage()),
+          MaterialPageRoute(builder: (context) => const LeavePage()),
         );
         break;
       case 2:
@@ -44,7 +44,7 @@ class ModernBottomNav extends StatelessWidget {
       case 3:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => SalaryPage()),
+          MaterialPageRoute(builder: (context) => const SalaryPage()),
         );
         break;
     }
@@ -73,7 +73,7 @@ class ModernBottomNav extends StatelessWidget {
         ),
       ],
       currentIndex: currentIndex,
-      selectedItemColor: Colors.black,
+      selectedItemColor: Theme.of(context).primaryColor,
       onTap: (index) => _handleNavigation(context, index),
     );
   }

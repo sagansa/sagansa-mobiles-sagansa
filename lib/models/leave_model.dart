@@ -30,12 +30,12 @@ class Leave {
   factory Leave.fromJson(Map<String, dynamic> json) {
     return Leave(
       id: json['id'],
-      reason: json['reason'],
-      reasonText: json['reason_text'],
+      reason: int.tryParse(json['reason']?.toString() ?? '0') ?? 0,
+      reasonText: json['reason_text'] ?? '',
       fromDate: DateTime.parse(json['from_date']),
       untilDate: DateTime.parse(json['until_date']),
-      status: json['status'],
-      statusText: json['status_text'],
+      status: int.tryParse(json['status']?.toString() ?? '0') ?? 0,
+      statusText: json['status_text'] ?? '',
       notes: json['notes'],
       createdBy: CreatedBy.fromJson(json['created_by']),
       approvedBy: json['approved_by'],

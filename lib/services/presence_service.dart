@@ -5,6 +5,7 @@ import '../models/store_model.dart';
 import '../models/shift_store_model.dart';
 import 'dart:io';
 import '../utils/constants.dart';
+import 'dart:developer' as developer;
 
 class PresenceService {
   static const String tokenKey = 'token';
@@ -54,14 +55,14 @@ class PresenceService {
             Uri.parse(ApiConstants.shiftStores),
             headers: ApiConstants.headers(token),
           )
-          .timeout(Duration(seconds: 30));
+          .timeout(const Duration(seconds: 30));
 
       print('Response status: ${response.statusCode}');
       print('Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
-        if (responseData['status'] == 'success' &&
+        if ((responseData['success'] == true || responseData['status'] == 'success') &&
             responseData['data'] is List) {
           final List<dynamic> shiftStoresData = responseData['data'];
           return shiftStoresData
@@ -79,79 +80,156 @@ class PresenceService {
     }
   }
 
-  static Future<void> submitPresence(
-      Map<String, dynamic> data, bool isCheckIn, File? imageFile) async {
+  static Future<Map<String, dynamic>> uploadImage(
+    File imageFile,
+    bool isCheckIn,
+    Map<String, dynamic> data,
+  ) async {
+    final token = await getToken();
+    final endpoint = isCheckIn ? '/check-in' : '/check-out';
+    final uri = Uri.parse('${ApiConstants.baseUrl}$endpoint');
+
     try {
-      final token = await getToken();
-      final url = isCheckIn ? ApiConstants.checkIn : ApiConstants.checkOut;
-
-      print('Submitting presence to: $url');
-      print('With data: $data');
-
-      var request = http.MultipartRequest('POST', Uri.parse(url));
-      request.headers.addAll(ApiConstants.headers(token));
-
-      data.forEach((key, value) {
-        request.fields[key] = value.toString();
-      });
-
-      if (imageFile != null) {
-        final field = isCheckIn ? 'image_in' : 'image_out';
-        request.files.add(await http.MultipartFile.fromPath(
-          field,
+      var request = http.MultipartRequest('POST', uri)
+        ..headers.addAll(ApiConstants.headers(token))
+        ..fields
+            .addAll(data.map((key, value) => MapEntry(key, value.toString())))
+        ..files.add(await http.MultipartFile.fromPath(
+          isCheckIn ? 'image_in' : 'image_out',
           imageFile.path,
         ));
-      }
 
       final response = await request.send();
       final responseData = await response.stream.bytesToString();
-      print('Response status: ${response.statusCode}');
-      print('Response data: $responseData');
-
-      final decodedData = json.decode(responseData);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (decodedData['status'] == 'success') {
-          return;
-        }
-      }
-
-      if (decodedData['errors'] != null) {
-        throw Exception(
-            decodedData['errors']['image_in']?.first ?? decodedData['message']);
-      }
-
-      throw Exception(decodedData['message'] ?? 'Terjadi kesalahan');
+      return json.decode(responseData); // Langsung return decoded response
     } catch (e) {
-      print('Error in submitPresence service: $e');
-      throw Exception(e.toString());
+      throw Exception('Gagal mengirim data presensi');
+    }
+  }
+
+  static Future<void> submitPresence(
+    Map<String, dynamic> data,
+    bool isCheckIn,
+  ) async {
+    try {
+      final token = await getToken();
+      final endpoint = isCheckIn ? '/check-in' : '/check-out';
+      final uri = Uri.parse('${ApiConstants.baseUrl}$endpoint');
+
+      final response = await http.post(
+        uri,
+        headers: ApiConstants.headers(token),
+        body: data,
+      );
+
+      final responseData = json.decode(response.body);
+
+      if (response.statusCode != 200) {
+        throw Exception('Gagal melakukan presensi: ${responseData['message']}');
+      }
+    } catch (e) {
+      throw Exception('Error saat submit presensi: $e');
     }
   }
 
   static Future<Map<String, dynamic>> getUserPresence() async {
     try {
-      final token = await getToken();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(AppConstants.tokenKey);
+      
       final response = await http.get(
         Uri.parse(ApiConstants.userPresence),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      developer.log('User Presence API Raw Response: ${response.body}', name: 'PresenceService');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data;
+      } else {
+        throw Exception('Failed to load presence data (status: ${response.statusCode}, body: ${response.body})');
+      }
+    } catch (e) {
+      developer.log('Error in getUserPresence', error: e, name: 'PresenceService');
+      throw Exception('Failed to load presence data: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSalesOrders({int page = 1, int perPage = 10}) async {
+    try {
+      final token = await getToken();
+      final uri = Uri.parse('${ApiConstants.searchSalesOrder}?page=$page&per_page=$perPage');
+      final response = await http.get(
+        uri,
         headers: ApiConstants.headers(token),
       );
 
+      final responseData = json.decode(response.body);
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        if (responseData['status'] == 'success') {
-          return {
-            'today': responseData['data']['today'],
-            'previous': responseData['data']['previous'],
-          };
-        }
-        throw Exception(
-            responseData['message'] ?? 'Gagal memuat data presensi');
+        return responseData;
       } else {
-        throw Exception('Gagal memuat data presensi: ${response.statusCode}');
+        throw Exception(responseData['message'] ?? 'Gagal memuat daftar order.');
       }
     } catch (e) {
-      print('Error dalam getUserPresence: $e');
-      throw Exception('Gagal memuat data presensi: $e');
+      throw Exception('Error saat memuat daftar order: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> searchSalesOrder(String receiptNo) async {
+    try {
+      final token = await getToken();
+      final uri = Uri.parse('${ApiConstants.searchSalesOrder}?receipt_no=$receiptNo');
+      final response = await http.get(
+        uri,
+        headers: ApiConstants.headers(token),
+      );
+
+      final responseData = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return responseData;
+      } else {
+        throw Exception(responseData['message'] ?? 'Gagal mencari data resi.');
+      }
+    } catch (e) {
+      throw Exception('Error saat mencari resi: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateDeliveryStatus({
+    required String receiptNo,
+    required File imageFile,
+    String? receivedBy,
+  }) async {
+    final token = await getToken();
+    final uri = Uri.parse(ApiConstants.updateDeliveryStatus);
+
+    try {
+      var request = http.MultipartRequest('POST', uri)
+        ..headers.addAll(ApiConstants.headers(token))
+        ..fields.addAll({
+          'receipt_no': receiptNo,
+          if (receivedBy != null && receivedBy.isNotEmpty) 'received_by': receivedBy,
+        })
+        ..files.add(await http.MultipartFile.fromPath(
+          'image_delivery',
+          imageFile.path,
+        ));
+
+      final response = await request.send();
+      final responseData = await response.stream.bytesToString();
+      final decodedData = json.decode(responseData);
+      
+      if (response.statusCode == 200) {
+        return decodedData;
+      } else {
+        throw Exception(decodedData['message'] ?? 'Gagal memperbarui status pengiriman.');
+      }
+    } catch (e) {
+      throw Exception('Error saat memperbarui pengiriman: $e');
     }
   }
 

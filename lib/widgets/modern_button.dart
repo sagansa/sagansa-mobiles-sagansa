@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/themes.dart';
 
 class ModernButton extends StatelessWidget {
   final String text;
@@ -7,6 +8,7 @@ class ModernButton extends StatelessWidget {
   final IconData? icon;
 
   const ModernButton({
+    super.key,
     required this.text,
     required this.onPressed,
     this.isLoading = false,
@@ -16,24 +18,30 @@ class ModernButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
-      onPressed: isLoading ? null : onPressed,
+      onPressed: onPressed == null
+          ? null
+          : () {
+              if (!isLoading) {
+                onPressed!();
+              }
+            },
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        minimumSize: Size(double.infinity, 45),
-        padding: EdgeInsets.symmetric(vertical: 15),
+        backgroundColor: AppTheme.goldAccent,
+        foregroundColor: AppTheme.primaryDark,
+        minimumSize: const Size(double.infinity, 45),
+        padding: const EdgeInsets.symmetric(vertical: 15),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
         ),
       ),
       child: isLoading
-          ? CircularProgressIndicator(color: Colors.white)
+          ? const CircularProgressIndicator(color: AppTheme.primaryDark)
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (icon != null) ...[
                   Icon(icon),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                 ],
                 Text(text),
               ],
