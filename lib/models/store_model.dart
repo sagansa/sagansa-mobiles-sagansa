@@ -26,3 +26,5 @@ class StoreModel {
     );
   }
 }
+
+typedef Store = StoreModel;

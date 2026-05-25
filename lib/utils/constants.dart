@@ -27,7 +27,9 @@ class ApiConstants {
 
   // Sales Order Delivery Endpoints
   static const String searchSalesOrder = '$baseUrl/sales-orders/search';
-  static const String updateDeliveryStatus = '$baseUrl/sales-orders/delivery-update';
+  static const String readyToShip = '$baseUrl/sales-orders/ready-to-ship';
+  static const String updateDeliveryStatus =
+      '$baseUrl/sales-orders/delivery-update';
 
   static Map<String, String> headers(String? token) {
     return {

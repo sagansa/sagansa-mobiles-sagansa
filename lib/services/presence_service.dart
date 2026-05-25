@@ -62,7 +62,8 @@ class PresenceService {
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
-        if ((responseData['success'] == true || responseData['status'] == 'success') &&
+        if ((responseData['success'] == true ||
+                responseData['status'] == 'success') &&
             responseData['data'] is List) {
           final List<dynamic> shiftStoresData = responseData['data'];
           return shiftStoresData
@@ -136,7 +137,7 @@ class PresenceService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString(AppConstants.tokenKey);
-      
+
       final response = await http.get(
         Uri.parse(ApiConstants.userPresence),
         headers: {
@@ -145,24 +146,29 @@ class PresenceService {
         },
       );
 
-      developer.log('User Presence API Raw Response: ${response.body}', name: 'PresenceService');
+      developer.log('User Presence API Raw Response: ${response.body}',
+          name: 'PresenceService');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data;
       } else {
-        throw Exception('Failed to load presence data (status: ${response.statusCode}, body: ${response.body})');
+        throw Exception(
+            'Failed to load presence data (status: ${response.statusCode}, body: ${response.body})');
       }
     } catch (e) {
-      developer.log('Error in getUserPresence', error: e, name: 'PresenceService');
+      developer.log('Error in getUserPresence',
+          error: e, name: 'PresenceService');
       throw Exception('Failed to load presence data: $e');
     }
   }
 
-  static Future<Map<String, dynamic>> getSalesOrders({int page = 1, int perPage = 10}) async {
+  static Future<Map<String, dynamic>> getSalesOrders(
+      {int page = 1, int perPage = 10}) async {
     try {
       final token = await getToken();
-      final uri = Uri.parse('${ApiConstants.searchSalesOrder}?page=$page&per_page=$perPage');
+      final uri = Uri.parse(
+          '${ApiConstants.searchSalesOrder}?page=$page&per_page=$perPage');
       final response = await http.get(
         uri,
         headers: ApiConstants.headers(token),
@@ -172,7 +178,8 @@ class PresenceService {
       if (response.statusCode == 200) {
         return responseData;
       } else {
-        throw Exception(responseData['message'] ?? 'Gagal memuat daftar order.');
+        throw Exception(
+            responseData['message'] ?? 'Gagal memuat daftar order.');
       }
     } catch (e) {
       throw Exception('Error saat memuat daftar order: $e');
@@ -182,7 +189,8 @@ class PresenceService {
   static Future<Map<String, dynamic>> searchSalesOrder(String receiptNo) async {
     try {
       final token = await getToken();
-      final uri = Uri.parse('${ApiConstants.searchSalesOrder}?receipt_no=$receiptNo');
+      final uri =
+          Uri.parse('${ApiConstants.searchSalesOrder}?receipt_no=$receiptNo');
       final response = await http.get(
         uri,
         headers: ApiConstants.headers(token),
@@ -199,6 +207,29 @@ class PresenceService {
     }
   }
 
+  static Future<Map<String, dynamic>> markReadyToShip({
+    required String receiptNo,
+  }) async {
+    try {
+      final token = await getToken();
+      final response = await http.post(
+        Uri.parse(ApiConstants.readyToShip),
+        headers: ApiConstants.headers(token),
+        body: json.encode({'receipt_no': receiptNo}),
+      );
+
+      final responseData = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return responseData;
+      } else {
+        throw Exception(responseData['message'] ??
+            'Gagal mengubah status menjadi siap dikirim.');
+      }
+    } catch (e) {
+      throw Exception('Error saat mengubah status pengiriman: $e');
+    }
+  }
+
   static Future<Map<String, dynamic>> updateDeliveryStatus({
     required String receiptNo,
     required File imageFile,
@@ -212,7 +243,8 @@ class PresenceService {
         ..headers.addAll(ApiConstants.headers(token))
         ..fields.addAll({
           'receipt_no': receiptNo,
-          if (receivedBy != null && receivedBy.isNotEmpty) 'received_by': receivedBy,
+          if (receivedBy != null && receivedBy.isNotEmpty)
+            'received_by': receivedBy,
         })
         ..files.add(await http.MultipartFile.fromPath(
           'image_delivery',
@@ -222,11 +254,12 @@ class PresenceService {
       final response = await request.send();
       final responseData = await response.stream.bytesToString();
       final decodedData = json.decode(responseData);
-      
+
       if (response.statusCode == 200) {
         return decodedData;
       } else {
-        throw Exception(decodedData['message'] ?? 'Gagal memperbarui status pengiriman.');
+        throw Exception(
+            decodedData['message'] ?? 'Gagal memperbarui status pengiriman.');
       }
     } catch (e) {
       throw Exception('Error saat memperbarui pengiriman: $e');

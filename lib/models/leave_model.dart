@@ -45,6 +45,8 @@ class LeaveModel {
   }
 }
 
+typedef Leave = LeaveModel;
+
 class CreatedBy {
   final int id;
   final String name;

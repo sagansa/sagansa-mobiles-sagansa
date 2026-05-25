@@ -20,3 +20,5 @@ class ShiftStoreModel {
     );
   }
 }
+
+typedef ShiftStore = ShiftStoreModel;
