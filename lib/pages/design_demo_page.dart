@@ -331,7 +331,7 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: AppSpacing.borderRadiusSM,
                 ),
                 child: Icon(

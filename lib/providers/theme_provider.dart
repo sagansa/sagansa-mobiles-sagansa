@@ -117,7 +117,7 @@ class ThemeProvider extends ChangeNotifier {
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.onSurface,
         elevation: AppElevation.level1,
-        shadowColor: AppColors.shadow.withOpacity(0.1),
+        shadowColor: AppColors.shadow.withValues(alpha: 0.1),
         titleTextStyle: AppTypography.titleLarge.copyWith(
           color: AppColors.onSurface,
           fontWeight: FontWeight.w600,
@@ -139,11 +139,11 @@ class ThemeProvider extends ChangeNotifier {
       cardTheme: CardThemeData(
         color: AppColors.surface,
         elevation: AppElevation.level2,
-        shadowColor: AppColors.shadow.withOpacity(0.1),
+        shadowColor: AppColors.shadow.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: AppSpacing.borderRadiusMD,
           side: BorderSide(
-            color: AppColors.outline.withOpacity(0.1),
+            color: AppColors.outline.withValues(alpha: 0.1),
             width: 1,
           ),
         ),
@@ -203,7 +203,7 @@ class ThemeProvider extends ChangeNotifier {
         enabledBorder: OutlineInputBorder(
           borderRadius: AppSpacing.borderRadiusMD,
           borderSide:
-              BorderSide(color: AppColors.outline.withOpacity(0.5), width: 1.5),
+              BorderSide(color: AppColors.outline.withValues(alpha: 0.5), width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppSpacing.borderRadiusMD,
@@ -223,7 +223,7 @@ class ThemeProvider extends ChangeNotifier {
           fontWeight: FontWeight.w500,
         ),
         hintStyle: AppTypography.bodyMedium.copyWith(
-          color: AppColors.onSurfaceVariant.withOpacity(0.7),
+          color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
 
@@ -257,7 +257,7 @@ class ThemeProvider extends ChangeNotifier {
 
       // Divider theme - Subtle dividers
       dividerTheme: DividerThemeData(
-        color: AppColors.outlineVariant.withOpacity(0.3),
+        color: AppColors.outlineVariant.withValues(alpha: 0.3),
         thickness: 1,
         space: 1,
       ),
@@ -269,7 +269,7 @@ class ThemeProvider extends ChangeNotifier {
           borderRadius: AppSpacing.borderRadiusSM,
         ),
         tileColor: AppColors.surface,
-        selectedTileColor: AppColors.primaryContainer.withOpacity(0.1),
+        selectedTileColor: AppColors.primaryContainer.withValues(alpha: 0.1),
         textColor: AppColors.onSurface,
         iconColor: AppColors.onSurfaceVariant,
       ),
@@ -333,7 +333,7 @@ class ThemeProvider extends ChangeNotifier {
         backgroundColor: AppColors.darkSurface,
         foregroundColor: AppColors.darkOnSurface,
         elevation: AppElevation.level1,
-        shadowColor: AppColors.shadow.withOpacity(0.3),
+        shadowColor: AppColors.shadow.withValues(alpha: 0.3),
         titleTextStyle: AppTypography.titleLarge.copyWith(
           color: AppColors.darkOnSurface,
           fontWeight: FontWeight.w600,
@@ -355,11 +355,11 @@ class ThemeProvider extends ChangeNotifier {
       cardTheme: CardThemeData(
         color: AppColors.darkSurface,
         elevation: AppElevation.level2,
-        shadowColor: AppColors.shadow.withOpacity(0.3),
+        shadowColor: AppColors.shadow.withValues(alpha: 0.3),
         shape: RoundedRectangleBorder(
           borderRadius: AppSpacing.borderRadiusMD,
           side: BorderSide(
-            color: AppColors.darkOnSurface.withOpacity(0.1),
+            color: AppColors.darkOnSurface.withValues(alpha: 0.1),
             width: 1,
           ),
         ),
@@ -388,12 +388,12 @@ class ThemeProvider extends ChangeNotifier {
         border: OutlineInputBorder(
           borderRadius: AppSpacing.borderRadiusMD,
           borderSide: BorderSide(
-              color: AppColors.darkOnSurface.withOpacity(0.3), width: 1.5),
+              color: AppColors.darkOnSurface.withValues(alpha: 0.3), width: 1.5),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: AppSpacing.borderRadiusMD,
           borderSide: BorderSide(
-              color: AppColors.darkOnSurface.withOpacity(0.2), width: 1.5),
+              color: AppColors.darkOnSurface.withValues(alpha: 0.2), width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppSpacing.borderRadiusMD,
@@ -413,7 +413,7 @@ class ThemeProvider extends ChangeNotifier {
           fontWeight: FontWeight.w500,
         ),
         hintStyle: AppTypography.bodyMedium.copyWith(
-          color: AppColors.darkOnSurfaceVariant.withOpacity(0.7),
+          color: AppColors.darkOnSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
 
@@ -447,7 +447,7 @@ class ThemeProvider extends ChangeNotifier {
 
       // Divider theme - Subtle dark dividers
       dividerTheme: DividerThemeData(
-        color: AppColors.darkOnSurface.withOpacity(0.2),
+        color: AppColors.darkOnSurface.withValues(alpha: 0.2),
         thickness: 1,
         space: 1,
       ),
@@ -459,7 +459,7 @@ class ThemeProvider extends ChangeNotifier {
           borderRadius: AppSpacing.borderRadiusSM,
         ),
         tileColor: AppColors.darkSurface,
-        selectedTileColor: AppColors.darkPrimaryContainer.withOpacity(0.2),
+        selectedTileColor: AppColors.darkPrimaryContainer.withValues(alpha: 0.2),
         textColor: AppColors.darkOnSurface,
         iconColor: AppColors.darkOnSurfaceVariant,
       ),

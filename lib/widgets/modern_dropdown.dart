@@ -19,7 +19,7 @@ class ModernDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<T>(
-      value: value,
+      initialValue: value,
       hint: Text(hint),
       decoration: InputDecoration(
         border: OutlineInputBorder(

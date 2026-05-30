@@ -388,7 +388,7 @@ class _PresencePageState extends State<PresencePage> {
                                             selectedStore!.longitude),
                                         radius: selectedStore!.radius
                                             .toDouble(), // dalam meter
-                                        color: Colors.blue.withOpacity(0.2),
+                                        color: Colors.blue.withValues(alpha: 0.2),
                                         borderColor: Colors.blue,
                                         borderStrokeWidth: 2,
                                       ),
@@ -547,7 +547,7 @@ class _PresencePageState extends State<PresencePage> {
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<int>(
-                          value: _selectedPaymentTypeId,
+                          initialValue: _selectedPaymentTypeId,
                           decoration: const InputDecoration(
                             labelText: 'Payment Type',
                             border: OutlineInputBorder(),
@@ -572,12 +572,12 @@ class _PresencePageState extends State<PresencePage> {
                   color: Theme.of(context).colorScheme.surface,
                   border: Border(
                     top: BorderSide(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.18),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
                     ),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
+                      color: Colors.black.withValues(alpha: 0.35),
                       spreadRadius: 0,
                       blurRadius: 12,
                       offset: const Offset(0, -5),

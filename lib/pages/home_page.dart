@@ -346,7 +346,7 @@ class HomePageState extends State<HomePage> {
                         decoration: BoxDecoration(
                           color: presence
                               .getStatusColor(presence.checkInStatus)
-                              .withOpacity(0.2),
+                              .withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -401,7 +401,7 @@ class HomePageState extends State<HomePage> {
                             decoration: BoxDecoration(
                               color: presence
                                   .getStatusColor(presence.checkOutStatus ?? '')
-                                  .withOpacity(0.2),
+                                  .withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -424,7 +424,7 @@ class HomePageState extends State<HomePage> {
                               decoration: BoxDecoration(
                                 color: presence
                                     .getStatusColor('tidak_absen')
-                                    .withOpacity(0.2),
+                                    .withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -607,7 +607,7 @@ class HomePageState extends State<HomePage> {
                 color: const Color(0xFF1E1E1E),
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
@@ -615,9 +615,13 @@ class HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: const Color(0xFF121212),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF121212),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     child: Image.asset(
                       'assets/images/new-logo.png',
                       width: 32,

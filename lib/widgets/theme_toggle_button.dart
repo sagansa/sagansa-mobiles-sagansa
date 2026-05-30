@@ -148,7 +148,7 @@ class ThemeToggleSwitch extends StatelessWidget {
               value ? ThemeMode.dark : ThemeMode.light,
             );
           },
-          activeColor: AppColors.primary,
+          activeThumbColor: AppColors.primary,
           inactiveThumbColor: AppColors.onSurfaceVariant,
           inactiveTrackColor: AppColors.surfaceVariant,
         );

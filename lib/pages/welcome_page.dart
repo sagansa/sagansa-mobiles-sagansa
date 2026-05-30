@@ -34,7 +34,7 @@ class _WelcomePageState extends State<WelcomePage> {
           children: [
             // Logo
             Image.asset(
-              'assets/images/logo.png', // Pastikan logo ada di path ini
+              'assets/images/new-logo.png',
               width: 200,
               height: 200,
             ),

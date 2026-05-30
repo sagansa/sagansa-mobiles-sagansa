@@ -641,7 +641,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
           color: cardDark,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
-            side: BorderSide(color: goldAccent.withOpacity(0.2)),
+            side: BorderSide(color: goldAccent.withValues(alpha: 0.2)),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -779,7 +779,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                 margin: const EdgeInsets.only(bottom: 12.0),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: goldAccent.withOpacity(0.1)),
+                  side: BorderSide(color: goldAccent.withValues(alpha: 0.1)),
                 ),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
@@ -816,7 +816,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
                                 color: _getDeliveryStatusColor(status)
-                                    .withOpacity(0.12),
+                                    .withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -889,7 +889,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: goldAccent,
                               side: BorderSide(
-                                  color: goldAccent.withOpacity(0.5)),
+                                  color: goldAccent.withValues(alpha: 0.5)),
                               minimumSize: const Size(double.infinity, 40),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
@@ -935,7 +935,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: goldAccent.withOpacity(0.3)),
+                side: BorderSide(color: goldAccent.withValues(alpha: 0.3)),
               ),
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -959,7 +959,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
             color: cardDark,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(15),
-              side: BorderSide(color: goldAccent.withOpacity(0.1)),
+              side: BorderSide(color: goldAccent.withValues(alpha: 0.1)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -985,7 +985,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                         decoration: BoxDecoration(
                           color:
                               _getDeliveryStatusColor(order['delivery_status'])
-                                  .withOpacity(0.15),
+                                  .withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -1060,7 +1060,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               color: cardDark,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
-                side: BorderSide(color: goldAccent.withOpacity(0.1)),
+                side: BorderSide(color: goldAccent.withValues(alpha: 0.1)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1202,7 +1202,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               color: cardDark,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
-                side: BorderSide(color: goldAccent.withOpacity(0.1)),
+                side: BorderSide(color: goldAccent.withValues(alpha: 0.1)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1309,7 +1309,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               color: cardDark,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
-                side: BorderSide(color: Colors.orangeAccent.withOpacity(0.35)),
+                side: BorderSide(color: Colors.orangeAccent.withValues(alpha: 0.35)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1377,7 +1377,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               color: cardDark,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15),
-                side: BorderSide(color: goldAccent.withOpacity(0.1)),
+                side: BorderSide(color: goldAccent.withValues(alpha: 0.1)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1426,7 +1426,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                         minimumSize: const Size(double.infinity, 48),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: goldAccent.withOpacity(0.4)),
+                          side: BorderSide(color: goldAccent.withValues(alpha: 0.4)),
                         ),
                       ),
                     ),
@@ -1515,7 +1515,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
             Icon(
               Icons.local_shipping_outlined,
               size: 80,
-              color: goldAccent.withOpacity(0.4),
+              color: goldAccent.withValues(alpha: 0.4),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -1528,7 +1528,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
             ),
             const SizedBox(height: 8),
             const Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              padding: EdgeInsets.symmetric(horizontal: 32.0),
               child: Text(
                 'Silakan ketik atau scan nomor resi pesanan di kolom pencarian di atas untuk memuat rincian pesanan.',
                 textAlign: TextAlign.center,

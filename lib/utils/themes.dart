@@ -19,11 +19,9 @@ class AppTheme {
         primary: goldAccent,
         secondary: goldAccent,
         surface: cardDark,
-        background: primaryDark,
         onPrimary: primaryDark,
         onSecondary: primaryDark,
         onSurface: textLight,
-        onBackground: textLight,
       ),
 
       // AppBar theme
@@ -56,7 +54,7 @@ class AppTheme {
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
-          side: BorderSide(color: goldAccent.withOpacity(0.15), width: 0.5),
+          side: BorderSide(color: goldAccent.withValues(alpha: 0.15), width: 0.5),
         ),
       ),
 

@@ -101,11 +101,11 @@ class AppColors {
 
   // Opacity variants
   static Color primaryWithOpacity(double opacity) =>
-      primary.withOpacity(opacity);
+      primary.withValues(alpha: opacity);
   static Color secondaryWithOpacity(double opacity) =>
-      secondary.withOpacity(opacity);
+      secondary.withValues(alpha: opacity);
   static Color surfaceWithOpacity(double opacity) =>
-      surface.withOpacity(opacity);
+      surface.withValues(alpha: opacity);
   static Color onSurfaceWithOpacity(double opacity) =>
-      onSurface.withOpacity(opacity);
+      onSurface.withValues(alpha: opacity);
 }

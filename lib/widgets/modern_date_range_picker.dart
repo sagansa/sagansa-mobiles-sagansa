@@ -86,7 +86,7 @@ class ModernDateRangePicker extends StatelessWidget {
                 todayHighlightColor: Theme.of(context).primaryColor,
                 selectionColor: Theme.of(context).primaryColor,
                 rangeSelectionColor:
-                    Theme.of(context).primaryColor.withOpacity(0.1),
+                    Theme.of(context).primaryColor.withValues(alpha: 0.1),
                 startRangeSelectionColor: Theme.of(context).primaryColor,
                 endRangeSelectionColor: Theme.of(context).primaryColor,
               ),

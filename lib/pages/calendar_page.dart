@@ -91,13 +91,13 @@ class _CalendarPageState extends State<CalendarPage> {
   Color _getLeaveStatusColor(int status) {
     switch (status) {
       case 1:
-        return Colors.orange.withOpacity(0.7);
+        return Colors.orange.withValues(alpha: 0.7);
       case 2:
-        return Colors.green.withOpacity(0.7);
+        return Colors.green.withValues(alpha: 0.7);
       case 3:
-        return Colors.red.withOpacity(0.7);
+        return Colors.red.withValues(alpha: 0.7);
       default:
-        return Colors.grey.withOpacity(0.7);
+        return Colors.grey.withValues(alpha: 0.7);
     }
   }
 
@@ -205,7 +205,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       decoration: BoxDecoration(
                         color: presence
                             .getStatusColor(presence.checkInStatus)
-                            .withOpacity(0.2),
+                            .withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -232,7 +232,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           decoration: BoxDecoration(
                             color: presence
                                 .getStatusColor(presence.checkOutStatus!)
-                                .withOpacity(0.2),
+                                .withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(

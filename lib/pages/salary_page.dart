@@ -101,7 +101,7 @@ class _SalaryPageState extends State<SalaryPage> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getStatusColor(salary['status']).withOpacity(0.1),
+                      color: _getStatusColor(salary['status']).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -156,7 +156,7 @@ class _SalaryPageState extends State<SalaryPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            color: Colors.blue.withOpacity(0.1),
+            color: Colors.blue.withValues(alpha: 0.1),
             child: const Row(
               children: [
                 Icon(Icons.info_outline, color: Colors.blue),

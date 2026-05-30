@@ -58,7 +58,7 @@ class _NetworkStatusIndicatorState extends State<NetworkStatusIndicator> {
       return Container(
         padding: AppSpacing.paddingHorizontalMD + AppSpacing.paddingVerticalSM,
         decoration: BoxDecoration(
-          color: AppColors.info.withOpacity(0.1),
+          color: AppColors.info.withValues(alpha: 0.1),
           borderRadius: AppSpacing.borderRadiusSM,
         ),
         child: Row(
@@ -91,10 +91,10 @@ class _NetworkStatusIndicatorState extends State<NetworkStatusIndicator> {
       child: Container(
         padding: AppSpacing.paddingHorizontalMD + AppSpacing.paddingVerticalSM,
         decoration: BoxDecoration(
-          color: _getBackgroundColor().withOpacity(0.1),
+          color: _getBackgroundColor().withValues(alpha: 0.1),
           borderRadius: AppSpacing.borderRadiusSM,
           border: Border.all(
-            color: _getBackgroundColor().withOpacity(0.3),
+            color: _getBackgroundColor().withValues(alpha: 0.3),
             width: 1,
           ),
         ),
@@ -119,7 +119,7 @@ class _NetworkStatusIndicatorState extends State<NetworkStatusIndicator> {
             const SizedBox(width: 4),
             Icon(
               Icons.refresh,
-              color: _getBackgroundColor().withOpacity(0.7),
+              color: _getBackgroundColor().withValues(alpha: 0.7),
               size: 14,
             ),
           ],
