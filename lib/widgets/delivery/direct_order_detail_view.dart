@@ -76,8 +76,10 @@ class DirectOrderDetailView extends StatelessWidget {
             )
           else if (canSubmitDelivery) ...[
             _buildDeliveryForm(context, provider, textTheme, colorScheme),
-            AppSpacing.gapVerticalMD,
-            _buildRefundButton(context, provider, colorScheme),
+            if (status == DeliveryStatus.fix) ...[
+              AppSpacing.gapVerticalMD,
+              _buildRefundButton(context, provider, colorScheme),
+            ],
           ],
         ],
       ),

@@ -111,4 +111,28 @@ void main() {
     expect(find.text('Dikembalikan'), findsNothing);
     expect(find.text('Kirim Bukti Pengiriman'), findsWidgets);
   });
+
+  testWidgets('status siap dikirim: tombol refund tidak tampil', (tester) async {
+    final provider = await makeProvider(isAdmin: false);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 4),
+      status: DeliveryStatus.ready,
+    );
+
+    expect(find.text('Refund / Kembalikan Order'), findsNothing);
+  });
+
+  testWidgets('status perbaiki: tombol refund tampil', (tester) async {
+    final provider = await makeProvider(isAdmin: false);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 5),
+      status: DeliveryStatus.fix,
+    );
+
+    expect(find.text('Refund / Kembalikan Order'), findsOneWidget);
+  });
 }
