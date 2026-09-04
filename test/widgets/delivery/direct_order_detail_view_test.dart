@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -45,7 +47,10 @@ Map<String, dynamic> directOrder({int deliveryStatus = 4}) => {
       ],
     };
 
-Future<DeliveryProvider> makeProvider({required bool isAdmin}) async {
+Future<DeliveryProvider> makeProvider({
+  required bool isAdmin,
+  Map<String, dynamic> Function()? onUpdateDeliveryStatus,
+}) async {
   final presence = _MockPresence();
   final repo = _MockRepository();
   when(() => repo.loadAdminRole()).thenAnswer((_) async => isAdmin);
@@ -59,6 +64,18 @@ Future<DeliveryProvider> makeProvider({required bool isAdmin}) async {
         orderFor: any(named: 'orderFor'),
       )).thenAnswer((_) async =>
       {'success': true, 'data': [], 'meta': {'last_page': 1}});
+
+  final stub = onUpdateDeliveryStatus;
+  if (stub != null) {
+    when(() => presence.updateDeliveryStatus(
+          receiptNo: any(named: 'receiptNo'),
+          orderId: any(named: 'orderId'),
+          imageFiles: any(named: 'imageFiles'),
+          receivedBy: any(named: 'receivedBy'),
+          deliveryStatus: any(named: 'deliveryStatus'),
+          notes: any(named: 'notes'),
+        )).thenAnswer((_) async => stub());
+  }
 
   final provider = DeliveryProvider(
     orderMode: OrderMode.direct,
@@ -97,6 +114,10 @@ Future<void> pumpDetail(
 }
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(<File>[]);
+  });
+
   testWidgets('form kirim bukti: tanpa chip Sudah Dikirim/Dikembalikan',
       (tester) async {
     final provider = await makeProvider(isAdmin: false);
@@ -134,6 +155,31 @@ void main() {
     );
 
     expect(find.text('Refund / Kembalikan Order'), findsOneWidget);
+  });
+
+  testWidgets('refund gagal: form pulih ke mode kirim dan snackbar error',
+      (tester) async {
+    final provider = await makeProvider(
+      isAdmin: false,
+      onUpdateDeliveryStatus: () =>
+          throw Exception('Refund gagal disimulasikan'),
+    );
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 5),
+      status: DeliveryStatus.fix,
+    );
+
+    await tester.ensureVisible(find.text('Refund / Kembalikan Order'));
+    await tester.pump();
+    await tester.tap(find.text('Refund / Kembalikan Order'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Laporkan Barang Kembali'), findsNothing);
+    expect(find.text('Kirim Bukti Pengiriman'), findsWidgets);
+    expect(find.text('Refund gagal disimulasikan'), findsOneWidget);
   });
 
   testWidgets('admin melihat harga per item dan Total Harga', (tester) async {

@@ -666,6 +666,7 @@ class DirectOrderDetailView extends StatelessWidget {
             );
           }
         }).catchError((e) {
+          provider.setStatus(3);
           if (context.mounted) _showError(context, e);
         });
       },
