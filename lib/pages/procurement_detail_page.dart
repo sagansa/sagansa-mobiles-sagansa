@@ -7,7 +7,9 @@ import '../../models/procurement_model.dart';
 import '../../services/procurement_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/status_mappers.dart';
 import '../widgets/safe_bottom_bar.dart';
+import '../widgets/status_badge.dart';
 import 'create_invoice_page.dart';
 import 'invoice_detail_page.dart';
 
@@ -572,10 +574,28 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
           value,
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.bold,
-            color: isStatus ? colorScheme.primary : null,
+            color: isStatus ? _statusColor(value, colorScheme) : null,
           ),
         ),
       ],
     );
+  }
+
+  /// Warna nilai status global mengikuti konvensi dashboard procurement
+  /// (Pending Approval=warning, Partially Approved/Approved=info,
+  /// Done=success, Rejected=error) — bukan colorScheme.primary.
+  Color _statusColor(String label, ColorScheme colorScheme) {
+    switch (StatusMappers.procurementGlobalStatus(label)) {
+      case StatusType.success:
+        return AppColors.success;
+      case StatusType.warning:
+        return AppColors.warning;
+      case StatusType.error:
+        return AppColors.error;
+      case StatusType.info:
+        return AppColors.info;
+      case StatusType.neutral:
+        return colorScheme.primary;
+    }
   }
 }

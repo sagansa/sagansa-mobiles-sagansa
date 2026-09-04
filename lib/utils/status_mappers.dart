@@ -122,4 +122,16 @@ class StatusMappers {
         3 => 'Ditolak',
         _ => 'Tidak Diketahui',
       };
+
+  /// Procurement — status global request (label hasil [overallStatusText]
+  /// / label item). Konsisten dgn mapping dashboard procurement:
+  /// Pending Approval=warning, Partially Approved & Approved=info,
+  /// Done=success, Rejected=error, selain itu neutral.
+  static StatusType procurementGlobalStatus(String label) => switch (label) {
+        'Pending Approval' => StatusType.warning,
+        'Partially Approved' || 'Approved' => StatusType.info,
+        'Done' => StatusType.success,
+        'Rejected' => StatusType.error,
+        _ => StatusType.neutral,
+      };
 }

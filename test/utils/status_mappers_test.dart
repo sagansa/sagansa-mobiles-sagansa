@@ -166,4 +166,39 @@ void main() {
       expect(StatusMappers.hygieneStatus(1), StatusType.warning);
     });
   });
+
+  group('StatusMappers.procurementGlobalStatus', () {
+    test('Partially Approved → info', () {
+      expect(
+        StatusMappers.procurementGlobalStatus('Partially Approved'),
+        StatusType.info,
+      );
+      expect(StatusMappers.procurementGlobalStatus('Approved'), StatusType.info);
+    });
+
+    test('Pending Approval → warning', () {
+      expect(
+        StatusMappers.procurementGlobalStatus('Pending Approval'),
+        StatusType.warning,
+      );
+    });
+
+    test('Done → success', () {
+      expect(StatusMappers.procurementGlobalStatus('Done'), StatusType.success);
+    });
+
+    test('Rejected → error', () {
+      expect(
+        StatusMappers.procurementGlobalStatus('Rejected'),
+        StatusType.error,
+      );
+    });
+
+    test('label tak dikenal → neutral', () {
+      expect(StatusMappers.procurementGlobalStatus('Processed'),
+          StatusType.neutral);
+      expect(StatusMappers.procurementGlobalStatus('No Items'),
+          StatusType.neutral);
+    });
+  });
 }
