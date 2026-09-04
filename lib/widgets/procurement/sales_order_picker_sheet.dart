@@ -55,6 +55,7 @@ class _SalesOrderPickerSheetState extends State<SalesOrderPickerSheet> {
     setState(() {
       _isSearching = true;
       _error = null;
+      _results = null;
     });
     try {
       final results = await widget.onSearch(q);
@@ -129,7 +130,12 @@ class _SalesOrderPickerSheetState extends State<SalesOrderPickerSheet> {
               ),
             )
           else if (_results != null)
-            ..._results!.map(_candidateTile),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _results!.length,
+                itemBuilder: (context, i) => _candidateTile(_results![i]),
+              ),
+            ),
           const SizedBox(height: 8),
         ],
       ),

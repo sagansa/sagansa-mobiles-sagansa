@@ -55,4 +55,43 @@ void main() {
 
     expect(find.text('Penjualan tidak ditemukan.'), findsOneWidget);
   });
+
+  testWidgets('banyak hasil (12) dapat discroll tanpa overflow', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SalesOrderPickerSheet(
+          onSearch: (_) async => List.generate(
+            12,
+            (i) => SalesOrderCandidate(
+              id: 1000 + i,
+              forType: 1,
+              storeName: 'Toko $i',
+              deliveryDate: '2026-09-01',
+              totalPrice: 100000 + i,
+            ),
+          ),
+          onSelected: (_) {},
+        ),
+      ),
+    ));
+
+    await tester.enterText(find.byType(TextField), 'toko');
+    await tester.tap(find.text('Cari'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ORDER #1000'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // Daftar dapat digulir ke hasil terakhir.
+    await tester.scrollUntilVisible(
+      find.text('ORDER #1011'),
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.text('ORDER #1011'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

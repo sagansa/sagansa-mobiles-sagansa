@@ -1283,7 +1283,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                                     ),
                                   ),
                                 );
-                                if (result == true || result != null) {
+                                if (result != null) {
                                   _fetchDetail();
                                 }
                               },
