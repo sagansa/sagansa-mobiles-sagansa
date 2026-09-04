@@ -241,6 +241,8 @@ class InvoicePurchase {
   final String? supplierBankName;
   final String? supplierBankAccountNo;
   final String? supplierBankAccountName;
+  final int? salesOrderId;
+  final SalesOrderSummary? salesOrder;
 
   InvoicePurchase({
     required this.id,
@@ -264,6 +266,8 @@ class InvoicePurchase {
     this.supplierBankName,
     this.supplierBankAccountNo,
     this.supplierBankAccountName,
+    this.salesOrderId,
+    this.salesOrder,
   });
 
   bool get isTransfer => paymentTypeId == 1;
@@ -331,6 +335,11 @@ class InvoicePurchase {
       createdByName: (json['created_by']?['name'] ?? '').toString(),
       detailInvoices: items,
       image: json['image']?.toString(),
+      salesOrderId: _toIntOrNull(json['sales_order_id']),
+      salesOrder: json['sales_order'] == null
+          ? null
+          : SalesOrderSummary.fromJson(
+              Map<String, dynamic>.from(json['sales_order'])),
     );
   }
 }
@@ -529,6 +538,90 @@ class DailySalaryReceiptItem {
       date: json['date']?.toString() ?? '',
       createdByName: json['created_by']?['name']?.toString(),
       createdById: _toIntOrNull(json['created_by']?['id']),
+    );
+  }
+}
+
+/// Ringkasan penjualan terkait invoice (dari showInvoice).
+class SalesOrderSummary {
+  final int id;
+  final int forType;
+  final String? receiptNo;
+  final String storeName;
+  final String? deliveryDate;
+  final int totalPrice;
+
+  const SalesOrderSummary({
+    required this.id,
+    required this.forType,
+    this.receiptNo,
+    required this.storeName,
+    this.deliveryDate,
+    this.totalPrice = 0,
+  });
+
+  String get typeName => switch (forType) {
+        1 => 'DIRECT',
+        2 => 'EMPLOYEE',
+        3 => 'ONLINE',
+        _ => '-',
+      };
+
+  String get label =>
+      receiptNo == null || receiptNo!.isEmpty ? 'ORDER #$id' : receiptNo!;
+
+  factory SalesOrderSummary.fromJson(Map<String, dynamic> json) {
+    return SalesOrderSummary(
+      id: int.tryParse('${json['id']}') ?? 0,
+      forType: int.tryParse('${json['for']}') ?? 0,
+      receiptNo: json['receipt_no']?.toString(),
+      storeName: (json['store']?['nickname'] ??
+              json['store']?['name'] ??
+              json['store_name'] ??
+              '-')
+          .toString(),
+      deliveryDate: json['delivery_date']?.toString(),
+      totalPrice: int.tryParse('${json['total_price'] ?? 0}') ?? 0,
+    );
+  }
+}
+
+/// Hasil pencarian kandidat penjualan (endpoint link-candidates).
+class SalesOrderCandidate {
+  final int id;
+  final int forType;
+  final String? receiptNo;
+  final String storeName;
+  final String? deliveryDate;
+  final int totalPrice;
+
+  const SalesOrderCandidate({
+    required this.id,
+    required this.forType,
+    this.receiptNo,
+    required this.storeName,
+    this.deliveryDate,
+    this.totalPrice = 0,
+  });
+
+  String get typeName => switch (forType) {
+        1 => 'DIRECT',
+        2 => 'EMPLOYEE',
+        3 => 'ONLINE',
+        _ => '-',
+      };
+
+  String get label =>
+      receiptNo == null || receiptNo!.isEmpty ? 'ORDER #$id' : receiptNo!;
+
+  factory SalesOrderCandidate.fromJson(Map<String, dynamic> json) {
+    return SalesOrderCandidate(
+      id: int.tryParse('${json['id']}') ?? 0,
+      forType: int.tryParse('${json['for']}') ?? 0,
+      receiptNo: json['receipt_no']?.toString(),
+      storeName: (json['store_name'] ?? '-').toString(),
+      deliveryDate: json['delivery_date']?.toString(),
+      totalPrice: int.tryParse('${json['total_price'] ?? 0}') ?? 0,
     );
   }
 }
