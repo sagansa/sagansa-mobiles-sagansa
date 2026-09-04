@@ -561,6 +561,7 @@ class DirectOrderDetailView extends StatelessWidget {
       selectedStatus: formState.selectedStatus,
       isSubmitting: formState.isSubmitting,
       hasPhotos: provider.imageFiles.isNotEmpty,
+      showReturnOption: false,
       receiverField: _buildGoldTextField(
         labelText: 'Nama Penerima (Opsional)',
         controller: provider.receiverController,

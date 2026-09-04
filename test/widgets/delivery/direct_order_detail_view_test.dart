@@ -1,0 +1,114 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:provider/provider.dart';
+import 'package:sagansa/models/enums/delivery_status.dart';
+import 'package:sagansa/models/enums/order_mode.dart';
+import 'package:sagansa/providers/delivery_provider.dart';
+import 'package:sagansa/providers/printer_provider.dart';
+import 'package:sagansa/services/delivery_status_repository.dart';
+import 'package:sagansa/services/payment_proof_pdf_service.dart';
+import 'package:sagansa/services/presence_service.dart';
+import 'package:sagansa/services/sticker_print_orchestrator.dart';
+import 'package:sagansa/widgets/delivery/direct_order_detail_view.dart';
+
+class _MockPresence extends Mock implements PresenceService {}
+
+class _MockRepository extends Mock implements DeliveryStatusRepository {}
+
+class _MockPdf extends Mock implements PaymentProofPdfService {}
+
+class _MockSticker extends Mock implements StickerPrintOrchestrator {}
+
+Map<String, dynamic> directOrder({int deliveryStatus = 4}) => {
+      'id': 11739,
+      'store_name': 'Toko A',
+      'payment_method': 'transfer',
+      'payment_status': '1',
+      'delivery_status': deliveryStatus,
+      'total_price': 410000,
+      'items': [
+        {
+          'quantity': 2,
+          'product_unit': 'pcs',
+          'product_name': 'Biji Wijen Putih',
+          'unit_price': 55000,
+          'subtotal_price': 110000,
+        },
+        {
+          'quantity': 1,
+          'product_unit': 'bal',
+          'product_name': 'Mete Menir BB2',
+          'unit_price': 300000,
+          'subtotal_price': 300000,
+        },
+      ],
+    };
+
+Future<DeliveryProvider> makeProvider({required bool isAdmin}) async {
+  final presence = _MockPresence();
+  final repo = _MockRepository();
+  when(() => repo.loadAdminRole()).thenAnswer((_) async => isAdmin);
+  when(() => repo.loadPrintedStickers()).thenAnswer((_) async => {});
+  when(() => presence.getSalesOrders(
+        page: any(named: 'page'),
+        perPage: any(named: 'perPage'),
+        deliveryStatus: any(named: 'deliveryStatus'),
+        hasPaymentProof: any(named: 'hasPaymentProof'),
+        paymentProofPrinted: any(named: 'paymentProofPrinted'),
+        orderFor: any(named: 'orderFor'),
+      )).thenAnswer((_) async =>
+      {'success': true, 'data': [], 'meta': {'last_page': 1}});
+
+  final provider = DeliveryProvider(
+    orderMode: OrderMode.direct,
+    presenceService: presence,
+    repository: repo,
+    pdfService: _MockPdf(),
+    stickerOrchestrator: _MockSticker(),
+  );
+  await provider.initialize();
+  return provider;
+}
+
+Future<void> pumpDetail(
+  WidgetTester tester, {
+  required DeliveryProvider provider,
+  required Map<String, dynamic> order,
+  required DeliveryStatus status,
+}) async {
+  provider.selectOrder(order);
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      ChangeNotifierProvider<DeliveryProvider>.value(value: provider),
+      ChangeNotifierProvider<PrinterProvider>(create: (_) => PrinterProvider()),
+    ],
+    child: MaterialApp(
+      home: Scaffold(
+        body: DirectOrderDetailView(
+          order: order,
+          orderMode: OrderMode.direct,
+          status: status,
+        ),
+      ),
+    ),
+  ));
+  await tester.pump();
+}
+
+void main() {
+  testWidgets('form kirim bukti: tanpa chip Sudah Dikirim/Dikembalikan',
+      (tester) async {
+    final provider = await makeProvider(isAdmin: false);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 4),
+      status: DeliveryStatus.ready,
+    );
+
+    expect(find.text('Sudah Dikirim'), findsNothing);
+    expect(find.text('Dikembalikan'), findsNothing);
+    expect(find.text('Kirim Bukti Pengiriman'), findsWidgets);
+  });
+}
