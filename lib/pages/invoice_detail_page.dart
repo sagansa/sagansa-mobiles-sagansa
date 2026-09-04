@@ -646,6 +646,55 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                               ),
                             ),
                           ),
+                        ] else if (_isAdmin || _isStaff) ...[
+                          const SizedBox(height: 10),
+                          // Belum ada foto invoice: entry point unggah foto
+                          // PERTAMA (admin/staff), mis. supplier mengirim
+                          // invoice setelah invoice dibayar.
+                          Card(
+                            clipBehavior: Clip.antiAlias,
+                            color: colorScheme.surface,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(
+                                  color: colorScheme.outlineVariant
+                                      .withValues(alpha: 0.5)),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.image_outlined,
+                                          size: 18, color: colorScheme.primary),
+                                      const SizedBox(width: 7),
+                                      Expanded(
+                                        child: Text('Foto Invoice',
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: _replaceInvoiceImage,
+                                      icon: const Icon(
+                                          Icons.add_a_photo_rounded,
+                                          size: 18),
+                                      label: const Text('Unggah Foto Invoice'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                         AppSpacing.gapVerticalMD,
 
