@@ -227,6 +227,8 @@ class ProcurementService {
     String? notes,
     List<Map<String, dynamic>>? items,
     File? image,
+    int? salesOrderId,
+    bool clearSalesOrderLink = false,
   }) async {
     final fields = <String, String>{
       '_method': 'PUT',
@@ -249,6 +251,12 @@ class ProcurementService {
       }
     }
 
+    if (clearSalesOrderLink) {
+      fields['sales_order_id'] = '';
+    } else if (salesOrderId != null) {
+      fields['sales_order_id'] = salesOrderId.toString();
+    }
+
     if (image != null) {
       final path = await ImageUploadService.upload(image,
           directory: 'images/InvoicePurchase');
@@ -264,10 +272,40 @@ class ProcurementService {
     return InvoicePurchase.fromJson(data);
   }
 
+  /// Ganti foto invoice SAJA — berlaku di semua payment_status (endpoint
+  /// khusus backend; edit penuh tetap terkunci setelah dibayar).
+  Future<InvoicePurchase> updateInvoiceImage(int invoiceId, File image) async {
+    final path = await ImageUploadService.upload(image,
+        directory: 'images/InvoicePurchase');
+    if (path == null) throw Exception('Gagal upload gambar ke img service.');
+
+    await _api.multipart(
+      method: 'POST',
+      path: 'procurement/invoices/$invoiceId/image',
+      fields: {'image': path},
+    );
+    return getInvoiceDetail(invoiceId);
+  }
+
+  /// Cari kandidat penjualan utk dikaitkan ke invoice (link-candidates).
+  Future<List<SalesOrderCandidate>> searchSalesOrderCandidates(
+      String query) async {
+    final body = await _api.getRaw(
+      'sales-orders/link-candidates',
+      queryParams: {'q': query},
+    );
+    final list = body['data'] as List? ?? [];
+    return list
+        .map((e) =>
+            SalesOrderCandidate.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
   Future<PaginatedResult<InvoicePurchase>> getInvoices({
     String? orderStatus,
     String? paymentStatus,
     int? storeId,
+    int? supplierId,
     int page = 1,
     int perPage = 10,
   }) async {
@@ -278,6 +316,7 @@ class ProcurementService {
     if (orderStatus != null) params['order_status'] = orderStatus;
     if (paymentStatus != null) params['payment_status'] = paymentStatus;
     if (storeId != null) params['store_id'] = storeId.toString();
+    if (supplierId != null) params['supplier_id'] = supplierId.toString();
 
     final body = await _api.getRaw('procurement/invoices', queryParams: params);
     final List<dynamic> invoicesJson = body['data'] ?? [];
@@ -454,6 +493,37 @@ class ProcurementService {
     final data = await _api.multipart(
       method: 'POST',
       path: 'procurement/daily-salary-payment-receipts/$receiptId',
+      fields: fields,
+    );
+    return (data as Map<String, dynamic>?) ?? {};
+  }
+
+  /// Update invoice payment receipt (edit daftar invoice, transfer_amount, notes, image).
+  Future<Map<String, dynamic>> updateInvoicePaymentReceipt({
+    required int receiptId,
+    required List<int> invoiceIds,
+    required int transferAmount,
+    String? notes,
+    File? image,
+  }) async {
+    final fields = <String, String>{};
+    for (var i = 0; i < invoiceIds.length; i++) {
+      fields['invoice_ids[$i]'] = invoiceIds[i].toString();
+    }
+    fields['transfer_amount'] = transferAmount.toString();
+    if (notes != null) {
+      fields['notes'] = notes;
+    }
+    if (image != null) {
+      final path = await ImageUploadService.upload(image,
+          directory: 'images/PaymentReceipt');
+      if (path == null) throw Exception('Gagal upload gambar ke img service.');
+      fields['image'] = path;
+    }
+
+    final data = await _api.multipart(
+      method: 'POST',
+      path: 'procurement/payment-receipts/$receiptId',
       fields: fields,
     );
     return (data as Map<String, dynamic>?) ?? {};
