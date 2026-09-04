@@ -135,4 +135,32 @@ void main() {
 
     expect(find.text('Refund / Kembalikan Order'), findsOneWidget);
   });
+
+  testWidgets('admin melihat harga per item dan Total Harga', (tester) async {
+    final provider = await makeProvider(isAdmin: true);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 4),
+      status: DeliveryStatus.ready,
+    );
+
+    expect(find.text('Total Harga'), findsOneWidget);
+    expect(find.text('Rp 55.000 x 2 = Rp 110.000'), findsOneWidget);
+    expect(find.text('Rp 410.000'), findsOneWidget);
+  });
+
+  testWidgets('non-admin tidak melihat harga maupun Total Harga',
+      (tester) async {
+    final provider = await makeProvider(isAdmin: false);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: directOrder(deliveryStatus: 4),
+      status: DeliveryStatus.ready,
+    );
+
+    expect(find.text('Total Harga'), findsNothing);
+    expect(find.textContaining('x 2 = Rp 110.000'), findsNothing);
+  });
 }

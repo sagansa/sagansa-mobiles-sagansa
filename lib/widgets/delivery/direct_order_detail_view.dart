@@ -248,7 +248,7 @@ class DirectOrderDetailView extends StatelessWidget {
                     .withValues(alpha: 0.3)),
             const SizedBox(height: 12),
             if (order['items'] != null &&
-                (order['items'] as List).isNotEmpty)
+                (order['items'] as List).isNotEmpty) ...[
               ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -283,19 +283,60 @@ class DirectOrderDetailView extends StatelessWidget {
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: Text(
-                          item['product_name'] ?? '-',
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['product_name'] ?? '-',
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            if (listState.isAdmin) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '${provider.formatPrice(item['unit_price'] ?? 0)} x ${item['quantity']} = ${provider.formatPrice(item['subtotal_price'] ?? 0)}',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
                   );
                 },
-              )
-            else
+              ),
+              if (listState.isAdmin) ...[
+                AppSpacing.gapVerticalMD,
+                Divider(
+                    height: 1,
+                    color: colorScheme.outlineVariant
+                        .withValues(alpha: 0.3)),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Harga',
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      provider.formatPrice(order['total_price']),
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ] else
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
                 child: Text(
