@@ -4,14 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/procurement_model.dart';
+import '../../services/image_service.dart';
 import '../../services/procurement_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/constants.dart';
 import '../../utils/format_utils.dart';
+import '../../widgets/procurement/sales_order_link_card.dart';
+import '../../widgets/procurement/sales_order_picker_sheet.dart';
 import '../../widgets/safe_bottom_bar.dart';
+import 'create_payment_receipt_page.dart';
 import 'edit_invoice_page.dart';
-import 'invoice_selection_page.dart';
+import 'edit_payment_receipt_page.dart';
 
 class InvoiceDetailPage extends StatefulWidget {
   final int invoiceId;
@@ -138,6 +142,68 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     // tetap menampilkan data lama sampai di-refresh manual.
     if (mounted) {
       _fetchDetail();
+    }
+  }
+
+  /// Ganti foto invoice (admin/staff) — endpoint khusus yang berlaku di
+  /// semua payment_status tanpa membuka edit penuh invoice.
+  Future<void> _replaceInvoiceImage() async {
+    final photo = await ImageService.selectAndPickImage(context);
+    if (photo == null || !mounted) return;
+    try {
+      await _procurementService
+          .updateInvoiceImage(widget.invoiceId, photo);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Foto invoice berhasil diperbarui.')));
+      _fetchDetail();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Theme.of(context).colorScheme.error));
+    }
+  }
+
+  /// Section "Penjualan Terkait": kaitan invoice → penjualan. Aksi
+  /// link/unlink hanya aktif bila [canEdit] (status '1' + berhak edit).
+  Widget _buildSalesOrderLinkSection() {
+    final canEdit = _invoice!.paymentStatus == '1' &&
+        (_isAdmin || _isStaff || _invoice!.createdById == _currentUserId);
+    return SalesOrderLinkCard(
+      invoice: _invoice!,
+      canEdit: canEdit,
+      onLink: _pickSalesOrder,
+      onUnlink: () => _setSalesOrderLink(clear: true),
+    );
+  }
+
+  Future<void> _pickSalesOrder() async {
+    final candidate = await SalesOrderPickerSheet.show(
+      context,
+      onSearch: _procurementService.searchSalesOrderCandidates,
+    );
+    if (candidate == null || !mounted) return;
+    await _setSalesOrderLink(salesOrderId: candidate.id);
+  }
+
+  Future<void> _setSalesOrderLink(
+      {int? salesOrderId, bool clear = false}) async {
+    try {
+      await _procurementService.updateInvoice(
+        widget.invoiceId,
+        salesOrderId: salesOrderId,
+        clearSalesOrderLink: clear,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kaitan penjualan disimpan.')));
+      _fetchDetail();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Theme.of(context).colorScheme.error));
     }
   }
 
@@ -301,7 +367,9 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
         actions: [
           if (_invoice != null &&
               _invoice!.paymentStatus == '1' &&
-              (_isAdmin || _invoice!.createdById == _currentUserId))
+              (_isAdmin ||
+                  _isStaff ||
+                  _invoice!.createdById == _currentUserId))
             IconButton(
               icon: const Icon(Icons.edit_note_outlined, size: 28),
               onPressed: _navigateToEdit,
@@ -504,6 +572,12 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                             ],
                           ),
                         ),
+                        AppSpacing.gapVerticalMD,
+
+                        // Kartu Penjualan Terkait: referensi invoice ke
+                        // penjualan (link/unlink sales order).
+                        _buildSalesOrderLinkSection(),
+
                         if (_invoice!.imageUrl != null &&
                             _invoice!.imageUrl!.isNotEmpty) ...[
                           const SizedBox(height: 10),
@@ -539,6 +613,21 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                                                       fontWeight:
                                                           FontWeight.bold)),
                                         ),
+                                        if (_isAdmin || _isStaff)
+                                          TextButton.icon(
+                                            onPressed: _replaceInvoiceImage,
+                                            style: TextButton.styleFrom(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding: const EdgeInsets
+                                                  .symmetric(horizontal: 6),
+                                            ),
+                                            icon: const Icon(
+                                                Icons.edit_outlined,
+                                                size: 14),
+                                            label: const Text(
+                                                'Ganti Foto Invoice'),
+                                          ),
                                         Text('Perbesar',
                                             style: theme.textTheme.labelSmall
                                                 ?.copyWith(
@@ -961,18 +1050,47 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Icon(Icons.check_circle,
-                                            size: 20, color: AppColors.success),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Transaksi Pembayaran Sukses',
-                                          style: theme.textTheme.titleSmall
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.success,
-                                          ),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.check_circle,
+                                                size: 20,
+                                                color: AppColors.success),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Transaksi Pembayaran Sukses',
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: AppColors.success,
+                                              ),
+                                            ),
+                                          ],
                                         ),
+                                        if (_isAdmin)
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.edit_outlined,
+                                                size: 20),
+                                            tooltip: 'Edit Payment Receipt',
+                                            onPressed: () async {
+                                              final updated =
+                                                  await Navigator.push<
+                                                      PaymentReceipt>(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      EditPaymentReceiptPage(
+                                                          receipt: receipt),
+                                                ),
+                                              );
+                                              if (updated != null) {
+                                                _fetchDetail();
+                                              }
+                                            },
+                                          ),
                                       ],
                                     ),
                                     if (receipt.image != null &&
@@ -1077,18 +1195,16 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                 ),
                 ),
       bottomSheet: (_invoice != null &&
-                  _invoice!.paymentStatus == '1' &&
-                  _invoice!.paymentTypeId == 1 &&
+                  _invoice!.paymentStatus != '2' &&
                   _isAdmin) ||
               (_invoice != null && _invoice!.orderStatus == '1' && _canReceive)
           ? SafeBottomBar(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                      // Existing: Buat Payment Receipt (admin + draft + transfer type)
+                      // Buat Payment Receipt (admin + invoice belum lunas)
                       if (_invoice != null &&
-                          _invoice!.paymentStatus == '1' &&
-                          _invoice!.paymentTypeId == 1 &&
+                          _invoice!.paymentStatus != '2' &&
                           _isAdmin) ...[
                         Container(
                           width: double.infinity,
@@ -1109,15 +1225,16 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () async {
-                                final result = await Navigator.push(
+                                final result = await Navigator.push<bool>(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => InvoiceSelectionPage(
-                                      initialSelectedIds: {_invoice!.id},
+                                    builder: (context) =>
+                                        CreatePaymentReceiptPage(
+                                      invoices: [_invoice!],
                                     ),
                                   ),
                                 );
-                                if (result != null) {
+                                if (result == true || result != null) {
                                   _fetchDetail();
                                 }
                               },
