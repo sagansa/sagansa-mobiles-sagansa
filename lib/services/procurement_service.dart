@@ -287,17 +287,42 @@ class ProcurementService {
     return getInvoiceDetail(invoiceId);
   }
 
-  /// Cari kandidat penjualan utk dikaitkan ke invoice (link-candidates).
-  Future<List<SalesOrderCandidate>> searchSalesOrderCandidates(
-      String query) async {
-    final body = await _api.getRaw(
-      'sales-orders/link-candidates',
-      queryParams: {'q': query},
-    );
+  /// Daftar kandidat penjualan utk dikaitkan ke invoice (link-candidates):
+  /// order toko online (for=1) 5 hari terakhir, terbaru dulu — dipilih dari
+  /// list, bukan ketik nomor resi (order toko online tidak punya resi).
+  Future<List<SalesOrderCandidate>> getSalesOrderLinkCandidates() async {
+    final body = await _api.getRaw('sales-orders/link-candidates');
     final list = body['data'] as List? ?? [];
     return list
         .map((e) =>
             SalesOrderCandidate.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Invoice pembelian yang sudah terkait ke satu sales order
+  /// (kartu "Invoice Pembelian Terkait" di detail penjualan direct).
+  Future<List<InvoiceLinkCandidate>> getPurchaseInvoices(int orderId) async {
+    final body = await _api.getRaw('sales-orders/$orderId/purchase-invoices');
+    final list = body['data'] as List? ?? [];
+    return list
+        .map((e) =>
+            InvoiceLinkCandidate.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// Kandidat invoice pembelian (draft + belum terkait) utk dikaitkan
+  /// dari sisi penjualan. [q] kosong/null = daftar 20 terbaru.
+  Future<List<InvoiceLinkCandidate>> getInvoiceLinkCandidates(
+      {String? q}) async {
+    var path = 'procurement/invoices/link-candidates';
+    if (q != null && q.trim().isNotEmpty) {
+      path += '?q=${Uri.encodeQueryComponent(q.trim())}';
+    }
+    final body = await _api.getRaw(path);
+    final list = body['data'] as List? ?? [];
+    return list
+        .map((e) =>
+            InvoiceLinkCandidate.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
 

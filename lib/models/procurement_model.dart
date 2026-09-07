@@ -586,7 +586,7 @@ class SalesOrderSummary {
   }
 }
 
-/// Hasil pencarian kandidat penjualan (endpoint link-candidates).
+/// Kandidat penjualan (endpoint link-candidates).
 class SalesOrderCandidate {
   final int id;
   final int forType;
@@ -594,6 +594,9 @@ class SalesOrderCandidate {
   final String storeName;
   final String? deliveryDate;
   final int totalPrice;
+  final String buyerName;
+  final String buyerPhone;
+  final String buyerAddress;
 
   const SalesOrderCandidate({
     required this.id,
@@ -602,6 +605,9 @@ class SalesOrderCandidate {
     required this.storeName,
     this.deliveryDate,
     this.totalPrice = 0,
+    this.buyerName = '-',
+    this.buyerPhone = '',
+    this.buyerAddress = '',
   });
 
   String get typeName => switch (forType) {
@@ -622,6 +628,51 @@ class SalesOrderCandidate {
       storeName: (json['store_name'] ?? '-').toString(),
       deliveryDate: json['delivery_date']?.toString(),
       totalPrice: int.tryParse('${json['total_price'] ?? 0}') ?? 0,
+      buyerName: (json['buyer_name'] ?? '-').toString(),
+      buyerPhone: (json['buyer_phone'] ?? '').toString(),
+      buyerAddress: (json['buyer_address'] ?? '').toString(),
+    );
+  }
+}
+
+/// Baris ringan invoice pembelian dari endpoint purchase-invoices /
+/// invoices/link-candidates (bentuk row identik di kedua endpoint).
+class InvoiceLinkCandidate {
+  final int id;
+  final String supplierName;
+  final int totalPrice;
+  final String paymentStatus;
+  final String orderStatus;
+  final String? date;
+
+  const InvoiceLinkCandidate({
+    required this.id,
+    this.supplierName = '-',
+    this.totalPrice = 0,
+    this.paymentStatus = '1',
+    this.orderStatus = '1',
+    this.date,
+  });
+
+  /// Kaitan hanya bisa diubah selama invoice draft (guard backend
+  /// updateInvoice: payment_status '1').
+  bool get isDraft => paymentStatus == '1';
+
+  String get paymentLabel => switch (paymentStatus) {
+        '1' => 'Belum Dibayar',
+        '2' => 'Sudah Dibayar',
+        '3' => 'Tidak Valid',
+        _ => '-',
+      };
+
+  factory InvoiceLinkCandidate.fromJson(Map<String, dynamic> json) {
+    return InvoiceLinkCandidate(
+      id: int.tryParse('${json['id']}') ?? 0,
+      supplierName: (json['supplier_name'] ?? '-').toString(),
+      totalPrice: int.tryParse('${json['total_price'] ?? 0}') ?? 0,
+      paymentStatus: (json['payment_status'] ?? '1').toString(),
+      orderStatus: (json['order_status'] ?? '1').toString(),
+      date: json['date']?.toString(),
     );
   }
 }
