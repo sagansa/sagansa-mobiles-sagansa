@@ -27,6 +27,8 @@ void main() {
 
     // Default stubs for initialize()
     when(() => mockRepo.loadAdminRole()).thenAnswer((_) async => false);
+    when(() => mockRepo.loadCanManageSalesLink())
+        .thenAnswer((_) async => false);
     when(() => mockRepo.loadPrintedStickers()).thenAnswer((_) async => {});
 
     provider = DeliveryProvider(
@@ -52,6 +54,28 @@ void main() {
     test('form state has no selection', () {
       expect(provider.formState.hasSelection, false);
       expect(provider.formState.selectedOrder, isNull);
+    });
+  });
+
+  group('initialize', () {
+    test('memuat flag isAdmin dan canManageSalesLink', () async {
+      when(() => mockRepo.loadAdminRole()).thenAnswer((_) async => false);
+      when(() => mockRepo.loadCanManageSalesLink())
+          .thenAnswer((_) async => true);
+      when(() => mockPresence.getSalesOrders(
+            page: 1,
+            perPage: 10,
+            orderFor: any(named: 'orderFor'),
+          )).thenAnswer((_) async => {
+                'success': true,
+                'data': [],
+                'meta': {'last_page': 1},
+              });
+
+      await provider.initialize();
+
+      expect(provider.listState.isAdmin, false);
+      expect(provider.listState.canManageSalesLink, true);
     });
   });
 

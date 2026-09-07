@@ -32,4 +32,19 @@ class DeliveryStatusRepository {
         roles.contains('super_admin') ||
         roles.contains('supervisor');
   }
+
+  /// Boleh mengelola kaitan invoice↔penjualan (kartu di detail penjualan
+  /// direct): admin/super_admin + storage-staff. Sengaja TERPISAH dari
+  /// loadAdminRole() (yang juga menghitung supervisor) — guard backend
+  /// sales_order_id tidak memasukkan supervisor.
+  Future<bool> loadCanManageSalesLink() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userString = prefs.getString('user');
+    if (userString == null) return false;
+    final userData = json.decode(userString);
+    final roles = List<String>.from(userData['roles'] ?? []);
+    return roles.contains('admin') ||
+        roles.contains('super_admin') ||
+        roles.contains('storage-staff');
+  }
 }

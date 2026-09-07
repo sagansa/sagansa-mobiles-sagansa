@@ -1,15 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 
 import '../models/enums/order_mode.dart';
 import '../providers/printer_provider.dart';
 import '../services/delivery_status_repository.dart';
+import '../services/image_service.dart';
 import '../services/payment_proof_pdf_service.dart';
 import '../services/presence_service.dart';
 import '../services/sticker_print_orchestrator.dart';
-import '../utils/image_utils.dart';
 
 @immutable
 class DeliveryListState {
@@ -21,6 +21,7 @@ class DeliveryListState {
   final bool isLoadingSearch;
   final bool isPrintingPaymentProof;
   final bool isAdmin;
+  final bool canManageSalesLink;
   final Set<int> printedStickers;
 
   const DeliveryListState({
@@ -32,6 +33,7 @@ class DeliveryListState {
     this.isLoadingSearch = false,
     this.isPrintingPaymentProof = false,
     this.isAdmin = false,
+    this.canManageSalesLink = false,
     this.printedStickers = const {},
   });
 
@@ -44,6 +46,7 @@ class DeliveryListState {
     bool? isLoadingSearch,
     bool? isPrintingPaymentProof,
     bool? isAdmin,
+    bool? canManageSalesLink,
     Set<int>? printedStickers,
   }) {
     return DeliveryListState(
@@ -56,6 +59,7 @@ class DeliveryListState {
       isPrintingPaymentProof:
           isPrintingPaymentProof ?? this.isPrintingPaymentProof,
       isAdmin: isAdmin ?? this.isAdmin,
+      canManageSalesLink: canManageSalesLink ?? this.canManageSalesLink,
       printedStickers: printedStickers ?? this.printedStickers,
     );
   }
@@ -172,8 +176,12 @@ class DeliveryProvider extends ChangeNotifier {
 
   Future<void> initialize() async {
     final admin = await repository.loadAdminRole();
+    final canManageSalesLink = await repository.loadCanManageSalesLink();
     final stickers = await repository.loadPrintedStickers();
-    _listState = _listState.copyWith(isAdmin: admin, printedStickers: stickers);
+    _listState = _listState.copyWith(
+        isAdmin: admin,
+        canManageSalesLink: canManageSalesLink,
+        printedStickers: stickers);
     notifyListeners();
     loadInitialOrders();
   }
@@ -339,14 +347,11 @@ class DeliveryProvider extends ChangeNotifier {
   }
 
   Future<void> addPhoto() async {
-    final source = await ImagePicker().pickImage(
+    final photo = await ImageService.pickAndResizeImage(
       source: ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1024,
     );
-    if (source != null) {
-      final compressed = await ImageUtils.compressImage(source.path);
-      imageFiles.add(compressed);
+    if (photo != null) {
+      imageFiles.add(photo);
       notifyListeners();
     }
   }
