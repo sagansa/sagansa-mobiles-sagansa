@@ -13,6 +13,7 @@ import '../../utils/format_utils.dart';
 import '../../widgets/procurement/sales_order_link_card.dart';
 import '../../widgets/procurement/sales_order_picker_sheet.dart';
 import '../../widgets/safe_bottom_bar.dart';
+import '../widgets/app_snackbar.dart';
 import 'create_payment_receipt_page.dart';
 import 'edit_invoice_page.dart';
 import 'edit_payment_receipt_page.dart';
@@ -38,6 +39,17 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   bool _isReceiving = false;
   bool _isDeleting = false;
   bool _isStaff = false;
+  // Penjualan Terkait hanya untuk storage-staff & admin (lihat
+  // _buildSalesOrderLinkSection dan guard sales_order_id di backend).
+  bool _canManageSalesLink = false;
+
+  /// Foto invoice dikunci ketika sudah final: SUDAH DIBAYAR (payment '2')
+  /// DAN SUDAH DITERIMA (order '2') — sinkron dengan guard backend
+  /// updateInvoiceImage.
+  bool get _photoLocked =>
+      _invoice != null &&
+      _invoice!.paymentStatus == '2' &&
+      _invoice!.orderStatus == '2';
   bool _qrisLoading = false;
   Map<String, dynamic>? _qrisData;
   String? _qrisError;
@@ -56,6 +68,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
       final roles = List<String>.from(userData['roles'] ?? []);
       _isAdmin = roles.contains('admin') || roles.contains('super_admin');
       _isStaff = roles.contains('staff');
+      _canManageSalesLink = _isAdmin || roles.contains('storage-staff');
       _currentUserId = userData['id'] ?? 0;
       _canReceive =
           roles.any((r) => ['staff', 'admin', 'super_admin'].contains(r));
@@ -159,17 +172,19 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
       _fetchDetail();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Theme.of(context).colorScheme.error));
+      showAppSnackBar(
+        context,
+        e.toString().replaceAll('Exception: ', ''),
+        background: Theme.of(context).colorScheme.error,
+      );
     }
   }
 
   /// Section "Penjualan Terkait": kaitan invoice → penjualan. Aksi
   /// link/unlink hanya aktif bila [canEdit] (status '1' + berhak edit).
   Widget _buildSalesOrderLinkSection() {
-    final canEdit = _invoice!.paymentStatus == '1' &&
-        (_isAdmin || _isStaff || _invoice!.createdById == _currentUserId);
+    final canEdit =
+        _invoice!.paymentStatus == '1' && _canManageSalesLink;
     return SalesOrderLinkCard(
       invoice: _invoice!,
       canEdit: canEdit,
@@ -181,7 +196,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   Future<void> _pickSalesOrder() async {
     final candidate = await SalesOrderPickerSheet.show(
       context,
-      onSearch: _procurementService.searchSalesOrderCandidates,
+      onLoad: _procurementService.getSalesOrderLinkCandidates,
     );
     if (candidate == null || !mounted) return;
     await _setSalesOrderLink(salesOrderId: candidate.id);
@@ -201,9 +216,11 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
       _fetchDetail();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Theme.of(context).colorScheme.error));
+      showAppSnackBar(
+        context,
+        e.toString().replaceAll('Exception: ', ''),
+        background: Theme.of(context).colorScheme.error,
+      );
     }
   }
 
@@ -566,6 +583,19 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                                     const SizedBox(height: 8),
                                     _buildInfoRow('Tipe Pembayaran',
                                         _invoice!.paymentTypeText, theme),
+                                    if (_invoice!.isCash) ...[
+                                      const SizedBox(height: 8),
+                                      _buildInfoRow(
+                                          'Closing',
+                                          _invoice!
+                                                  .closingStores.isNotEmpty
+                                              ? _invoice!.closingStores
+                                                  .map((c) =>
+                                                      '#${c.id} (${c.date})')
+                                                  .join(', ')
+                                              : 'Belum terkait closing',
+                                          theme),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -575,8 +605,10 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                         AppSpacing.gapVerticalMD,
 
                         // Kartu Penjualan Terkait: referensi invoice ke
-                        // penjualan (link/unlink sales order).
-                        _buildSalesOrderLinkSection(),
+                        // penjualan (link/unlink sales order). Hanya tampil
+                        // untuk storage-staff & admin.
+                        if (_canManageSalesLink)
+                          _buildSalesOrderLinkSection(),
 
                         if (_invoice!.imageUrl != null &&
                             _invoice!.imageUrl!.isNotEmpty) ...[
@@ -613,7 +645,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                                                       fontWeight:
                                                           FontWeight.bold)),
                                         ),
-                                        if (_isAdmin || _isStaff)
+                                        if ((_isAdmin || _isStaff) &&
+                                            !_photoLocked)
                                           TextButton.icon(
                                             onPressed: _replaceInvoiceImage,
                                             style: TextButton.styleFrom(
@@ -646,7 +679,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                               ),
                             ),
                           ),
-                        ] else if (_isAdmin || _isStaff) ...[
+                        ] else if ((_isAdmin || _isStaff) &&
+                            !_photoLocked) ...[
                           const SizedBox(height: 10),
                           // Belum ada foto invoice: entry point unggah foto
                           // PERTAMA (admin/staff), mis. supplier mengirim

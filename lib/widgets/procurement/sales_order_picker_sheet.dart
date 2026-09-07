@@ -2,21 +2,25 @@ import 'package:flutter/material.dart';
 import '../../models/procurement_model.dart';
 import '../../utils/format_utils.dart';
 
-/// Bottom sheet pencarian penjualan untuk dikaitkan ke invoice.
-/// [onSearch] dipanggil dengan query; hasil ditampilkan sebagai kartu.
+/// Bottom sheet daftar penjualan untuk dikaitkan ke invoice.
+///
+/// [onLoad] memuat daftar kandidat — order toko online 5 hari terakhir,
+/// terbaru dulu. Daftar dimuat otomatis saat sheet dibuka (tanpa input
+/// nomor resi: order toko online tidak punya resi) dan bisa di-refresh
+/// lewat pull-down.
 class SalesOrderPickerSheet extends StatefulWidget {
-  final Future<List<SalesOrderCandidate>> Function(String query) onSearch;
+  final Future<List<SalesOrderCandidate>> Function() onLoad;
   final ValueChanged<SalesOrderCandidate> onSelected;
 
   const SalesOrderPickerSheet({
     super.key,
-    required this.onSearch,
+    required this.onLoad,
     required this.onSelected,
   });
 
   static Future<SalesOrderCandidate?> show(
     BuildContext context, {
-    required Future<List<SalesOrderCandidate>> Function(String) onSearch,
+    required Future<List<SalesOrderCandidate>> Function() onLoad,
   }) {
     SalesOrderCandidate? result;
     return showModalBottomSheet<SalesOrderCandidate>(
@@ -24,7 +28,7 @@ class SalesOrderPickerSheet extends StatefulWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => SalesOrderPickerSheet(
-        onSearch: onSearch,
+        onLoad: onLoad,
         onSelected: (c) {
           result = c;
           Navigator.pop(context, c);
@@ -38,39 +42,20 @@ class SalesOrderPickerSheet extends StatefulWidget {
 }
 
 class _SalesOrderPickerSheetState extends State<SalesOrderPickerSheet> {
-  final _controller = TextEditingController();
-  List<SalesOrderCandidate>? _results;
-  bool _isSearching = false;
-  String? _error;
+  late Future<List<SalesOrderCandidate>> _future;
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _future = widget.onLoad();
   }
 
-  Future<void> _search() async {
-    final q = _controller.text.trim();
-    if (q.isEmpty) return;
+  void _reload() {
+    // setState tidak boleh mengembalikan Future dari callback-nya —
+    // assignment Future onLoad harus di dalam block, bukan expression.
     setState(() {
-      _isSearching = true;
-      _error = null;
-      _results = null;
+      _future = widget.onLoad();
     });
-    try {
-      final results = await widget.onSearch(q);
-      if (!mounted) return;
-      setState(() {
-        _results = results;
-        _isSearching = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-        _isSearching = false;
-      });
-    }
   }
 
   @override
@@ -78,79 +63,95 @@ class _SalesOrderPickerSheetState extends State<SalesOrderPickerSheet> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Kaitkan ke Penjualan',
-              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  decoration: const InputDecoration(
-                    labelText: 'No. resi / no. order',
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _search(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton(
-                onPressed: _isSearching ? null : _search,
-                child: _isSearching
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Cari'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_error != null)
-            Text(_error!, style: TextStyle(color: cs.error)),
-          if (_results != null && _results!.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text('Penjualan tidak ditemukan.',
-                    style: tt.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant)),
-              ),
-            )
-          else if (_results != null)
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.75,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Kaitkan ke Penjualan',
+                style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('Order toko online 5 hari terakhir',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
             Expanded(
-              child: ListView.builder(
-                itemCount: _results!.length,
-                itemBuilder: (context, i) => _candidateTile(_results![i]),
+              child: FutureBuilder<List<SalesOrderCandidate>>(
+                future: _future,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    final message =
+                        snapshot.error.toString().replaceAll('Exception: ', '');
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(message,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: cs.error)),
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: _reload,
+                            child: const Text('Coba lagi'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final results = snapshot.data ?? const [];
+                  if (results.isEmpty) {
+                    return Center(
+                      child: Text('Tidak ada order 5 hari terakhir.',
+                          style: tt.bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant)),
+                    );
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () async => _reload(),
+                    child: ListView.builder(
+                      itemCount: results.length,
+                      itemBuilder: (context, i) => _candidateTile(results[i]),
+                    ),
+                  );
+                },
               ),
             ),
-          const SizedBox(height: 8),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _candidateTile(SalesOrderCandidate c) {
     final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         onTap: () => widget.onSelected(c),
-        title: Text(c.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text('${c.typeName} • ${c.storeName}'
-            '${c.deliveryDate != null ? ' • ${c.deliveryDate}' : ''}'),
+        // Identitas pembeli jadi info utama — staf mencocokkan order dari
+        // nama/alamat pembeli, bukan nomor resi (order toko online tidak
+        // punya resi).
+        title: Text(c.buyerName,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (c.buyerPhone.isNotEmpty) Text(c.buyerPhone),
+            if (c.buyerAddress.isNotEmpty)
+              Text(c.buyerAddress,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text('${c.label} • ${c.deliveryDate ?? '-'}',
+                style: tt.bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant)),
+          ],
+        ),
+        isThreeLine: c.buyerAddress.isNotEmpty,
         trailing: Text(FormatUtils.formatCurrency(c.totalPrice),
             style: TextStyle(color: cs.primary, fontWeight: FontWeight.bold)),
       ),

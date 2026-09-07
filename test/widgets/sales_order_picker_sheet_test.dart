@@ -3,95 +3,103 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sagansa/models/procurement_model.dart';
 import 'package:sagansa/widgets/procurement/sales_order_picker_sheet.dart';
 
+SalesOrderCandidate candidate(int i) => SalesOrderCandidate(
+      id: 1000 + i,
+      forType: 3,
+      receiptNo: 'SPX-$i',
+      storeName: 'Toko $i',
+      deliveryDate: '2026-09-01',
+      totalPrice: 100000 + i,
+      buyerName: 'Pembeli $i',
+      buyerPhone: '08123456789',
+      buyerAddress: 'Jl. Contoh No. $i',
+    );
+
 void main() {
-  testWidgets('cari lalu pilih kandidat', (tester) async {
+  testWidgets('memuat daftar otomatis lalu memilih kandidat', (tester) async {
     SalesOrderCandidate? picked;
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: SalesOrderPickerSheet(
-          onSearch: (q) async {
-            expect(q, '11739');
-            return const [
-              SalesOrderCandidate(
-                id: 11739,
-                forType: 1,
-                storeName: 'Toko A',
-                deliveryDate: '2026-09-01',
-                totalPrice: 710000,
-              ),
-            ];
-          },
+          onLoad: () async => [candidate(0), candidate(1)],
           onSelected: (c) => picked = c,
         ),
       ),
     ));
-
-    await tester.enterText(find.byType(TextField), '11739');
-    await tester.tap(find.text('Cari'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ORDER #11739'), findsOneWidget);
+    expect(find.text('Pembeli 0'), findsOneWidget);
+    expect(find.text('Pembeli 1'), findsOneWidget);
 
-    await tester.tap(find.text('ORDER #11739'));
+    await tester.tap(find.text('Pembeli 1'));
     await tester.pump();
 
-    expect(picked?.id, 11739);
+    expect(picked?.id, 1001);
   });
 
   testWidgets('hasil kosong menampilkan empty state', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: SalesOrderPickerSheet(
-          onSearch: (_) async => [],
+          onLoad: () async => [],
           onSelected: (_) {},
         ),
       ),
     ));
-
-    await tester.enterText(find.byType(TextField), 'zzz');
-    await tester.tap(find.text('Cari'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Penjualan tidak ditemukan.'), findsOneWidget);
+    expect(find.text('Tidak ada order 5 hari terakhir.'), findsOneWidget);
+  });
+
+  testWidgets('error menampilkan pesan dan bisa dicoba lagi', (tester) async {
+    var calls = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SalesOrderPickerSheet(
+          onLoad: () async {
+            calls++;
+            if (calls == 1) throw Exception('Gagal memuat kandidat.');
+            return [candidate(0)];
+          },
+          onSelected: (_) {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Gagal memuat kandidat.'), findsOneWidget);
+
+    await tester.tap(find.text('Coba lagi'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pembeli 0'), findsOneWidget);
+    expect(calls, 2);
   });
 
   testWidgets('banyak hasil (12) dapat discroll tanpa overflow', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: SalesOrderPickerSheet(
-          onSearch: (_) async => List.generate(
-            12,
-            (i) => SalesOrderCandidate(
-              id: 1000 + i,
-              forType: 1,
-              storeName: 'Toko $i',
-              deliveryDate: '2026-09-01',
-              totalPrice: 100000 + i,
-            ),
-          ),
+          onLoad: () async => List.generate(12, candidate),
           onSelected: (_) {},
         ),
       ),
     ));
-
-    await tester.enterText(find.byType(TextField), 'toko');
-    await tester.tap(find.text('Cari'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ORDER #1000'), findsOneWidget);
+    expect(find.text('Pembeli 0'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    // Daftar dapat digulir ke hasil terakhir.
     await tester.scrollUntilVisible(
-      find.text('ORDER #1011'),
+      find.text('Pembeli 11'),
       200,
       scrollable: find.descendant(
         of: find.byType(ListView),
         matching: find.byType(Scrollable),
       ),
     );
-    expect(find.text('ORDER #1011'), findsOneWidget);
+    expect(find.text('Pembeli 11'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
