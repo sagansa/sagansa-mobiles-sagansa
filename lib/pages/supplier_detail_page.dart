@@ -1,10 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../theme/app_colors.dart';
 import '../models/supplier_model.dart';
 import '../providers/supplier_provider.dart';
+import '../services/image_service.dart';
 import '../theme/app_spacing.dart';
 import '../utils/constants.dart';
 import '../widgets/app_dialogs.dart';
@@ -28,10 +33,47 @@ class SupplierDetailPage extends StatelessWidget {
   }
 }
 
-class _SupplierDetailScaffold extends StatelessWidget {
+class _SupplierDetailScaffold extends StatefulWidget {
   final int supplierId;
 
   const _SupplierDetailScaffold({required this.supplierId});
+
+  @override
+  State<_SupplierDetailScaffold> createState() =>
+      _SupplierDetailScaffoldState();
+}
+
+class _SupplierDetailScaffoldState extends State<_SupplierDetailScaffold> {
+  bool _isAdmin = false;
+  bool _isSupervisor = false;
+  bool _isStaff = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoles();
+  }
+
+  Future<void> _loadRoles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userString = prefs.getString('user');
+      if (userString != null) {
+        final userData = json.decode(userString);
+        final roles = List<String>.from(userData['roles'] ?? []);
+        if (mounted) {
+          setState(() {
+            _isAdmin = roles.contains('admin') || roles.contains('super_admin');
+            _isSupervisor = roles.contains('supervisor');
+            _isStaff = roles.contains('staff');
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  bool get _canEditFields => _isAdmin || _isSupervisor;
+  bool get _canVerify => _isAdmin;
 
   Future<void> _delete(BuildContext context) async {
     final provider = context.read<SupplierProvider>();
@@ -45,7 +87,7 @@ class _SupplierDetailScaffold extends StatelessWidget {
     );
     if (!confirmed) return;
     try {
-      await provider.deleteSupplier(supplierId);
+      await provider.deleteSupplier(widget.supplierId);
       if (!context.mounted) return;
       showSuccessSnackBar(context, 'Supplier berhasil dihapus.');
       Navigator.pop(context, true);
@@ -62,7 +104,107 @@ class _SupplierDetailScaffold extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (_) => SupplierFormPage(supplier: supplier)),
     );
-    if (result == true) provider.fetchDetail(supplierId);
+    if (result == true) provider.fetchDetail(widget.supplierId);
+  }
+
+  Future<void> _pickAndUploadPhoto(BuildContext context) async {
+    final provider = context.read<SupplierProvider>();
+    final photo = await ImageService.pickAndResizeImage(
+      source: ImageSource.gallery,
+    );
+    if (photo == null) return;
+    try {
+      await provider.submitUpdate(widget.supplierId, {}, image: photo);
+      if (!context.mounted) return;
+      showSuccessSnackBar(context, 'Foto berhasil diperbarui.');
+      provider.fetchDetail(widget.supplierId);
+    } catch (e) {
+      if (!context.mounted) return;
+      showErrorSnackBar(context, e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<void> _showVerificationDialog(BuildContext context) async {
+    final provider = context.read<SupplierProvider>();
+    final supplier = provider.detail.supplier;
+    if (supplier == null) return;
+
+    final hasPhoto = supplier.image != null && supplier.image!.isNotEmpty;
+    int? selectedStatus = supplier.status;
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Verifikasi Supplier'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(supplier.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              RadioGroup<int>(
+                groupValue: selectedStatus,
+                onChanged: (v) => setDialogState(() => selectedStatus = v),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const RadioListTile<int>(
+                      title: Text('Belum Diperiksa'),
+                      value: 1,
+                    ),
+                    // Valid dikunci sampai supplier punya foto (guard sama di
+                    // backend: 422 saat set status 2 tanpa foto).
+                    _lockedWhenNoPhoto(
+                      enabled: hasPhoto,
+                      child: RadioListTile<int>(
+                        title: const Text('Valid'),
+                        subtitle:
+                            hasPhoto ? null : const Text('Perlu foto supplier'),
+                        value: 2,
+                      ),
+                    ),
+                    const RadioListTile<int>(
+                      title: Text('Blacklist'),
+                      value: 3,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: selectedStatus != null && selectedStatus != supplier.status
+                  ? () => Navigator.pop(ctx, selectedStatus)
+                  : null,
+              child: const Text('Simpan'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null || !context.mounted) return;
+    try {
+      await provider.submitUpdate(widget.supplierId, {'status': result});
+      if (!context.mounted) return;
+      showSuccessSnackBar(context, 'Status supplier berhasil diperbarui.');
+      provider.fetchDetail(widget.supplierId);
+    } catch (e) {
+      if (!context.mounted) return;
+      showErrorSnackBar(context, e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  /// Opsi "Valid" dikunci bila supplier belum punya foto — guard backend
+  /// menolak status 2 tanpa foto (422).
+  Widget _lockedWhenNoPhoto({required bool enabled, required Widget child}) {
+    if (enabled) return child;
+    return IgnorePointer(child: Opacity(opacity: 0.55, child: child));
   }
 
   @override
@@ -73,6 +215,7 @@ class _SupplierDetailScaffold extends StatelessWidget {
     final detail = provider.detail;
 
     return Scaffold(
+      extendBody: true,
       body: detail.isLoading
           ? const Center(child: CircularProgressIndicator())
           : detail.errorMessage != null
@@ -95,6 +238,7 @@ class _SupplierDetailScaffold extends StatelessWidget {
     final imageUrl = s.image != null && s.image!.isNotEmpty
         ? _buildImageUrl(s.image!)
         : null;
+    final hasPhoto = s.image != null && s.image!.isNotEmpty;
 
     return CustomScrollView(
       slivers: [
@@ -102,17 +246,19 @@ class _SupplierDetailScaffold extends StatelessWidget {
           expandedHeight: imageUrl != null ? 240 : 120,
           pinned: true,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.edit_rounded),
-              onPressed: () => _openEdit(context),
-              tooltip: 'Edit',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => _delete(context),
-              tooltip: 'Hapus',
-              color: colorScheme.error,
-            ),
+            if (_canEditFields) ...[
+              IconButton(
+                icon: const Icon(Icons.edit_rounded),
+                onPressed: () => _openEdit(context),
+                tooltip: 'Edit',
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => _delete(context),
+                tooltip: 'Hapus',
+                color: colorScheme.error,
+              ),
+            ],
           ],
           flexibleSpace: FlexibleSpaceBar(
             title: Text(
@@ -140,7 +286,7 @@ class _SupplierDetailScaffold extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Status badge
+                  // Status badge + Verify button
                   Row(
                     children: [
                       StatusBadge(
@@ -152,9 +298,47 @@ class _SupplierDetailScaffold extends StatelessWidget {
                                 : StatusType.warning,
                         size: BadgeSize.medium,
                       ),
+                      if (_canVerify) ...[
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _showVerificationDialog(context),
+                          icon: const Icon(Icons.verified_outlined, size: 16),
+                          label: const Text('Verifikasi'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   AppSpacing.gapVerticalLG,
+
+                  // Photo button for all roles
+                  if (_canEditFields || _isStaff) ...[
+                    _buildSectionTitle('Foto', theme),
+                    _buildInfoCard(
+                      colorScheme: colorScheme,
+                      theme: theme,
+                      children: [
+                        ListTile(
+                          leading: Icon(
+                            hasPhoto ? Icons.photo : Icons.add_a_photo_outlined,
+                            color: AppColors.info,
+                          ),
+                          title: Text(hasPhoto ? 'Ganti Foto' : 'Tambah Foto'),
+                          subtitle: Text(
+                            hasPhoto ? 'Tap untuk mengganti foto supplier' : 'Tap untuk menambahkan foto',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => _pickAndUploadPhoto(context),
+                        ),
+                      ],
+                    ),
+                    AppSpacing.gapVerticalMD,
+                  ],
 
                   // Contact section
                   if (s.noTelp != null) ...[
@@ -477,7 +661,7 @@ class _SupplierDetailScaffold extends StatelessWidget {
             ),
             AppSpacing.gapVerticalMD,
             ElevatedButton.icon(
-              onPressed: () => provider.fetchDetail(supplierId),
+              onPressed: () => provider.fetchDetail(widget.supplierId),
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Coba Lagi'),
             ),

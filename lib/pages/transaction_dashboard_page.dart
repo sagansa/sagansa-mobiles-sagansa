@@ -23,6 +23,7 @@ class _TransactionDashboardPageState extends State<TransactionDashboardPage> {
   bool isAdmin = false;
   bool isSupervisor = false;
   bool isSales = false;
+  bool isStaff = false;
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _TransactionDashboardPageState extends State<TransactionDashboardPage> {
                 userRoles.contains('super_admin');
             isSupervisor = userRoles.contains('supervisor');
             isSales = userRoles.contains('sales');
+            isStaff = userRoles.contains('staff');
           });
         }
       }
@@ -109,7 +111,7 @@ class _TransactionDashboardPageState extends State<TransactionDashboardPage> {
           icon: Icons.store_mall_directory_outlined,
           title: 'Supplier',
           subtitle: 'Kelola daftar supplier & rekening bank.',
-          visible: isAdmin || isSupervisor,
+          visible: isAdmin || isSupervisor || isStaff,
           onTap: () {
             Navigator.push(
               context,

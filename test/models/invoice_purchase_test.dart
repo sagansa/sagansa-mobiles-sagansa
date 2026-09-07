@@ -55,4 +55,51 @@ void main() {
       expect(c.totalPrice, 150000);
     });
   });
+
+  group('InvoicePurchase.fromJson closing stores', () {
+    test('parsing closing_stores terkait', () {
+      final inv = InvoicePurchase.fromJson({
+        'id': 7,
+        'store_id': 1,
+        'date': '2026-09-08',
+        'payment_type_id': 2,
+        'created_by_id': 9,
+        'closing_stores': [
+          {'id': 12, 'date': '2026-09-05', 'pivot': {}},
+          {'id': 15, 'date': '2026-09-07', 'pivot': {}},
+        ],
+      });
+
+      expect(inv.isCash, isTrue);
+      expect(inv.closingStores.length, 2);
+      expect(inv.closingStores.first.id, 12);
+      expect(inv.closingStores.first.date, '2026-09-05');
+      expect(inv.closingStores[1].id, 15);
+    });
+
+    test('invoice transfer isCash false', () {
+      final inv = InvoicePurchase.fromJson({
+        'id': 8,
+        'store_id': 1,
+        'date': '2026-09-08',
+        'payment_type_id': 1,
+        'created_by_id': 9,
+      });
+
+      expect(inv.isCash, isFalse);
+    });
+
+    test('tanpa closing_stores -> list kosong', () {
+      final inv = InvoicePurchase.fromJson({
+        'id': 9,
+        'store_id': 1,
+        'date': '2026-09-08',
+        'payment_type_id': 2,
+        'created_by_id': 9,
+      });
+
+      expect(inv.isCash, isTrue);
+      expect(inv.closingStores, isEmpty);
+    });
+  });
 }

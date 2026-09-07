@@ -215,6 +215,20 @@ class LastPurchasePrice {
   bool get hasData => unitPrice > 0;
 }
 
+class ClosingStoreRef {
+  final int id;
+  final String date;
+
+  ClosingStoreRef({required this.id, required this.date});
+
+  factory ClosingStoreRef.fromJson(Map<String, dynamic> json) {
+    return ClosingStoreRef(
+      id: _toInt(json['id']),
+      date: (json['date'] ?? '').toString(),
+    );
+  }
+}
+
 class InvoicePurchase {
   final int id;
   final int? paymentTypeId;
@@ -243,6 +257,7 @@ class InvoicePurchase {
   final String? supplierBankAccountName;
   final int? salesOrderId;
   final SalesOrderSummary? salesOrder;
+  final List<ClosingStoreRef> closingStores;
 
   InvoicePurchase({
     required this.id,
@@ -268,9 +283,12 @@ class InvoicePurchase {
     this.supplierBankAccountName,
     this.salesOrderId,
     this.salesOrder,
+    this.closingStores = const [],
   });
 
   bool get isTransfer => paymentTypeId == 1;
+
+  bool get isCash => paymentTypeId == 2;
 
   bool get hasSupplierBankAccount =>
       (supplierBankAccountNo ?? '').isNotEmpty &&
@@ -340,6 +358,9 @@ class InvoicePurchase {
           ? null
           : SalesOrderSummary.fromJson(
               Map<String, dynamic>.from(json['sales_order'])),
+      closingStores: (json['closing_stores'] as List? ?? [])
+          .map((e) => ClosingStoreRef.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 }

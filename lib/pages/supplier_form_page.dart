@@ -5,10 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../models/supplier_model.dart';
 import '../providers/supplier_provider.dart';
+import '../services/image_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/constants.dart';
-import '../utils/image_utils.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
@@ -55,13 +56,12 @@ class _SupplierFormView extends StatelessWidget {
         await provider.submitCreate(data, image: provider.form.pickedImage);
       }
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isEditing
-              ? 'Supplier berhasil diperbarui.'
-              : 'Supplier berhasil ditambahkan.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        isEditing
+            ? 'Supplier berhasil diperbarui.'
+            : 'Supplier berhasil ditambahkan.',
+        background: AppColors.success,
       );
       Navigator.pop(context, true);
     } catch (e) {
@@ -82,6 +82,46 @@ class _SupplierFormView extends StatelessWidget {
         SnackBar(
             content: Text(
                 'QRIS tidak valid: ${e.toString().replaceAll("Exception: ", "")}')),
+      );
+    }
+  }
+
+  /// Decode QRIS dari gambar galeri — gambar dipakai sesaat saja untuk
+  /// membaca payload, tidak diunggah/disimpan (paritas `readQrisPayload`
+  /// di apps/ops).
+  Future<void> _decodeQrisFromGallery(BuildContext context) async {
+    final provider = context.read<SupplierProvider>();
+    try {
+      final picked =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
+
+      final scanner = MobileScannerController();
+      try {
+        final capture = await scanner.analyzeImage(picked.path);
+        final raw =
+            capture?.barcodes.firstOrNull?.rawValue?.trim();
+        if (raw == null || raw.isEmpty) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'QR tidak terbaca. Coba gambar QRIS yang lebih jelas.')),
+          );
+          return;
+        }
+        provider.qrisController.text = raw;
+        if (!context.mounted) return;
+        await _validateQris(context);
+      } finally {
+        scanner.dispose();
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Gagal membaca gambar: ${e.toString().replaceAll("Exception: ", "")}')),
       );
     }
   }
@@ -232,6 +272,12 @@ class _SupplierFormView extends StatelessWidget {
                                   await _validateQris(context);
                                 }
                               },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.photo_library_outlined),
+                              tooltip: 'Pilih gambar QRIS dari galeri',
+                              onPressed: () =>
+                                  _decodeQrisFromGallery(context),
                             ),
                           ],
                         ),
@@ -417,14 +463,11 @@ class _SupplierFormView extends StatelessWidget {
 
   Future<void> _pickImage(BuildContext context) async {
     final provider = context.read<SupplierProvider>();
-    final picked = await ImagePicker().pickImage(
+    final photo = await ImageService.pickAndResizeImage(
       source: ImageSource.gallery,
-      imageQuality: 75,
-      maxWidth: 1024,
     );
-    if (picked != null) {
-      final compressed = await ImageUtils.compressImage(picked.path);
-      provider.setPickedImage(compressed);
+    if (photo != null) {
+      provider.setPickedImage(photo);
     }
   }
 
@@ -540,7 +583,7 @@ class _SupplierFormView extends StatelessWidget {
         ),
         AppSpacing.gapVerticalXS,
         Text(
-          'Opsional',
+          'Opsional — wajib sebelum diverifikasi Valid',
           style: TextStyle(
             color: colorScheme.onSurface.withValues(alpha: 0.4),
             fontSize: 12,

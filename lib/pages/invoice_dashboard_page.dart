@@ -246,6 +246,7 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      extendBody: true,
       appBar: AppBar(
         title: const Text('Invoice Purchase'),
         actions: [
@@ -523,6 +524,34 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
                                             ),
                                           ),
                                         ),
+                                        if (invoice.isCash &&
+                                            invoice.closingStores
+                                                .isNotEmpty) ...[
+                                          AppSpacing.gapHorizontalSM,
+                                          Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.teal
+                                                  .withValues(alpha: 0.1),
+                                              borderRadius:
+                                                  AppSpacing.borderRadiusXL,
+                                            ),
+                                            child: Text(
+                                              invoice.closingStores.length == 1
+                                                  ? 'Closing #${invoice.closingStores.first.id}'
+                                                  : 'Closing #${invoice.closingStores.first.id} +${invoice.closingStores.length - 1}',
+                                              style: theme
+                                                  .textTheme.labelSmall
+                                                  ?.copyWith(
+                                                color: Colors.teal,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ],

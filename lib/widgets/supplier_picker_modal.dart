@@ -52,6 +52,9 @@ class _SupplierPickerModalState extends State<SupplierPickerModal> {
     final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
 
     final filtered = widget.suppliers.where((s) {
+      // Filter out blacklisted suppliers (status == 3)
+      final status = s['status'];
+      if (status == 3) return false;
       if (_query.isEmpty) return true;
       final name = (s['name'] ?? '').toString().toLowerCase();
       final address = (s['address'] ?? '').toString().toLowerCase();
