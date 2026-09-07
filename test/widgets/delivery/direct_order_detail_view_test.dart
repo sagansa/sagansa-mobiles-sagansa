@@ -54,6 +54,7 @@ Future<DeliveryProvider> makeProvider({
   final presence = _MockPresence();
   final repo = _MockRepository();
   when(() => repo.loadAdminRole()).thenAnswer((_) async => isAdmin);
+  when(() => repo.loadCanManageSalesLink()).thenAnswer((_) async => false);
   when(() => repo.loadPrintedStickers()).thenAnswer((_) async => {});
   when(() => presence.getSalesOrders(
         page: any(named: 'page'),

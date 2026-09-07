@@ -11,6 +11,8 @@ import '../../utils/status_mappers.dart';
 import '../../widgets/detail_row.dart';
 import '../../widgets/photo_uploader.dart';
 import '../../widgets/status_badge.dart';
+import '../app_snackbar.dart';
+import '../procurement/purchase_invoice_link_card.dart';
 import 'delivery_actions.dart';
 import 'delivery_stepper.dart';
 import 'edit_order_assignment_sheet.dart';
@@ -63,6 +65,13 @@ class DirectOrderDetailView extends StatelessWidget {
           ],
           if (order['image_delivery_url'] != null) ...[
             _buildDeliveryPhotoCard(context, textTheme, colorScheme),
+            AppSpacing.gapVerticalMD,
+          ],
+          // Invoice pembelian terkait — hanya untuk admin/super_admin +
+          // storage-staff (flag dimuat di DeliveryProvider.initialize).
+          if (listState.canManageSalesLink &&
+              int.tryParse('${order['id']}') != null) ...[
+            PurchaseInvoiceLinkCard(orderId: int.tryParse('${order['id']}')!),
             AppSpacing.gapVerticalMD,
           ],
           if (canMarkReadyToShip)
@@ -630,12 +639,10 @@ class DirectOrderDetailView extends StatelessWidget {
       onSubmit: () {
         provider.submitDelivery(onSuccess: () {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text(
-                    'Status pengiriman berhasil diperbarui.'),
-                backgroundColor: Colors.green.shade600,
-              ),
+            showAppSnackBar(
+              context,
+              'Status pengiriman berhasil diperbarui.',
+              background: Colors.green.shade600,
             );
           }
         }).catchError((e) {
@@ -657,12 +664,10 @@ class DirectOrderDetailView extends StatelessWidget {
         provider.notesController.text = 'Refund oleh storage staff';
         provider.submitDelivery(onSuccess: () {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text(
-                    'Status pengiriman berhasil diperbarui.'),
-                backgroundColor: Colors.green.shade600,
-              ),
+            showAppSnackBar(
+              context,
+              'Status pengiriman berhasil diperbarui.',
+              background: Colors.green.shade600,
             );
           }
         }).catchError((e) {
@@ -692,14 +697,10 @@ class DirectOrderDetailView extends StatelessWidget {
   }
 
   void _showError(BuildContext context, Object error) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          error.toString().replaceAll('Exception: ', ''),
-          style: const TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ),
+    showAppSnackBar(
+      context,
+      error.toString().replaceAll('Exception: ', ''),
+      background: Theme.of(context).colorScheme.error,
     );
   }
 }
