@@ -44,4 +44,21 @@ void main() {
     expect(find.text('Lepas'), findsOneWidget); // hanya milik invoice draft
     expect(find.textContaining('Sudah Dibayar'), findsOneWidget);
   });
+
+  testWidgets(
+      'server tanpa endpoint (route could not be found) menampilkan pesan ramah, bukan error mentah',
+      (tester) async {
+    when(() => service.getPurchaseInvoices(1)).thenAnswer(
+      (_) async => throw Exception(
+          'The route sales-orders/1/purchase-invoices could not be found.'),
+    );
+
+    await tester.pumpWidget(
+        wrap(PurchaseInvoiceLinkCard(orderId: 1, service: service)));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('belum tersedia di server'), findsOneWidget);
+    expect(find.textContaining('could not be found'), findsNothing);
+    expect(find.text('Coba lagi'), findsOneWidget);
+  });
 }

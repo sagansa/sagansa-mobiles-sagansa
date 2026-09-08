@@ -121,12 +121,28 @@ class _PurchaseInvoiceLinkCardState extends State<PurchaseInvoiceLinkCard> {
                   );
                 }
                 if (snapshot.hasError) {
-                  final message =
+                  final raw =
                       snapshot.error.toString().replaceAll('Exception: ', '');
+                  // Server yang belum memuat endpoint baru membalas 404
+                  // "The route ... could not be found" — sampaikan sebagai
+                  // fitur yang belum tersedia, bukan error mentah.
+                  final routeMissing =
+                      raw.toLowerCase().contains('could not be found');
+                  final message = routeMissing
+                      ? 'Fitur invoice pembelian terkait belum tersedia di '
+                          'server. Perbarui server lalu coba lagi.'
+                      : raw;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(message, style: TextStyle(color: cs.error)),
+                      Text(
+                        message,
+                        style: TextStyle(
+                          color: routeMissing
+                              ? cs.onSurfaceVariant
+                              : cs.error,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       OutlinedButton(
                         onPressed: _reload,
