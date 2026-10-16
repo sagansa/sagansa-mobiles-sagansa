@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/leave_service.dart';
 import '../services/token_store.dart';
+import '../services/widget_bridge.dart';
 import '../utils/constants.dart';
 
 enum AuthState { idle, loading, success, error }
@@ -56,6 +58,8 @@ class AuthProvider with ChangeNotifier {
       _authState = AuthState.idle;
       notifyListeners();
       debugPrint('Token loading completed');
+      // Sinkron token ke widget iOS (App Group) — fire and forget.
+      unawaited(WidgetBridge.syncAuth(token: _token, isAdmin: isAdmin));
     } catch (e) {
       debugPrint('Error loading token: $e');
       _token = '';
@@ -63,6 +67,7 @@ class AuthProvider with ChangeNotifier {
       _authState = AuthState.error;
       _errorMessage = 'Failed to load authentication data';
       notifyListeners();
+      unawaited(WidgetBridge.syncAuth(token: null, isAdmin: false));
     }
   }
 
@@ -146,6 +151,8 @@ class AuthProvider with ChangeNotifier {
         debugPrint('AuthProvider: Error clearing prefs in finally: $e');
       }
 
+      unawaited(WidgetBridge.syncAuth(token: null, isAdmin: false));
+
       _setLoading(false);
       notifyListeners();
     }
@@ -166,6 +173,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> updateToken(String newToken) async {
     _token = newToken;
     await TokenStore.instance.writeToken(newToken);
+    unawaited(WidgetBridge.syncAuth(token: newToken, isAdmin: isAdmin));
     notifyListeners();
   }
 
@@ -237,11 +245,9 @@ class AuthProvider with ChangeNotifier {
         'storage-staff',
       ]);
 
-  /// Sales aktif = ber-role `sales` dan TIDAK ber-role `former-employee`.
-  /// Hanya sales aktif yang boleh membuat/mengubah penjualan employee;
-  /// `sales + former-employee` diblokir dari penjualan (hanya kelola konsumen).
-  bool get canSell =>
-      roles.contains('sales') && !roles.contains('former-employee');
+  /// Berjual = ber-role `sales` — termasuk `sales + former-employee`
+  /// (sales eksternal yang tetap menjual, keputusan 2026-10-16).
+  bool get canSell => roles.contains('sales');
 
   // --- Home data (absorbed from HomeController) ---
 

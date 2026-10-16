@@ -36,13 +36,11 @@ class AuthService {
         !roles.any((r) => staffRoles.contains(r));
   }
 
-  /// Sales aktif = ber-role `sales` dan TIDAK ber-role `former-employee`.
-  /// Hanya sales aktif yang boleh mengakses penjualan employee;
-  /// `sales + former-employee` diblokir dari penjualan dan hanya boleh
-  /// mengumpulkan data calon konsumen.
+  /// Berjual = ber-role `sales` — termasuk `sales + former-employee`
+  /// (sales eksternal yang tetap menjual, keputusan 2026-10-16).
   static Future<bool> canSell() async {
     final roles = await _storedRoles();
-    return roles.contains('sales') && !roles.contains('former-employee');
+    return roles.contains('sales');
   }
 
   static Future<List<String>> _storedRoles() async {
