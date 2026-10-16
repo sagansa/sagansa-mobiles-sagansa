@@ -7,6 +7,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/error_utils.dart';
 import '../utils/format_utils.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_dropdown.dart';
 import 'sales_order_employee_detail_page.dart';
 import 'sales_order_employee_form_page.dart';
@@ -24,10 +26,13 @@ class SalesOrderEmployeeListPage extends StatefulWidget {
 
   @override
   State<SalesOrderEmployeeListPage> createState() =>
-      _SalesOrderEmployeeListPageState();
+      SalesOrderEmployeeListPageState();
 }
 
-class _SalesOrderEmployeeListPageState
+/// Public supaya induk (mis. [SalesHomePage]) bisa memanggil [openCreate]
+/// via `GlobalKey<SalesOrderEmployeeListPageState>` — pola yang sama dengan
+/// `_EmployeeTabContentState` di sales_page.dart.
+class SalesOrderEmployeeListPageState
     extends State<SalesOrderEmployeeListPage> {
   final SalesOrderEmployeeService _service = SalesOrderEmployeeService();
   final ScrollController _scrollController = ScrollController();
@@ -62,10 +67,7 @@ class _SalesOrderEmployeeListPageState
       if (mounted) {
         setState(() {
           _isAdmin = roles.contains('admin') || roles.contains('super_admin');
-          // Sales aktif saja — `sales + former-employee` diblokir dari
-          // penjualan (backend juga menolak dengan 403).
-          _isSales =
-              roles.contains('sales') && !roles.contains('former-employee');
+          _isSales = roles.contains('sales');
         });
       }
     }
@@ -122,7 +124,10 @@ class _SalesOrderEmployeeListPageState
     await _loadData(reset: false);
   }
 
-  Future<void> _openCreate() async {
+  /// Buka form create, lalu refresh list jika ada order baru.
+  /// Public supaya bisa dipanggil dari AppBar induk saat halaman ini
+  /// di-embed dengan `showAppBar: false`.
+  Future<void> openCreate() async {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -147,21 +152,36 @@ class _SalesOrderEmployeeListPageState
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Scaffold(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       appBar: widget.showAppBar
-          ? AppBar(title: const Text('Penjualan Employee'))
-          : null,
-      body: Column(
-        children: [
-          if (_isAdmin) _buildSalesFilter(theme, colorScheme),
-          Expanded(child: _buildBody(theme, colorScheme)),
-        ],
-      ),
-      floatingActionButton: _isSales
-          ? FloatingActionButton(
-              onPressed: _isLoading ? null : _openCreate,
-              child: const Icon(Icons.add),
+          ? GlassAppBar(
+              title: const Text('Penjualan Employee'),
+              actions: [
+                if (_isSales)
+                  BarButtonCluster(
+                    actions: [
+                      BarButtonSpec(
+                        icon: Icons.add_rounded,
+                        iconSize: 22,
+                        tooltip: 'Tambah Order Employee',
+                        onTap: _isLoading ? null : openCreate,
+                      ),
+                    ],
+                  ),
+              ],
             )
           : null,
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
+          children: [
+            if (_isAdmin) _buildSalesFilter(theme, colorScheme),
+            Expanded(child: _buildBody(theme, colorScheme)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -360,12 +380,12 @@ class _OrderTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    AppSpacing.gapVerticalXS,
                     Row(
                       children: [
                         Icon(Icons.calendar_today_outlined,
                             size: 13, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 4),
+                        AppSpacing.gapHorizontalXS,
                         Expanded(
                           child: Text(
                             dateText,
@@ -384,7 +404,7 @@ class _OrderTile extends StatelessWidget {
                         children: [
                           Icon(Icons.person_outline,
                               size: 13, color: cs.onSurfaceVariant),
-                          const SizedBox(width: 4),
+                          AppSpacing.gapHorizontalXS,
                           Expanded(
                             child: Text(
                               order.orderedByName!,
@@ -453,7 +473,7 @@ class _OrderTile extends StatelessWidget {
                           size: 12,
                           color: statusColor,
                         ),
-                        const SizedBox(width: 4),
+                        AppSpacing.gapHorizontalXS,
                         Text(
                           order.paymentStatusLabel,
                           style: theme.textTheme.labelSmall?.copyWith(
@@ -493,7 +513,7 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: cs.onSurfaceVariant),
-          const SizedBox(width: 4),
+          AppSpacing.gapHorizontalXS,
           Flexible(
             child: Text(
               label,

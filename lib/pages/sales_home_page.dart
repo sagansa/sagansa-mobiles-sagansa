@@ -3,16 +3,18 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/auth_service.dart';
-import '../theme/app_spacing.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
+import '../widgets/ios_segmented_control.dart';
 import 'delivery_address_list_page.dart';
 import 'sales_order_employee_list_page.dart';
 
 /// Home khusus user sales-only.
 ///
 /// Tanpa bottom navbar, tanpa drawer, tanpa section presence/clock-in.
-/// Tab "Penjualan" ([SalesOrderEmployeeListPage]) hanya untuk sales aktif —
-/// `sales + former-employee` diblokir dari penjualan dan hanya melihat
-/// tab "Konsumen" ([DeliveryAddressListPage]).
+/// Tab "Penjualan" ([SalesOrderEmployeeListPage]) untuk semua user sales,
+/// termasuk `sales + former-employee` (sales eksternal), bersama tab
+/// "Konsumen" ([DeliveryAddressListPage]).
 class SalesHomePage extends StatefulWidget {
   const SalesHomePage({super.key});
 
@@ -20,10 +22,20 @@ class SalesHomePage extends StatefulWidget {
   State<SalesHomePage> createState() => _SalesHomePageState();
 }
 
-class _SalesHomePageState extends State<SalesHomePage>
-    with SingleTickerProviderStateMixin {
-  TabController? _tabController;
+class _SalesHomePageState extends State<SalesHomePage> {
+  int _index = 0;
   bool _canSell = false;
+  bool _loaded = false;
+
+  /// Kunci ke tab Penjualan untuk memicu create dari AppBar induk —
+  /// list di-embed tanpa AppBar sendiri (`showAppBar: false`).
+  final GlobalKey<SalesOrderEmployeeListPageState> _employeeKey =
+      GlobalKey<SalesOrderEmployeeListPageState>();
+
+  /// Kunci ke tab Konsumen — tombol "+" AppBar induk juga harus bisa
+  /// membuat konsumen saat tab Konsumen aktif.
+  final GlobalKey<DeliveryAddressListPageState> _customerKey =
+      GlobalKey<DeliveryAddressListPageState>();
 
   @override
   void initState() {
@@ -35,16 +47,15 @@ class _SalesHomePageState extends State<SalesHomePage>
   Future<void> _loadCanSell() async {
     final canSell = await AuthService.canSell();
     if (!mounted) return;
-    _tabController?.dispose();
     setState(() {
       _canSell = canSell;
-      _tabController = TabController(length: canSell ? 2 : 1, vsync: this);
+      _loaded = true;
+      _index = 0;
     });
   }
 
   @override
   void dispose() {
-    _tabController?.dispose();
     super.dispose();
   }
 
@@ -65,14 +76,15 @@ class _SalesHomePageState extends State<SalesHomePage>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final userName = context.select<AuthProvider, String>((a) => a.userName);
-    final tabController = _tabController;
 
-    if (tabController == null) {
+    if (!_loaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -81,7 +93,7 @@ class _SalesHomePageState extends State<SalesHomePage>
               style: theme.textTheme.titleSmall,
             ),
             Text(
-              _canSell ? 'Mode Penjualan' : 'Mode Konsumen',
+              'Mode Penjualan',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -89,38 +101,54 @@ class _SalesHomePageState extends State<SalesHomePage>
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
+          BarButtonCluster(
+            actions: [
+              // Tombol create selalu ada: tab Penjualan aktif → order
+              // employee; tab Konsumen aktif → konsumen. List-list di-embed
+              // tanpa AppBar sendiri (`showAppBar: false`), jadi create
+              // harus dipicu dari sini — pola SalesPage.
+              if (_canSell && _index == 0)
+                BarButtonSpec(
+                  icon: Icons.add_rounded,
+                  iconSize: 22,
+                  tooltip: 'Tambah Order Employee',
+                  onTap: () => _employeeKey.currentState?.openCreate(),
+                )
+              else
+                BarButtonSpec(
+                  icon: Icons.add_rounded,
+                  iconSize: 22,
+                  tooltip: 'Tambah Konsumen',
+                  onTap: () => _customerKey.currentState?.openCreate(),
+                ),
+              BarButtonSpec(
+                icon: Icons.logout,
+                tooltip: 'Logout',
+                onTap: _logout,
+              ),
+            ],
           ),
-          AppSpacing.gapHorizontalSM,
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            color: colorScheme.surface,
-            child: TabBar(
-              controller: tabController,
-              indicatorColor: colorScheme.primary,
-              labelColor: colorScheme.primary,
-              unselectedLabelColor: colorScheme.onSurfaceVariant,
-              tabs: _canSell
-                  ? const [Tab(text: 'Penjualan'), Tab(text: 'Konsumen')]
-                  : const [Tab(text: 'Konsumen')],
-            ),
-          ),
-        ),
+        bottom: _canSell
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(52),
+                child: IosSegmentedControl<int>(
+                  segments: const {0: 'Penjualan', 1: 'Konsumen'},
+                  groupValue: _index,
+                  onValueChanged: (v) => setState(() => _index = v),
+                ),
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: tabController,
+      body: IndexedStack(
+        index: _index,
         children: _canSell
-            ? const [
-                SalesOrderEmployeeListPage(showAppBar: false),
-                DeliveryAddressListPage(showAppBar: false),
+            ? [
+                SalesOrderEmployeeListPage(key: _employeeKey, showAppBar: false),
+                DeliveryAddressListPage(key: _customerKey, showAppBar: false),
               ]
-            : const [
-                DeliveryAddressListPage(showAppBar: false),
+            : [
+                DeliveryAddressListPage(key: _customerKey, showAppBar: false),
               ],
       ),
     );
