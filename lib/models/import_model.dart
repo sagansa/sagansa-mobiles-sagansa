@@ -236,6 +236,22 @@ class ImportStageDocCheck {
   ImportDocumentType get typeEnum => ImportDocumentType.fromApi(type);
 }
 
+/// Satu syarat tahap yang belum terpenuhi (dari response 422
+/// advance/finalize): kind = document | data | state.
+class ImportBlocker {
+  final String kind;
+  final String message;
+
+  ImportBlocker({required this.kind, required this.message});
+
+  factory ImportBlocker.fromJson(Map<String, dynamic> json) => ImportBlocker(
+        kind: json['kind']?.toString() ?? 'state',
+        message: json['message']?.toString() ?? '',
+      );
+
+  bool get isDocument => kind == 'document';
+}
+
 /// Checklist satu tahap: label, state (done/current/upcoming), dokumen.
 class ImportStageCheck {
   final ImportStage stage;
@@ -251,7 +267,9 @@ class ImportStageCheck {
   });
 
   factory ImportStageCheck.fromEntry(String stageKey, Map<String, dynamic> v) {
-    final docs = (v['documents'] as Map<String, dynamic>? ?? {})
+    // Backend lama mengirim array PHP kosong sebagai [] (list) — bukan Map.
+    final docsRaw = v['documents'];
+    final docs = (docsRaw is Map<String, dynamic> ? docsRaw : const {})
         .entries
         .map((e) => ImportStageDocCheck(
               type: e.key,

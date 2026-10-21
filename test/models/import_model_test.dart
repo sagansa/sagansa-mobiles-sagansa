@@ -107,6 +107,58 @@ void main() {
     });
   });
 
+  group('ImportStageCheck.fromEntry', () {
+    test('menoleransi documents berupa list (array PHP kosong → JSON [])', () {
+      final check = ImportStageCheck.fromEntry('draft', {
+        'label': 'Draft',
+        'state': 'current',
+        'documents': <dynamic>[],
+      });
+
+      expect(check.stage, ImportStage.draft);
+      expect(check.state, 'current');
+      expect(check.documents, isEmpty);
+    });
+
+    test('memetakan dokumen per tahap', () {
+      final check = ImportStageCheck.fromEntry('payment', {
+        'label': 'Pembayaran',
+        'state': 'upcoming',
+        'documents': {
+          'invoice': {
+            'label': 'Invoice',
+            'required': true,
+            'present': false,
+          },
+        },
+      });
+
+      final doc = check.documents.single;
+      expect(doc.type, 'invoice');
+      expect(doc.label, 'Invoice');
+      expect(doc.required, isTrue);
+      expect(doc.present, isFalse);
+    });
+  });
+
+  group('ImportBlocker', () {
+    test('fromJson & isDocument', () {
+      final doc = ImportBlocker.fromJson({
+        'kind': 'document',
+        'message': 'Dokumen wajib belum diupload: Invoice',
+      });
+      expect(doc.kind, 'document');
+      expect(doc.isDocument, isTrue);
+      expect(doc.message, contains('Invoice'));
+
+      final data = ImportBlocker.fromJson({
+        'kind': 'data',
+        'message': 'Kurs (exchange_rate) harus lebih dari 0.',
+      });
+      expect(data.isDocument, isFalse);
+    });
+  });
+
   group('ImportHppResult.fromJson', () {
     test('memetakan ringkasan & baris item', () {
       final result = ImportHppResult.fromJson({

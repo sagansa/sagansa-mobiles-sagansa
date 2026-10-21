@@ -2,11 +2,26 @@ import '../models/enums/import_stage.dart';
 import '../models/import_model.dart';
 import 'api_client.dart';
 
+/// 422 advance/finalize yang membawa daftar blocker spesifik dari server.
+class ImportBlockedException implements Exception {
+  final String message;
+  final List<ImportBlocker> blockers;
+
+  ImportBlockedException({required this.message, required this.blockers});
+
+  /// Bypass hanya relevan bila SEMUA blocker berupa dokumen yang kurang.
+  bool get canBypassDocuments =>
+      blockers.isNotEmpty && blockers.every((b) => b.isDocument);
+
+  @override
+  String toString() => message;
+}
+
 /// Service modul impor barang (tahapan + dokumen + HPP per produk).
 ///
 /// Endpoint: /import-purchases — tulis di-guard admin/super_admin di
-/// backend; kegagalan 422 (mis. gerbang dokumen belum lengkap) dilempar
-/// sebagai Exception dengan pesan server.
+/// backend; kegagalan 422 advance/finalize yang membawa daftar syarat
+/// dilempar sebagai [ImportBlockedException] berisi blocker spesifik.
 class ImportService {
   final ApiClient _api = ApiClient();
 
@@ -28,12 +43,20 @@ class ImportService {
         .map((e) => ImportPurchase.fromJson(e as Map<String, dynamic>))
         .toList();
     final meta = body['meta'] as Map<String, dynamic>? ?? {};
-    final stageCounts = (meta['stage_counts'] as Map<String, dynamic>? ?? {})
-        .map((k, v) => MapEntry(k, (v is num ? v.toInt() : 0)));
+    // Backend lama mengirim stage_counts sebagai [] (array PHP kosong
+    // diserialisasi menjadi list) — jangan cast langsung ke Map.
+    final rawCounts = meta['stage_counts'];
+    final stageCounts = rawCounts is Map<String, dynamic>
+        ? rawCounts.map((k, v) => MapEntry(k, (v is num ? v.toInt() : 0)))
+        : <String, int>{};
+    final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+    final hasMore = (pagination['current_page'] ?? 1) <
+        (pagination['last_page'] ?? 1);
 
     return {
       'data': rows,
       'stage_counts': stageCounts,
+      'has_more': hasMore,
     };
   }
 
@@ -112,24 +135,59 @@ class ImportService {
     });
   }
 
-  /// Maju satu tahap. Melempar Exception bermuat pesan server bila gerbang
-  /// (dokumen/data) belum terpenuhi.
-  Future<void> advance(int importId) async {
-    await _api.post('import-purchases/$importId/advance');
+  /// Maju satu tahap. Dengan [bypassDocuments], gerbang dokumen dilewati
+  /// (syarat data/state tetap dicek server). Kegagalan gerbang dilempar
+  /// sebagai [ImportBlockedException] berisi daftar syarat yang kurang.
+  Future<void> advance(int importId, {bool bypassDocuments = false}) async {
+    try {
+      await _api.postRaw(
+        'import-purchases/$importId/advance',
+        body: bypassDocuments ? {'bypass_documents': true} : null,
+      );
+    } on ApiException catch (e) {
+      _blockedOrRethrow(e);
+    }
   }
 
   /// Finalisasi: hitung HPP final per produk & update products.hpp.
   /// Return ringkasan HPP untuk ditampilkan.
   Future<ImportHppResult> finalize(int importId) async {
-    final body = await _api.postRaw('import-purchases/$importId/finalize');
-    final hpp = body['hpp'] as Map<String, dynamic>?;
-    if (hpp == null) {
-      throw Exception('Response finalize tidak valid.');
+    try {
+      final body = await _api.postRaw('import-purchases/$importId/finalize');
+      final hpp = body['hpp'] as Map<String, dynamic>?;
+      if (hpp == null) {
+        throw Exception('Response finalize tidak valid.');
+      }
+      return ImportHppResult.fromJson(hpp);
+    } on ApiException catch (e) {
+      _blockedOrRethrow(e);
     }
-    return ImportHppResult.fromJson(hpp);
   }
 
   Future<void> cancel(int importId) async {
     await _api.post('import-purchases/$importId/cancel');
+  }
+
+  /// Hapus permanen proses impor (belum final) beserta item, biaya &
+  /// dokumennya. Server menolak (422) bila sudah final.
+  Future<void> deleteImport(int importId) async {
+    await _api.delete('import-purchases/$importId');
+  }
+
+  /// Ubah ApiException 422 dengan `data.blockers` menjadi
+  /// [ImportBlockedException]; selain itu dilempar ulang apa adanya.
+  Never _blockedOrRethrow(ApiException e) {
+    final data = e.body?['data'];
+    final raw = data is Map<String, dynamic> ? data['blockers'] : null;
+    if (e.statusCode == 422 && raw is List && raw.isNotEmpty) {
+      throw ImportBlockedException(
+        message: e.message,
+        blockers: raw
+            .whereType<Map<String, dynamic>>()
+            .map(ImportBlocker.fromJson)
+            .toList(growable: false),
+      );
+    }
+    throw e;
   }
 }
