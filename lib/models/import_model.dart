@@ -242,7 +242,7 @@ class ImportBlocker {
   final String kind;
   final String message;
 
-  ImportBlocker({required this.kind, required this.message});
+  const ImportBlocker({required this.kind, required this.message});
 
   factory ImportBlocker.fromJson(Map<String, dynamic> json) => ImportBlocker(
         kind: json['kind']?.toString() ?? 'state',
