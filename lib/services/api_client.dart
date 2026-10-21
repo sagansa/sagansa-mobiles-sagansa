@@ -5,6 +5,25 @@ import '../utils/constants.dart';
 import 'auth_session.dart';
 import 'token_store.dart';
 
+/// Exception HTTP berstatus & body ter-parse — pemanggil bisa membaca
+/// payload error terstruktur (mis. data.blockers pada advance impor).
+/// toString() mengembalikan message polos agar dialog generik yang
+/// memanggil replaceFirst('Exception: ', '') tetap berperilaku sama.
+class ApiException implements Exception {
+  final String message;
+  final int statusCode;
+  final Map<String, dynamic>? body;
+
+  ApiException({
+    required this.message,
+    required this.statusCode,
+    this.body,
+  });
+
+  @override
+  String toString() => message;
+}
+
 class ApiClient {
   // Singleton pattern
   static final ApiClient _instance = ApiClient._internal();
@@ -190,14 +209,23 @@ class ApiClient {
     }
 
     final json = jsonDecode(response.body);
-    final errors = json['errors'];
+    final map = json is Map<String, dynamic> ? json : null;
+    final errors = map?['errors'];
     if (errors != null && errors is Map) {
       final message = errors.values.expand((e) => e as List).join(', ');
-      throw Exception(message);
+      throw ApiException(
+        message: message,
+        statusCode: response.statusCode,
+        body: map,
+      );
     }
 
-    throw Exception(json['message'] ??
-        'Terjadi kesalahan pada server (Status ${response.statusCode}).');
+    throw ApiException(
+      message: map?['message']?.toString() ??
+          'Terjadi kesalahan pada server (Status ${response.statusCode}).',
+      statusCode: response.statusCode,
+      body: map,
+    );
   }
 
   /// Sends a PUT request to the specified endpoint path.
@@ -210,6 +238,38 @@ class ApiClient {
       body: body != null ? jsonEncode(body) : null,
     );
     return _handleResponse(response, path: path);
+  }
+
+  /// Sama seperti [put], tapi mengembalikan SELURUH body JSON agar
+  /// pemanggil bisa membaca field di luar `data`.
+  Future<Map<String, dynamic>> putRaw(String path, {dynamic body}) async {
+    final uri = Uri.parse('${ApiConstants.baseUrl}/$path');
+    AppLogger.debug('ApiClient PUT (raw): $uri');
+    final response = await _put(
+      uri,
+      headers: await _headers(),
+      body: body != null ? jsonEncode(body) : null,
+    );
+
+    if (response.statusCode == 401) {
+      _onUnauthorized(path: path);
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final json = jsonDecode(response.body);
+      if (json is Map<String, dynamic>) return json;
+      throw Exception('Format respons tidak dikenali.');
+    }
+
+    final json = jsonDecode(response.body);
+    final errors = json['errors'];
+    if (errors != null && errors is Map) {
+      final message = errors.values.expand((e) => e as List).join(', ');
+      throw Exception(message);
+    }
+
+    throw Exception(json['message'] ??
+        'Terjadi kesalahan pada server (Status ${response.statusCode}).');
   }
 
   /// Sends a PATCH request to the specified endpoint path.
