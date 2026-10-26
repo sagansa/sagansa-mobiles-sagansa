@@ -81,6 +81,12 @@ dependencies:
   # QR code rendering for QRIS display
   qr_flutter: ^4.1.0
 
+  # === Modul surat (document service) ===
+  # Editor isi surat kaya (Quill delta <-> body_html).
+  flutter_quill: ^11.6.0
+  # Pemutar PDF hasil penerbitan surat (pratinjau pra-final & terbitan).
+  pdfrx: ^2.10.1
+
   # Badges for filter action count
   badges: ^3.1.2
 

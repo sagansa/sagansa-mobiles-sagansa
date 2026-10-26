@@ -23,6 +23,15 @@ class ApiConstants {
     defaultValue: baseUrl,
   );
 
+  // Document (surat) service — host terpisah dari API utama, memakai
+  // bearer token Sanctum yang sama. Override lokal via
+  // --dart-define DOCUMENT_BASE_URL=http://127.0.0.1:8002 (pola imgBaseUrl
+  // di image_service.dart).
+  static const String documentBaseUrl = String.fromEnvironment(
+    'DOCUMENT_BASE_URL',
+    defaultValue: 'https://document.sagansa.id',
+  );
+
   // Calendar Endpoint
   static const String calendar = '$baseUrl/calendar';
 
