@@ -290,6 +290,56 @@ void main() {
     expect(find.textContaining('Isi draf penting'), findsOneWidget);
   });
 
+  testWidgets('tab PDF KUA dicabut: empty state "Berkas tidak tersedia" '
+      'TANPA tombol pratinjau (pra-final dijamin 422)', (tester) async {
+    final dicabutService = _FakeDetailService(DocumentModel(
+      id: 'doc-dicabut',
+      number: '019/KUA/DIR/X/2026',
+      status: 'dicabut',
+      classification: 'umum',
+      subject: 'Kuasa sudah dicabut',
+      letterType: _kuaType,
+      // Terbitan lama ada tapi tidak aktif → activeIssuance null.
+      issuances: const [
+        IssuanceModel(
+          id: 'iss-9',
+          method: 'b',
+          methodLabel: 'elektronik',
+          fileSha256:
+              'dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33dd33',
+          isActive: false,
+        ),
+      ],
+    ));
+    await _pumpDetail(tester, dicabutService);
+
+    await tester.tap(find.text('PDF'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Berkas tidak tersedia untuk dokumen ini'), findsOneWidget);
+    expect(
+        find.widgetWithText(OutlinedButton, 'Pratinjau pra-final'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Muat berkas'), findsNothing);
+  });
+
+  testWidgets('tab PDF draf (regresi guard): tombol pratinjau pra-final tetap '
+      'tersedia', (tester) async {
+    final draftService = _FakeDetailService(DocumentModel(
+      id: 'doc-draft-pdf',
+      status: 'draft',
+      classification: 'umum',
+      subject: 'Draf kuasa',
+      letterType: _kuaType,
+    ));
+    await _pumpDetail(tester, draftService);
+
+    await tester.tap(find.text('PDF'));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.widgetWithText(OutlinedButton, 'Pratinjau pra-final'), findsOneWidget);
+  });
+
   testWidgets('aksi Cabut kuasa: dialog alasan wajib → service.revoke dengan '
       'alasan + tanggal', (tester) async {
     final service = _FakeDetailService(_kuaTerbit());

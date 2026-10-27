@@ -857,6 +857,18 @@ class _PdfTab extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final isIssued = document.activeIssuance != null;
 
+    // Dicabut/dibatalkan (tanpa terbitan aktif & tidak lagi editable): tidak
+    // ada berkas yang bisa dimuat — pra-final dijamin 422 dari server, jadi
+    // tampilkan empty state TANPA tombol pratinjau.
+    if (!isIssued && !document.isEditable) {
+      return const EmptyState(
+        icon: Icons.picture_as_pdf_outlined,
+        title: 'Berkas tidak tersedia untuk dokumen ini',
+        subtitle: 'Berkas hanya tersedia untuk draf dan surat yang masih '
+            'diterbitkan.',
+      );
+    }
+
     if (bytes != null) {
       final builder = previewBuilder;
       return Padding(
