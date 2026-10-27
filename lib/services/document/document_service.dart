@@ -41,6 +41,11 @@ class DocumentService {
   ///
   /// [unit] wajib kecuali saat duplikasi (backend `required_without:
   /// duplicate_from_id`).
+  ///
+  /// [inReplyTo] (fase 1b) opsional: `{type: document|incoming_letter,
+  /// id: uuid, relation: balasan|tindak_lanjut|referensi}` — menautkan
+  /// draft HASIL ke surat induk (edge letter_links; independen dari
+  /// [duplicateFromId], keduanya boleh bersamaan).
   Future<DocumentModel> createDraft({
     required String letterTypeCode,
     String? unit,
@@ -52,6 +57,7 @@ class DocumentService {
     String? companyId,
     int? templateId,
     String? duplicateFromId,
+    Map<String, dynamic>? inReplyTo,
   }) async {
     final data = await _api.post('documents', body: <String, dynamic>{
       'letter_type_code': letterTypeCode,
@@ -64,6 +70,7 @@ class DocumentService {
       if (companyId != null) 'company_id': companyId,
       if (templateId != null) 'template_id': templateId,
       if (duplicateFromId != null) 'duplicate_from_id': duplicateFromId,
+      if (inReplyTo != null) 'in_reply_to': inReplyTo,
     });
     return DocumentModel.fromJson(_asMap(data));
   }

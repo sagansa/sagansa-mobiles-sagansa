@@ -59,6 +59,7 @@ class _FakeEntryService extends DocumentService {
     String? companyId,
     int? templateId,
     String? duplicateFromId,
+    Map<String, dynamic>? inReplyTo,
   }) async {
     lastCreateLetterType = letterTypeCode;
     lastCreateSubject = subject;

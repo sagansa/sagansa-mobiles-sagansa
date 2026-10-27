@@ -88,6 +88,7 @@ class _FakeDuplicateService extends DocumentService {
     String? companyId,
     int? templateId,
     String? duplicateFromId,
+    Map<String, dynamic>? inReplyTo,
   }) async =>
       DocumentModel(
         id: 'draft-salin',

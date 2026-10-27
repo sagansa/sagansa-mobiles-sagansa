@@ -70,6 +70,7 @@ class _FakeDocumentService extends DocumentService {
     String? companyId,
     int? templateId,
     String? duplicateFromId,
+    Map<String, dynamic>? inReplyTo,
   }) async {
     lastDuplicateFromId = duplicateFromId;
     lastSubject = subject;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -102,6 +103,34 @@ class DocumentApiClient {
         .get(uri, headers: await _headers())
         .timeout(_requestTimeout);
     return _handleRawResponse(response, path: path);
+  }
+
+  /// GET yang mengembalikan BYTES mentah — untuk endpoint non-JSON
+  /// (mis. stream scan PDF `GET /incoming-letters/{id}/scan`, PDF ~20 MB
+  /// dengan timeout 60 detik ala upload). Error tetap diparse sebagai
+  /// envelope `{error:{code,message}}` bila body-nya JSON.
+  Future<Uint8List> getBytes(String path) async {
+    final uri = _uri(path);
+    AppLogger.debug('DocumentApiClient GET (bytes): $uri');
+    final response = await http
+        .get(uri, headers: await _headers())
+        .timeout(_uploadTimeout);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+
+    if (response.statusCode == 401) {
+      _onUnauthorized();
+    }
+
+    dynamic json;
+    try {
+      json = jsonDecode(utf8.decode(response.bodyBytes));
+    } catch (_) {
+      json = null; // body bukan JSON (mis. HTML gateway) — fallback generik.
+    }
+    throw _toApiException(json, response.statusCode);
   }
 
   /// POST JSON yang mengembalikan isi `data` dari envelope sukses.
