@@ -368,6 +368,10 @@ class DocumentModel {
   final String subject;
   final DateTime? date;
   final LetterTypeModel? letterType;
+
+  /// Unit pembuat nomor (mis. DIR) — hanya diisi bentuk detail
+  /// (`GET /documents/{id}`); list/create/patch tidak memuatnya.
+  final String? unit;
   final Map<String, dynamic>? metadata;
   final int? createdBy;
   final DateTime? createdAt;
@@ -377,6 +381,12 @@ class DocumentModel {
   final List<AttachmentModel> attachments;
   final List<SigningRequestModel> signingRequests;
 
+  /// Isi surat (HTML) — HANYA diisi oleh `GET /documents/{id}` untuk status
+  /// draft|menunggu_ttd (backend menyertakan `body_html` kondisional;
+  /// terbit/dicabut/dibatalkan & list tidak menyertakannya → null). Dipakai
+  /// detail page (tampilan isi draft) & wizard mode edit (prefill editor).
+  final String? bodyHtml;
+
   const DocumentModel({
     required this.id,
     this.number,
@@ -385,6 +395,7 @@ class DocumentModel {
     required this.subject,
     this.date,
     this.letterType,
+    this.unit,
     this.metadata,
     this.createdBy,
     this.createdAt,
@@ -393,6 +404,7 @@ class DocumentModel {
     this.issuances = const [],
     this.attachments = const [],
     this.signingRequests = const [],
+    this.bodyHtml,
   });
 
   factory DocumentModel.fromJson(Map<String, dynamic> json) {
@@ -406,6 +418,7 @@ class DocumentModel {
       letterType: json['letter_type'] is Map<String, dynamic>
           ? LetterTypeModel.fromJson(json['letter_type'] as Map<String, dynamic>)
           : null,
+      unit: _nullableString(json['unit']),
       metadata: json['metadata'] is Map
           ? (json['metadata'] as Map).cast<String, dynamic>()
           : null,
@@ -422,6 +435,7 @@ class DocumentModel {
           AttachmentModel.fromJson),
       signingRequests: _modelList<SigningRequestModel>(
           json['signing_requests'], SigningRequestModel.fromJson),
+      bodyHtml: _nullableString(json['body_html']),
     );
   }
 

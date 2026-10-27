@@ -47,6 +47,17 @@ class _FakeDocumentService extends DocumentService {
   @override
   Future<List<LetterTypeModel>> getLetterTypes() async => letterTypes;
 
+  /// Task 22: draf hasil salinan dibuka di DocumentDetailPage (bukan
+  /// placeholder) — detail page memanggil getDetail saat dibuka.
+  @override
+  Future<DocumentModel> getDetail(String id) async => DocumentModel(
+        id: id,
+        status: 'draft',
+        classification: 'umum',
+        subject: 'Perihal surat',
+        letterType: _kua,
+      );
+
   @override
   Future<DocumentModel> createDraft({
     required String letterTypeCode,

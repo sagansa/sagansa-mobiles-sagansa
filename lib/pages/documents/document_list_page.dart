@@ -12,16 +12,18 @@ import '../../widgets/app_dialogs.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/bar_button_cluster.dart';
+import '../../widgets/documents/document_status_badge.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/filter_chip_row.dart';
 import '../../widgets/modern_bottom_nav.dart';
-import '../../widgets/status_badge.dart';
 import '../home_page.dart';
 import '../hrd_dashboard_page.dart';
 import '../stock_dashboard_page.dart';
 import '../transaction_dashboard_page.dart';
 import 'document_create_wizard.dart';
+import 'document_detail_page.dart';
 import 'document_upload_page.dart';
+import 'signing_task_page.dart';
 
 /// Arsip Surat Perusahaan: filter status/jenis/tahun + pencarian +
 /// infinite scroll (pola `SopListPage`/`SupplierListPage`).
@@ -53,6 +55,10 @@ class _DocumentListPageState extends State<DocumentListPage> {
   bool _hasLoaded = false;
   String? _errorMessage;
 
+  /// Jumlah tugas tanda tangan pending (badge ikon AppBar). Pull-to-refresh
+  /// saja — push notifikasi = fase 2. Gagal ambil = badge disembunyikan.
+  int _pendingSignCount = 0;
+
   // Filter aktif — null berarti "Semua".
   String? _status;
   String? _letterTypeCode;
@@ -80,6 +86,31 @@ class _DocumentListPageState extends State<DocumentListPage> {
     _scrollController.addListener(_onScroll);
     _loadLetterTypes();
     _fetch();
+    _refreshPendingSignCount();
+  }
+
+  /// Muat jumlah tugas tanda tangan `diminta` (badge AppBar). Kegagalan
+  /// diabaikan diam-diam — badge bukan data utama halaman.
+  Future<void> _refreshPendingSignCount() async {
+    try {
+      final result = await _service.mySigningRequests(status: 'diminta');
+      if (!mounted) return;
+      setState(() => _pendingSignCount = result.total);
+    } catch (_) {
+      // Offline/error: badge 0, dicoba lagi saat refresh berikutnya.
+    }
+  }
+
+  /// Buka Tugas Tanda Tangan (badge di-refresh saat kembali — tugas bisa
+  /// selesai diputuskan di sana).
+  Future<void> _openSigningTasks() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SigningTaskPage(service: _service),
+      ),
+    );
+    if (mounted) _refreshPendingSignCount();
   }
 
   @override
@@ -222,10 +253,14 @@ class _DocumentListPageState extends State<DocumentListPage> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        // TODO(Task 22): ganti placeholder dengan DocumentDetailPage.
-        builder: (_) => DocumentDetailPlaceholder(documentId: document.id),
+        builder: (_) =>
+            DocumentDetailPage(documentId: document.id, service: _service),
       ),
     );
+    if (mounted) {
+      _fetch();
+      _refreshPendingSignCount();
+    }
   }
 
   /// FAB "Buat Surat" — wizard 6 langkah (task 20); kembali dari wizard
@@ -273,8 +308,10 @@ class _DocumentListPageState extends State<DocumentListPage> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          // TODO(Task 22): ganti placeholder dengan DocumentDetailPage.
-          builder: (_) => DocumentDetailPlaceholder(documentId: draft.id),
+          builder: (_) => DocumentDetailPage(
+            documentId: draft.id,
+            service: _service,
+          ),
         ),
       );
     } catch (e) {
@@ -360,6 +397,13 @@ class _DocumentListPageState extends State<DocumentListPage> {
       actions: [
         BarButtonCluster(
           actions: [
+            BarButtonSpec(
+              icon: Icons.draw_rounded,
+              iconSize: 22,
+              tooltip: 'Tugas Tanda Tangan',
+              badgeCount: _pendingSignCount,
+              onTap: _openSigningTasks,
+            ),
             BarButtonSpec(
               icon: _isSearchActive
                   ? Icons.search_off_rounded
@@ -540,7 +584,12 @@ class _DocumentListPageState extends State<DocumentListPage> {
 
   Widget _buildList() {
     return RefreshIndicator(
-      onRefresh: _fetch,
+      // Pull-to-refresh juga memeriksa tugas tanda tangan baru (pengganti
+      // push notifikasi fase 2).
+      onRefresh: () async {
+        await _fetch();
+        await _refreshPendingSignCount();
+      },
       child: ListView.builder(
         controller: _scrollController,
         // SafeArea(top) di body sudah menghitung status bar + appbar;
@@ -643,7 +692,7 @@ class _DocumentListPageState extends State<DocumentListPage> {
                     // Baris 2: badge status + metode terbitan aktif.
                     Row(
                       children: [
-                        _DocumentStatusBadge(document: document),
+                        DocumentStatusBadge(document: document),
                         if (issuanceLabel != null) ...[
                           const SizedBox(width: AppSpacing.sm),
                           Flexible(
@@ -733,49 +782,5 @@ class _DocumentListPageState extends State<DocumentListPage> {
   }
 }
 
-/// Badge status surat — warna design system ([StatusBadge]):
-/// draft abu (neutral), menunggu_ttd amber (warning), terbit hijau
-/// (success), dicabut oranye (warning outline agar beda dari menunggu_ttd),
-/// dibatalkan merah (error).
-class _DocumentStatusBadge extends StatelessWidget {
-  final DocumentModel document;
-
-  const _DocumentStatusBadge({required this.document});
-
-  @override
-  Widget build(BuildContext context) {
-    final (type, style) = switch (document.status) {
-      'terbit' => (StatusType.success, StatusBadgeStyle.filled),
-      'menunggu_ttd' => (StatusType.warning, StatusBadgeStyle.filled),
-      'dicabut' => (StatusType.warning, StatusBadgeStyle.outline),
-      'dibatalkan' => (StatusType.error, StatusBadgeStyle.filled),
-      _ => (StatusType.neutral, StatusBadgeStyle.filled),
-    };
-    return StatusBadge(
-      label: document.statusLabel,
-      type: type,
-      style: style,
-    );
-  }
-}
-
-/// TODO(Task 22): placeholder detail surat — halaman penuh
-/// (`DocumentDetailPage`) dibuat di task 22. Hanya menampilkan ID agar
-/// alur navigasi list → detail sudah terpasang.
-class DocumentDetailPlaceholder extends StatelessWidget {
-  final String documentId;
-
-  const DocumentDetailPlaceholder({super.key, required this.documentId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Detail Surat')),
-      body: EmptyState(
-        icon: Icons.description_outlined,
-        title: 'Detail surat akan tersedia di pembaruan berikutnya.',
-        subtitle: 'ID: $documentId',
-      ),
-    );
-  }
-}
+/// Badge status surat kini memakai widget bersama
+/// `DocumentStatusBadge` (warna konsisten list & detail — task 22).

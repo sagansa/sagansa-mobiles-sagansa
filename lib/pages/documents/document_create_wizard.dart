@@ -38,11 +38,19 @@ import 'step_type_template.dart';
 /// langkah menyimpan perubahan via updateDraft. Layout adaptif: ponsel =
 /// langkah vertikal; lebar ≥700 = dua kolom (daftar langkah + konten).
 ///
+/// Mode edit (task 22): isi [documentId] untuk membuka draf/salinan yang
+/// sudah ada — wizard memuat detail (perihal/unit/tanggal/metadata +
+/// bodyHtml ke editor via HtmlToDelta) dan mulai di langkah Formulir;
+/// null (default) = alur buat baru task 20.
+///
 /// [service] seam test — produksi memakai `DocumentService()`.
 class DocumentCreateWizard extends StatefulWidget {
   final DocumentService? service;
 
-  const DocumentCreateWizard({super.key, this.service});
+  /// ID draf yang diedit (dari detail page aksi "Edit"); null = draf baru.
+  final String? documentId;
+
+  const DocumentCreateWizard({super.key, this.service, this.documentId});
 
   @override
   State<DocumentCreateWizard> createState() => _DocumentCreateWizardState();
@@ -151,7 +159,80 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     _unitController.addListener(_onUnitChanged);
     _subjectController.addListener(_notify);
     _recipientNameController.addListener(_notify);
-    _loadLetterTypes();
+    _typesLoading = _loadLetterTypes();
+    final editId = widget.documentId;
+    if (editId != null) _loadExistingDraft(editId);
+  }
+
+  /// Future pemuatan jenis surat (dipakai mode edit menunggu daftar jenis
+  /// lengkap — specific_fields diperlukan membangun field khusus).
+  Future<void>? _typesLoading;
+
+  /// Mode edit: init state wizard dari draf existing (task 22) — TANPA
+  /// mengubah struktur alur; langkah/jenis/template tetap terkunci karena
+  /// `_draftId` terisi sejak awal.
+  Future<void> _loadExistingDraft(String id) async {
+    try {
+      final detail = await _service.getDetail(id);
+      await _typesLoading; // jenis surat harus lengkap (specific_fields).
+      if (!mounted) return;
+
+      final code = detail.letterType?.code;
+      final fullType = code == null
+          ? null
+          : _letterTypes.where((type) => type.code == code).firstOrNull;
+      if (fullType == null) {
+        showErrorSnackBar(context,
+            'Jenis surat draf (${code ?? "?"}) tidak dikenal; edit tidak tersedia.');
+        return;
+      }
+
+      // Prefill editor dari bodyHtml (kini diekspos backend untuk
+      // draft|menunggu_ttd) — bila gagal diparse, editor kosong + banner
+      // (isi tersimpan tidak berubah sampai disimpan).
+      final bodyHtml = detail.bodyHtml;
+      final delta = bodyHtml == null || bodyHtml.trim().isEmpty
+          ? null
+          : QuillHtmlCodec.tryHtmlToDelta(bodyHtml);
+
+      setState(() {
+        _draftId = detail.id;
+        _isDuplicate = false;
+        _selectedType = fullType;
+        _selectedTemplate = null;
+        _rebuildSpecificControllers(fullType);
+        _subjectController.text = detail.subject;
+        _date = detail.date ?? DateTime.now();
+        // Unit kini ikut payload detail → prefill akurat + PATCH hanya
+        // mengirim bila user mengubah (semantik _syncedUnit).
+        _unitController.text = detail.unit ?? '';
+        _syncedUnit = detail.unit;
+        _unitEdited = false;
+        _validityMode = ValidityMode.unlimited;
+        _validityDate = null;
+        _prefillFormFromMetadata(detail.metadata);
+        _lastSavedMetadata = detail.metadata == null
+            ? null
+            : Map<String, dynamic>.from(detail.metadata!);
+        _editorFromDuplicate = false;
+        _editorUnsupported =
+            bodyHtml != null && QuillHtmlCodec.hasUnsupportedHtml(bodyHtml);
+        _editorParseFailed = bodyHtml != null && bodyHtml.trim().isNotEmpty
+            ? delta == null
+            : false;
+        if (delta != null) {
+          _quillController.document = Document.fromDelta(delta);
+        } else {
+          _quillController.clear();
+        }
+        // Tanda tangan yang sudah diajukan tidak diulang (guard backend
+        // ALREADY_SIGNED).
+        _signingRequested = detail.signingRequests.isNotEmpty;
+        _step = 1; // mulai di Formulir — jenis & sumber terkunci.
+      });
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
+    }
   }
 
   @override
