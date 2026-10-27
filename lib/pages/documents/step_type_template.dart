@@ -37,6 +37,10 @@ class StepTypeTemplate extends StatelessWidget {
   final bool duplicating;
   final ValueChanged<DocumentModel> onPickDuplicateSource;
 
+  /// Task 21: buka alur "Upload dokumen sendiri (PDF)" (Mode B/C/D) —
+  /// null = tombol disembunyikan; dinonaktifkan saat [locked].
+  final VoidCallback? onUploadOwnDocument;
+
   const StepTypeTemplate({
     super.key,
     required this.locked,
@@ -53,6 +57,7 @@ class StepTypeTemplate extends StatelessWidget {
     this.searchArchive,
     required this.duplicating,
     required this.onPickDuplicateSource,
+    this.onUploadOwnDocument,
   });
 
   @override
@@ -109,6 +114,14 @@ class StepTypeTemplate extends StatelessWidget {
         _buildTemplateList(context),
         const SizedBox(height: AppSpacing.lg),
         _buildDuplicateButton(context),
+        if (onUploadOwnDocument != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: locked ? null : onUploadOwnDocument,
+            icon: const Icon(Icons.upload_file_rounded),
+            label: const Text('Upload dokumen sendiri (PDF)'),
+          ),
+        ],
       ],
     );
   }

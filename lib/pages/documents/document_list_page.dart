@@ -21,6 +21,7 @@ import '../hrd_dashboard_page.dart';
 import '../stock_dashboard_page.dart';
 import '../transaction_dashboard_page.dart';
 import 'document_create_wizard.dart';
+import 'document_upload_page.dart';
 
 /// Arsip Surat Perusahaan: filter status/jenis/tahun + pencarian +
 /// infinite scroll (pola `SopListPage`/`SupplierListPage`).
@@ -279,6 +280,69 @@ class _DocumentListPageState extends State<DocumentListPage> {
     } catch (e) {
       if (mounted) showErrorSnackBar(context, e);
     }
+  }
+
+  /// Task 21: aksi kartu "Terbitkan ulang" (hanya status terbit) — pilih
+  /// metode sheet (b/c/d) → DocumentUploadPage alur reissue (note alasan
+  /// dikumpulkan di sana sebelum submit); kembali me-refresh daftar.
+  Future<void> _reissue(DocumentModel document) async {
+    const methodTitles = {
+      'b': ('Unggah PDF — tempel QR verifikasi',
+          'PDF baru ditempel QR pada posisi pilihan Anda.'),
+      'c': ('Unggah PDF ber-e-materai / TTE resmi',
+          'PDF final dari platform resmi, dipakai apa adanya.'),
+      'd': ('Pindai hasil tanda tangan basah',
+          'Foto/scan tiap halaman hasil ttd basah + meterai tempel.'),
+    };
+    final method = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: AppSpacing.paddingMD,
+                child: Text(
+                  'Terbitkan ulang "${document.subject}"',
+                  style: Theme.of(sheetContext)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              for (final entry in methodTitles.entries)
+                ListTile(
+                  leading: const Icon(Icons.publish_rounded),
+                  title: Text(entry.value.$1),
+                  subtitle: Text(entry.value.$2),
+                  onTap: () => Navigator.of(sheetContext).pop(entry.key),
+                ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (method == null || !mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentUploadPage(
+          documentId: document.id,
+          documentSubject: document.subject,
+          mode: DocumentUploadMode.reissue,
+          reissueMethod: method,
+          service: _service,
+        ),
+      ),
+    );
+    if (mounted) _fetch();
   }
 
   @override
@@ -557,11 +621,19 @@ class _DocumentListPageState extends State<DocumentListPage> {
                           padding: EdgeInsets.zero,
                           onSelected: (value) {
                             if (value == 'duplicate') _duplicate(document);
+                            if (value == 'reissue') _reissue(document);
                           },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
                               value: 'duplicate',
                               child: Text('Salin surat ini'),
+                            ),
+                            PopupMenuItem(
+                              value: 'reissue',
+                              // Reissue hanya untuk surat terbit (guard
+                              // backend Finalizer 409 — menu lain diredam).
+                              enabled: document.status == 'terbit',
+                              child: const Text('Terbitkan ulang'),
                             ),
                           ],
                         ),

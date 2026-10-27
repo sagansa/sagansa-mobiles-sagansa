@@ -17,6 +17,7 @@ import '../../utils/error_utils.dart';
 import '../../widgets/app_dialogs.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
+import 'document_upload_page.dart';
 import 'step_attachments.dart';
 import 'step_editor.dart';
 import 'step_form.dart';
@@ -179,6 +180,83 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   // ——— langkah 1 ———
+
+  /// Task 21: "Upload dokumen sendiri (PDF)" — jenis WAJIB dipilih dulu
+  /// (bottom sheet) karena createDraft butuh letter_type; draf minimal
+  /// dibuat (perihal "Surat {jenis}", editable nanti) lalu DocumentUploadPage
+  /// dibuka untuk Mode B/C/D. Kembali dari sana wizard ditutup — state
+  /// wizard (tanpa draf) basi dan daftar arsip pemanggil di-refresh.
+  Future<void> _uploadOwnDocument() async {
+    if (_saving || _duplicating) return;
+    if (_letterTypes.isEmpty) {
+      showErrorSnackBar(
+          context, 'Jenis surat belum tersedia; coba lagi sebentar.');
+      return;
+    }
+    final type = await showModalBottomSheet<LetterTypeModel>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: AppSpacing.paddingMD,
+                child: Text(
+                  'Pilih jenis surat untuk dokumen Anda',
+                  style: Theme.of(sheetContext)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              for (final type in _letterTypes)
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: Text(type.name),
+                  subtitle: Text(type.code),
+                  onTap: () => Navigator.of(sheetContext).pop(type),
+                ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (type == null || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final draft = await _service.createDraft(
+        letterTypeCode: type.code,
+        unit: 'DIR',
+        subject: 'Surat ${type.name}',
+        date: DateTime.now(),
+      );
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentUploadPage(
+            documentId: draft.id,
+            documentSubject: draft.subject,
+            mode: DocumentUploadMode.uploadDraft,
+            service: _service,
+          ),
+        ),
+      );
+      // Tutup wizard ke pemanggil (list arsip refresh saat kembali).
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   Future<void> _loadLetterTypes() async {
     setState(() {
@@ -1065,6 +1143,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           ),
           duplicating: _duplicating,
           onPickDuplicateSource: _duplicateFrom,
+          onUploadOwnDocument: _uploadOwnDocument,
         );
       case 1:
         final specific = _selectedType?.specificFields ??
