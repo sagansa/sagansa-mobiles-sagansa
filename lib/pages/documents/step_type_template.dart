@@ -12,7 +12,12 @@ import '../../widgets/empty_state.dart';
 /// duplicateFrom/getDocuments arsip) di-orkestrasi lewat callback oleh
 /// `DocumentCreateWizard`; sheet pencarian arsip memakai [searchArchive]
 /// agar tetap bisa diuji dengan fake.
+///
+/// [locked] — draf sudah dibuat: jenis surat bersifat final di server
+/// (PATCH tidak mengubah letter_type), sehingga semua pilihan dinonaktifkan
+/// dengan penjelasan; mengubah jenis = buat surat baru.
 class StepTypeTemplate extends StatelessWidget {
+  final bool locked;
   final List<LetterTypeModel> letterTypes;
   final bool loadingTypes;
   final String? typesError;
@@ -34,6 +39,7 @@ class StepTypeTemplate extends StatelessWidget {
 
   const StepTypeTemplate({
     super.key,
+    required this.locked,
     required this.letterTypes,
     required this.loadingTypes,
     required this.typesError,
@@ -73,6 +79,14 @@ class StepTypeTemplate extends StatelessWidget {
     return ListView(
       padding: AppSpacing.paddingMD,
       children: [
+        if (locked)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _LockedBanner(
+              message: 'Jenis terkunci setelah draft dibuat — batalkan dan '
+                  'buat surat baru bila perlu mengganti jenis.',
+            ),
+          ),
         Text('Pilih jenis surat',
             style: textTheme.titleMedium
                 ?.copyWith(fontWeight: FontWeight.bold)),
@@ -136,7 +150,7 @@ class StepTypeTemplate extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: AppSpacing.borderRadiusMD,
-        onTap: () => onSelectType(type),
+        onTap: locked ? null : () => onSelectType(type),
         child: Padding(
           padding: AppSpacing.paddingSM,
           child: Column(
@@ -203,6 +217,7 @@ class StepTypeTemplate extends StatelessWidget {
             child: _TemplateCard(
               template: template,
               selected: selectedTemplate?.id == template.id,
+              enabled: !locked,
               onTap: () => onSelectTemplate(template),
             ),
           ),
@@ -212,7 +227,7 @@ class StepTypeTemplate extends StatelessWidget {
 
   Widget _buildDuplicateButton(BuildContext context) {
     return OutlinedButton.icon(
-      onPressed: duplicating || searchArchive == null
+      onPressed: duplicating || locked || searchArchive == null
           ? null
           : () => _openArchiveSheet(context),
       icon: duplicating
@@ -232,7 +247,6 @@ class StepTypeTemplate extends StatelessWidget {
     final search = searchArchive;
     if (search == null) return;
 
-    final controller = TextEditingController();
     final result = await showModalBottomSheet<DocumentModel>(
       context: context,
       isScrollControlled: true,
@@ -241,7 +255,6 @@ class StepTypeTemplate extends StatelessWidget {
       ),
       builder: (sheetContext) {
         return _ArchiveSheet(
-          controller: controller,
           onSearch: (query) async {
             final page = await search(query);
             return page.items;
@@ -249,8 +262,42 @@ class StepTypeTemplate extends StatelessWidget {
         );
       },
     );
-    controller.dispose();
     if (result != null) onPickDuplicateSource(result);
+  }
+}
+
+/// Banner penjelas saat pilihan jenis/template terkunci (draf sudah ada).
+class _LockedBanner extends StatelessWidget {
+  final String message;
+
+  const _LockedBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: AppSpacing.paddingSM,
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer.withValues(alpha: 0.4),
+        borderRadius: AppSpacing.borderRadiusMD,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lock_outline_rounded,
+              size: 18, color: colorScheme.onSecondaryContainer),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -258,11 +305,13 @@ class StepTypeTemplate extends StatelessWidget {
 class _TemplateCard extends StatelessWidget {
   final TemplateModel template;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   const _TemplateCard({
     required this.template,
     required this.selected,
+    required this.enabled,
     required this.onTap,
   });
 
@@ -284,7 +333,7 @@ class _TemplateCard extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: AppSpacing.borderRadiusMD,
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Padding(
           padding: AppSpacing.paddingSM,
           child: Row(
@@ -321,14 +370,13 @@ class _TemplateCard extends StatelessWidget {
 }
 
 /// Isi sheet arsip: search field + hasil live (state internal).
+///
+/// Controller search dimiliki DI SINI (bukan pemanggil): mem-dispose saat
+/// route masih dianimasikan keluar menyebabkan "used after disposed".
 class _ArchiveSheet extends StatefulWidget {
-  final TextEditingController controller;
   final Future<List<DocumentModel>> Function(String query) onSearch;
 
-  const _ArchiveSheet({
-    required this.controller,
-    required this.onSearch,
-  });
+  const _ArchiveSheet({required this.onSearch});
 
   @override
   State<_ArchiveSheet> createState() => _ArchiveSheetState();
@@ -337,6 +385,7 @@ class _ArchiveSheet extends StatefulWidget {
 class _ArchiveSheetState extends State<_ArchiveSheet> {
   static const _sheetHeightFactor = 0.75;
 
+  final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
   List<DocumentModel> _results = [];
   bool _loading = false;
@@ -346,13 +395,14 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
   void initState() {
     super.initState();
     _runSearch();
-    widget.controller.addListener(_onChanged);
+    _controller.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
-    widget.controller.removeListener(_onChanged);
+    _controller.removeListener(_onChanged);
+    _controller.dispose();
     super.dispose();
   }
 
@@ -367,7 +417,7 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
       _error = null;
     });
     try {
-      final items = await widget.onSearch(widget.controller.text.trim());
+      final items = await widget.onSearch(_controller.text.trim());
       if (!mounted) return;
       setState(() {
         _results = items;
@@ -397,7 +447,7 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: widget.controller,
+                      controller: _controller,
                       autofocus: true,
                       decoration: const InputDecoration(
                         hintText: 'Cari nomor / perihal arsip…',

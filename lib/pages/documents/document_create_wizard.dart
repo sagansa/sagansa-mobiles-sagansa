@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -106,6 +107,22 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   String? _draftId;
   bool _isDuplicate = false;
 
+  /// Metadata yang diketahui tersimpan di server (snapshot). Dipakai untuk
+  /// TIDAK mengirim key `metadata` saat form tidak berubah — penting di
+  /// mode salin: PATCH metadata bersifat replace penuh, jadi mengirim
+  /// nilai kosong/default akan menghapus recipient/specific salinan.
+  Map<String, dynamic>? _lastSavedMetadata;
+
+  /// Unit yang diketahui tersimpan di server. Null = tidak diketahui
+  /// (mode salin: payload API tidak memuat `unit`) — jangan kirim unit di
+  /// PATCH selama user tidak mengubahnya, agar unit salinan tidak tertimpa
+  /// default 'DIR'.
+  String? _syncedUnit;
+
+  /// User pernah mengubah field unit sejak draf/salin terakhir — satu-satunya
+  /// sinyal andal saat `_syncedUnit` tidak diketahui (mode salin).
+  bool _unitEdited = false;
+
   // ——— langkah 4: lampiran ———
   final List<PendingAttachment> _pending = [];
   bool _picking = false;
@@ -130,7 +147,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   @override
   void initState() {
     super.initState();
-    _unitController.addListener(_notify);
+    _unitController.addListener(_onUnitChanged);
     _subjectController.addListener(_notify);
     _recipientNameController.addListener(_notify);
     _loadLetterTypes();
@@ -154,6 +171,12 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   void _notify() => setState(() {});
+
+  /// Tandai unit pernah diedit user (dipakai keputusan kirim unit di PATCH).
+  void _onUnitChanged() {
+    _unitEdited = true;
+    _notify();
+  }
 
   // ——— langkah 1 ———
 
@@ -179,6 +202,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   Future<void> _selectType(LetterTypeModel type) async {
+    // Fix review: setelah draf ada jenis terkunci — mengganti jenis di UI
+    // tanpa mengubah draf server hanya menyesatkan. Lihat banner langkah 1.
+    if (_draftId != null) return;
     if (_selectedType?.code == type.code) return;
     setState(() {
       _selectedType = type;
@@ -189,19 +215,29 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       _editorFromDuplicate = false;
       _rebuildSpecificControllers(type);
     });
+    await _loadTemplatesFor(type, autoSelectDefault: true);
+  }
 
+  /// Muat template jenis terpilih. [autoSelectDefault] false dipakai mode
+  /// salin (draf sudah punya isi — template hanya ditampilkan, tak dipilih).
+  Future<void> _loadTemplatesFor(
+    LetterTypeModel type, {
+    required bool autoSelectDefault,
+  }) async {
     setState(() => _loadingTemplates = true);
     try {
       final templates = await _service.getTemplates(type.code);
-      if (!mounted) return;
-      final defaultTemplate =
-          templates.where((t) => t.isDefault).firstOrNull ?? templates.firstOrNull;
+      if (!mounted || _selectedType?.code != type.code) return;
+      final defaultTemplate = autoSelectDefault
+          ? templates.where((t) => t.isDefault).firstOrNull ??
+              templates.firstOrNull
+          : null;
       setState(() {
         _templates = templates;
-        _selectedTemplate = defaultTemplate;
+        if (autoSelectDefault) _selectedTemplate = defaultTemplate;
         _loadingTemplates = false;
       });
-      _applyTemplateToEditor(defaultTemplate);
+      if (autoSelectDefault) _applyTemplateToEditor(defaultTemplate);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingTemplates = false);
@@ -239,6 +275,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   void _selectTemplate(TemplateModel? template) {
+    // Fix review: pilihan template juga terkunci setelah draf ada.
+    if (_draftId != null) return;
     setState(() => _selectedTemplate = template);
     _applyTemplateToEditor(template);
   }
@@ -280,8 +318,23 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         _editorParseFailed = false;
         _quillController.clear();
         _rebuildSpecificControllers(fullType);
+        // Fix review: backend menyalin metadata + unit sumber — prefill form
+        // dari metadata salinan agar PATCH berikutnya TIDAK mendorong nilai
+        // kosong/default yang menghapus isi salinan (replace penuh).
+        _validityMode = ValidityMode.unlimited;
+        _validityDate = null;
+        _prefillFormFromMetadata(draft.metadata);
+        _lastSavedMetadata = draft.metadata == null
+            ? null
+            : Map<String, dynamic>.from(draft.metadata!);
+        // Payload API tidak memuat `unit` → nilai tersimpan tidak diketahui;
+        // draf baru — penanda edit unit dimulai bersih.
+        _syncedUnit = null;
+        _unitEdited = false;
         _step = 1;
       });
+      // Template hanya ditampilkan (locked) — draf salinan sudah berisi.
+      unawaited(_loadTemplatesFor(fullType, autoSelectDefault: false));
       showSuccessSnackBar(context, 'Draf salinan dibuat — lanjutkan formulir.');
     } catch (e) {
       if (mounted) showErrorSnackBar(context, e);
@@ -291,6 +344,39 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   // ——— langkah 2 ———
+
+  /// Prefill field formulir dari metadata salinan (backend menyalin
+  /// metadata sumber saat duplicateFrom) — bagian Fix review #1.
+  void _prefillFormFromMetadata(Map<String, dynamic>? metadata) {
+    final recipient = metadata?['recipient'];
+    if (recipient is Map) {
+      _recipientNameController.text = recipient['name']?.toString() ?? '';
+      _recipientIdentityController.text =
+          recipient['identity_no']?.toString() ?? '';
+      _recipientAddressController.text =
+          recipient['address']?.toString() ?? '';
+      _pickedPartyName = _recipientNameController.text.trim().isEmpty
+          ? null
+          : _recipientNameController.text.trim();
+    }
+    final specific = metadata?['specific'];
+    if (specific is Map) {
+      specific.forEach((key, value) {
+        final controller = _specificControllers[key.toString()];
+        if (controller != null) controller.text = value?.toString() ?? '';
+      });
+    }
+    final validity = metadata?['validity'];
+    if (validity is Map) {
+      final mode = validity['mode']?.toString();
+      _validityMode = ValidityMode.values.firstWhere(
+        (candidate) => candidate.value == mode,
+        orElse: () => ValidityMode.unlimited,
+      );
+      final untilDate = validity['until_date']?.toString();
+      if (untilDate != null) _validityDate = DateTime.tryParse(untilDate);
+    }
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -315,6 +401,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   /// Metadata penerima + field khusus + masa berlaku (hanya yang terisi).
+  ///
+  /// `validity` hanya disertakan bila ada isian relevan — mengirim
+  /// `{mode: unlimited}` polos pada draf salinan akan menghapus masa
+  /// berlaku asli (PATCH metadata = replace penuh).
   Map<String, dynamic>? _buildMetadata() {
     final name = _recipientNameController.text.trim();
     final identity = _recipientIdentityController.text.trim();
@@ -326,11 +416,11 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       if (value.isNotEmpty) specific[key] = value;
     });
 
-    final validity = <String, dynamic>{
-      'mode': _validityMode.value,
-      if (_validityMode == ValidityMode.untilDate && _validityDate != null)
-        'until_date': _formatDate(_validityDate!),
-    };
+    final validityRelevant =
+        (_selectedType?.specificFields ?? const []).isNotEmpty &&
+            (specific.isNotEmpty ||
+                _validityMode != ValidityMode.unlimited ||
+                _validityDate != null);
 
     final metadata = <String, dynamic>{
       if (name.isNotEmpty)
@@ -340,8 +430,12 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           if (address.isNotEmpty) 'address': address,
         },
       if (specific.isNotEmpty) 'specific': specific,
-      if ((_selectedType?.specificFields ?? const []).isNotEmpty)
-        'validity': validity,
+      if (validityRelevant)
+        'validity': {
+          'mode': _validityMode.value,
+          if (_validityMode == ValidityMode.untilDate && _validityDate != null)
+            'until_date': _formatDate(_validityDate!),
+        },
     };
     return metadata.isEmpty ? null : metadata;
   }
@@ -352,6 +446,12 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       '${date.day.toString().padLeft(2, '0')}';
 
   /// Simpan formulir — createDraft pertama kali, selanjutnya updateDraft.
+  ///
+  /// Fix review #1 (dua lapis): metadata hanya di-PATCH bila berbeda dari
+  /// snapshot server (`_lastSavedMetadata`), dan unit hanya dikirim bila
+  /// diubah dari nilai yang diketahui tersimpan (`_syncedUnit`) — di mode
+  /// salin form kosong/tersentuh sedikit tidak akan menimpa metadata & unit
+  /// salinan (PATCH = replace penuh).
   Future<bool> _saveForm() async {
     final subject = _subjectController.text.trim();
     if (subject.isEmpty) {
@@ -360,6 +460,20 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     }
     final unit = _unitController.text.trim();
     final metadata = _buildMetadata();
+    final metadataChanged =
+        metadata != null && !_jsonDeepEquals(metadata, _lastSavedMetadata);
+    // Unit dikirim hanya bila berbeda dari nilai yang diketahui tersimpan.
+    // Mode salin: nilai server TIDAK diketahui (payload API tanpa unit)
+    // → satu-satunya sinyal aman adalah user mengedit field-nya, agar
+    // default 'DIR' tidak tertukar dengan unit sumber salinan.
+    final bool unitChanged;
+    if (_draftId == null) {
+      unitChanged = false; // create selalu mengirim unit apa adanya.
+    } else if (_syncedUnit == null) {
+      unitChanged = _unitEdited && unit.isNotEmpty;
+    } else {
+      unitChanged = _unitEdited || (unit != _syncedUnit && unit.isNotEmpty);
+    }
 
     setState(() => _saving = true);
     try {
@@ -377,14 +491,22 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           bodyHtml: template?.bodyHtml,
         );
         _draftId = draft.id;
+        _syncedUnit = unit.isEmpty ? null : unit;
+        _unitEdited = false;
+        _lastSavedMetadata = metadata;
       } else {
         await _service.updateDraft(
           _draftId!,
-          unit: unit.isEmpty ? null : unit,
+          unit: unitChanged ? unit : null,
           subject: subject,
           date: _date,
-          metadata: metadata,
+          metadata: metadataChanged ? metadata : null,
         );
+        if (unitChanged) {
+          _syncedUnit = unit;
+          _unitEdited = false;
+        }
+        if (metadataChanged) _lastSavedMetadata = metadata;
       }
       if (!mounted) return false;
       showSuccessSnackBar(context, 'Draf tersimpan.');
@@ -926,6 +1048,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     switch (_step) {
       case 0:
         return StepTypeTemplate(
+          locked: _draftId != null,
           letterTypes: _letterTypes,
           loadingTypes: _loadingTypes,
           typesError: _typesError,
@@ -1082,6 +1205,29 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       ],
     );
   }
+}
+
+/// Perbandingan nilai JSON-able (Map/List/primitif) secara dalam — urutan
+/// key map diabaikan. Dipakai membandingkan metadata form vs snapshot server.
+bool _jsonDeepEquals(dynamic a, dynamic b) {
+  if (identical(a, b)) return true;
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_jsonDeepEquals(a[key], b[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_jsonDeepEquals(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  return a == b;
 }
 
 /// Dialog sukses penerbitan: nomor surat + QR verify_url + arsip.

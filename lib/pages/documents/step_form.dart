@@ -271,7 +271,6 @@ class StepForm extends StatelessWidget {
     final search = searchParties;
     if (search == null) return;
 
-    final controller = TextEditingController();
     final party = await showModalBottomSheet<PartyModel>(
       context: context,
       isScrollControlled: true,
@@ -279,14 +278,12 @@ class StepForm extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => _PartySheet(
-        controller: controller,
         onSearch: (query) async {
           final page = await search(query);
           return page.items;
         },
       ),
     );
-    controller.dispose();
 
     if (party != null) {
       recipientNameController.text = party.name;
@@ -302,11 +299,13 @@ class StepForm extends StatelessWidget {
 }
 
 /// Isi sheet buku pihak: search + daftar hasil live.
+///
+/// Controller search dimiliki DI SINI (bukan pemanggil): mem-dispose saat
+/// route masih dianimasikan keluar menyebabkan "used after disposed".
 class _PartySheet extends StatefulWidget {
-  final TextEditingController controller;
   final Future<List<PartyModel>> Function(String query) onSearch;
 
-  const _PartySheet({required this.controller, required this.onSearch});
+  const _PartySheet({required this.onSearch});
 
   @override
   State<_PartySheet> createState() => _PartySheetState();
@@ -315,6 +314,7 @@ class _PartySheet extends StatefulWidget {
 class _PartySheetState extends State<_PartySheet> {
   static const _sheetHeightFactor = 0.7;
 
+  final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
   List<PartyModel> _results = [];
   bool _loading = false;
@@ -324,13 +324,14 @@ class _PartySheetState extends State<_PartySheet> {
   void initState() {
     super.initState();
     _runSearch();
-    widget.controller.addListener(_onChanged);
+    _controller.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
-    widget.controller.removeListener(_onChanged);
+    _controller.removeListener(_onChanged);
+    _controller.dispose();
     super.dispose();
   }
 
@@ -345,7 +346,7 @@ class _PartySheetState extends State<_PartySheet> {
       _error = null;
     });
     try {
-      final items = await widget.onSearch(widget.controller.text.trim());
+      final items = await widget.onSearch(_controller.text.trim());
       if (!mounted) return;
       setState(() {
         _results = items;
@@ -372,7 +373,7 @@ class _PartySheetState extends State<_PartySheet> {
             Padding(
               padding: AppSpacing.paddingMD,
               child: TextField(
-                controller: widget.controller,
+                controller: _controller,
                 autofocus: true,
                 decoration: const InputDecoration(
                   hintText: 'Cari nama / NIK di buku pihak…',
