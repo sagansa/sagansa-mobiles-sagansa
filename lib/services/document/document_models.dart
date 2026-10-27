@@ -47,12 +47,28 @@ class PaginatedResult<T> {
   }
 }
 
+/// Satu field khusus jenis surat (mis. KUA) — bentuk backend
+/// `specific_fields: [{key, label}]`.
+class LetterSpecificField {
+  final String key;
+  final String label;
+
+  const LetterSpecificField({required this.key, required this.label});
+
+  @override
+  bool operator ==(Object other) =>
+      other is LetterSpecificField && other.key == key && other.label == label;
+
+  @override
+  int get hashCode => Object.hash(key, label);
+}
+
 /// Jenis surat aktif — `GET /api/v1/letter-types`
 /// `{code, name, specific_fields?}`.
 class LetterTypeModel {
   final String code;
   final String name;
-  final List<String>? specificFields;
+  final List<LetterSpecificField>? specificFields;
 
   const LetterTypeModel({
     required this.code,
@@ -64,7 +80,7 @@ class LetterTypeModel {
     return LetterTypeModel(
       code: json['code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
-      specificFields: _stringList(json['specific_fields']),
+      specificFields: _specificFieldList(json['specific_fields']),
     );
   }
 }
@@ -468,6 +484,30 @@ List<String>? _stringList(dynamic value) {
   if (value is! List) return null;
   final items = value.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty);
   return items.isEmpty ? null : items.toList(growable: false);
+}
+
+/// Parse `specific_fields` — bentuk backend `[{key, label}]`; string polos
+/// (bentuk lama) ditoleransi sebagai key sekaligus label.
+List<LetterSpecificField>? _specificFieldList(dynamic value) {
+  if (value is! List) return null;
+  final fields = <LetterSpecificField>[];
+  for (final item in value) {
+    if (item is Map) {
+      final key = item['key']?.toString() ?? '';
+      if (key.isEmpty) continue;
+      fields.add(LetterSpecificField(
+        key: key,
+        label: item['label']?.toString().isNotEmpty == true
+            ? item['label'].toString()
+            : key,
+      ));
+    } else {
+      final key = item?.toString() ?? '';
+      if (key.isEmpty) continue;
+      fields.add(LetterSpecificField(key: key, label: key));
+    }
+  }
+  return fields.isEmpty ? null : fields;
 }
 
 List<T> _modelList<T>(dynamic value, T Function(Map<String, dynamic>) fromJson) {

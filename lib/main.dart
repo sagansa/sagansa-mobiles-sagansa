@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
 import 'package:syncfusion_localizations/syncfusion_localizations.dart';
 
@@ -324,6 +325,9 @@ class _MyAppState extends State<MyApp> {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
                 SfGlobalLocalizations.delegate,
+                // Modul surat (task 20): toolbar/editor flutter_quill butuh
+                // delegate ini, tanpanya QuillToolbar melempar exception.
+                ...FlutterQuillLocalizations.localizationsDelegates,
               ],
               supportedLocales: const [
                 Locale('id'),

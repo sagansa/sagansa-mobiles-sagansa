@@ -1,0 +1,415 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../services/document/document_models.dart';
+import '../../theme/app_spacing.dart';
+
+/// Mode masa berlaku surat kuasa (KUA).
+enum ValidityMode {
+  untilDate('until_date'),
+  untilDone('until_done'),
+  unlimited('unlimited');
+
+  const ValidityMode(this.value);
+  final String value;
+
+  String get label => switch (this) {
+        ValidityMode.untilDate => 'Hingga tanggal',
+        ValidityMode.untilDone => 'Selesai urusan',
+        ValidityMode.unlimited => 'Tanpa batas',
+      };
+}
+
+/// Langkah 2 wizard — formulir: unit, perihal, tanggal, penerima
+/// (buku pihak / ketik bebas + simpan ke buku pihak), field khusus jenis
+/// (`specific_fields`) dan masa berlaku KUA.
+///
+/// Controller dimiliki wizard agar nilai bertahan antar langkah; pencarian
+/// buku pihak lewat callback [searchParties] agar teruji dengan fake.
+class StepForm extends StatelessWidget {
+  final TextEditingController unitController;
+  final TextEditingController subjectController;
+  final DateTime date;
+  final VoidCallback onPickDate;
+  final bool subjectMissing;
+
+  // Penerima.
+  final TextEditingController recipientNameController;
+  final TextEditingController recipientIdentityController;
+  final TextEditingController recipientAddressController;
+  final Future<PaginatedResult<PartyModel>> Function(String query)?
+      searchParties;
+  final bool savingParty;
+  final VoidCallback? onSaveParty; // null = tak perlu tawarkan simpan.
+
+  // Field khusus jenis (key → controller).
+  final List<LetterSpecificField> specificFields;
+  final Map<String, TextEditingController> specificControllers;
+
+  // Masa berlaku (hanya untuk jenis dengan field khusus).
+  final ValidityMode validityMode;
+  final ValueChanged<ValidityMode> onValidityModeChanged;
+  final DateTime? validityDate;
+  final VoidCallback? onPickValidityDate;
+
+  const StepForm({
+    super.key,
+    required this.unitController,
+    required this.subjectController,
+    required this.date,
+    required this.onPickDate,
+    required this.subjectMissing,
+    required this.recipientNameController,
+    required this.recipientIdentityController,
+    required this.recipientAddressController,
+    this.searchParties,
+    required this.savingParty,
+    this.onSaveParty,
+    required this.specificFields,
+    required this.specificControllers,
+    required this.validityMode,
+    required this.onValidityModeChanged,
+    required this.validityDate,
+    required this.onPickValidityDate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: AppSpacing.paddingMD,
+      children: [
+        _section(context, 'Unit & perihal'),
+        TextField(
+          controller: unitController,
+          decoration: const InputDecoration(
+            labelText: 'Unit',
+            helperText: 'Mis. DIR (Dewan Direktur)',
+            isDense: true,
+          ),
+          textCapitalization: TextCapitalization.characters,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextField(
+          controller: subjectController,
+          decoration: InputDecoration(
+            labelText: 'Perihal *',
+            errorText: subjectMissing ? 'Perihal wajib diisi.' : null,
+            isDense: true,
+          ),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _dateField(context),
+        const SizedBox(height: AppSpacing.lg),
+        _recipientSection(context),
+        if (specificFields.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          _specificSection(context),
+          const SizedBox(height: AppSpacing.md),
+          _validitySection(context),
+        ],
+      ],
+    );
+  }
+
+  Widget _section(BuildContext context, String title) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Text(
+          title,
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      );
+
+  Widget _dateField(BuildContext context) {
+    final formatter = DateFormat('d MMMM yyyy', 'id_ID');
+    return InkWell(
+      onTap: onPickDate,
+      borderRadius: AppSpacing.borderRadiusMD,
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Tanggal surat',
+          prefixIcon: Icon(Icons.event_rounded),
+          isDense: true,
+        ),
+        child: Text(formatter.format(date)),
+      ),
+    );
+  }
+
+  Widget _recipientSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _section(context, 'Penerima')),
+            if (searchParties != null)
+              TextButton.icon(
+                onPressed: () => _openPartySheet(context),
+                icon: const Icon(Icons.menu_book_rounded, size: 18),
+                label: const Text('Buku pihak'),
+              ),
+          ],
+        ),
+        TextField(
+          controller: recipientNameController,
+          decoration: const InputDecoration(
+            labelText: 'Nama penerima',
+            helperText: 'Ketik bebas atau pilih dari buku pihak.',
+            isDense: true,
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextField(
+          controller: recipientIdentityController,
+          decoration: const InputDecoration(
+            labelText: 'NIK / identitas (opsional)',
+            isDense: true,
+          ),
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextField(
+          controller: recipientAddressController,
+          decoration: const InputDecoration(
+            labelText: 'Alamat (opsional)',
+            isDense: true,
+          ),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        if (onSaveParty != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: savingParty ? null : onSaveParty,
+              icon: savingParty
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.person_add_alt_rounded, size: 18),
+              label: const Text('Simpan ke buku pihak'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _specificSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Field khusus jenis surat'),
+        for (final field in specificFields) ...[
+          TextField(
+            controller: specificControllers[field.key],
+            decoration: InputDecoration(
+              labelText: field.label,
+              isDense: true,
+            ),
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
+      ],
+    );
+  }
+
+  Widget _validitySection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Masa berlaku'),
+        SegmentedButton<ValidityMode>(
+          segments: [
+            for (final mode in ValidityMode.values)
+              ButtonSegment(value: mode, label: Text(mode.label)),
+          ],
+          selected: {validityMode},
+          onSelectionChanged: (selection) =>
+              onValidityModeChanged(selection.first),
+        ),
+        if (validityMode == ValidityMode.untilDate) ...[
+          const SizedBox(height: AppSpacing.sm),
+          InkWell(
+            onTap: onPickValidityDate,
+            borderRadius: AppSpacing.borderRadiusMD,
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Berlaku hingga tanggal',
+                prefixIcon: Icon(Icons.event_available_rounded),
+                isDense: true,
+              ),
+              child: Text(
+                validityDate == null
+                    ? 'Pilih tanggal'
+                    : DateFormat('d MMMM yyyy', 'id_ID')
+                        .format(validityDate!),
+                style: validityDate == null
+                    ? TextStyle(color: colorScheme.error)
+                    : null,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Sheet pencarian buku pihak — memilih mengisi field penerima.
+  Future<void> _openPartySheet(BuildContext context) async {
+    final search = searchParties;
+    if (search == null) return;
+
+    final controller = TextEditingController();
+    final party = await showModalBottomSheet<PartyModel>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _PartySheet(
+        controller: controller,
+        onSearch: (query) async {
+          final page = await search(query);
+          return page.items;
+        },
+      ),
+    );
+    controller.dispose();
+
+    if (party != null) {
+      recipientNameController.text = party.name;
+      if (party.identityNo != null &&
+          recipientIdentityController.text.isEmpty) {
+        recipientIdentityController.text = party.identityNo!;
+      }
+      if (party.address != null && recipientAddressController.text.isEmpty) {
+        recipientAddressController.text = party.address!;
+      }
+    }
+  }
+}
+
+/// Isi sheet buku pihak: search + daftar hasil live.
+class _PartySheet extends StatefulWidget {
+  final TextEditingController controller;
+  final Future<List<PartyModel>> Function(String query) onSearch;
+
+  const _PartySheet({required this.controller, required this.onSearch});
+
+  @override
+  State<_PartySheet> createState() => _PartySheetState();
+}
+
+class _PartySheetState extends State<_PartySheet> {
+  static const _sheetHeightFactor = 0.7;
+
+  Timer? _debounce;
+  List<PartyModel> _results = [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _runSearch();
+    widget.controller.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    widget.controller.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), _runSearch);
+  }
+
+  Future<void> _runSearch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = await widget.onSearch(widget.controller.text.trim());
+      if (!mounted) return;
+      setState(() {
+        _results = items;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      child: SizedBox(
+        height: mediaQuery.size.height * _sheetHeightFactor,
+        child: Column(
+          children: [
+            Padding(
+              padding: AppSpacing.paddingMD,
+              child: TextField(
+                controller: widget.controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Cari nama / NIK di buku pihak…',
+                  prefixIcon: Icon(Icons.search_rounded),
+                  isDense: true,
+                ),
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(child: Text(_error!))
+                      : _results.isEmpty
+                          ? const Center(
+                              child: Text('Tidak ada pihak yang cocok.'),
+                            )
+                          : ListView.builder(
+                              itemCount: _results.length,
+                              itemBuilder: (context, index) {
+                                final party = _results[index];
+                                return ListTile(
+                                  leading:
+                                      const Icon(Icons.person_outline_rounded),
+                                  title: Text(party.name),
+                                  subtitle: party.identityNo != null
+                                      ? Text('NIK ${party.identityNo}')
+                                      : null,
+                                  onTap: () =>
+                                      Navigator.of(context).pop(party),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

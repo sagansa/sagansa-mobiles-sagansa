@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'document_api_client.dart';
@@ -126,9 +127,27 @@ class DocumentService {
   /// (untuk pilihan penandatangan saat membuat surat).
   Future<List<SignerModel>> getMySigners() async {
     final data = await _api.get('me/signer');
-    final signers = data is Map ? data['signers'] : null;
-    if (signers is! List) return const <SignerModel>[];
-    return signers
+    return parseSignerList(data is Map ? data['signers'] : null);
+  }
+
+  /// `GET /signers` (task 20) — direktori signer aktif perusahaan
+  /// (semua user, urut direktur → komisaris → pemegang saham). Dipakai
+  /// wizard saat surat butuh tanda tangan signer milik user lain;
+  /// `/me/signer` hanya memuat milik sendiri.
+  Future<List<SignerModel>> getSigners() async {
+    final data = await fetchSigners();
+    return parseSignerList(data);
+  }
+
+  /// Seam test `getSigners` — pengambilan mentah yang bisa dioverride fake.
+  @visibleForTesting
+  Future<dynamic> fetchSigners() => _api.get('signers');
+
+  /// Parser bersama daftar signer (dipakai `me/signer` & `signers`).
+  @visibleForTesting
+  static List<SignerModel> parseSignerList(dynamic data) {
+    if (data is! List) return const <SignerModel>[];
+    return data
         .whereType<Map>()
         .map((e) => SignerModel.fromJson(e.cast<String, dynamic>()))
         .toList(growable: false);

@@ -20,6 +20,7 @@ import '../home_page.dart';
 import '../hrd_dashboard_page.dart';
 import '../stock_dashboard_page.dart';
 import '../transaction_dashboard_page.dart';
+import 'document_create_wizard.dart';
 
 /// Arsip Surat Perusahaan: filter status/jenis/tahun + pencarian +
 /// infinite scroll (pola `SopListPage`/`SupplierListPage`).
@@ -226,15 +227,16 @@ class _DocumentListPageState extends State<DocumentListPage> {
     );
   }
 
-  /// FAB "Buat Surat".
-  void _openWizard() async {
+  /// FAB "Buat Surat" — wizard 6 langkah (task 20); kembali dari wizard
+  /// me-refresh daftar (draf baru / surat terbit langsung terlihat).
+  Future<void> _openWizard() async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        // TODO(Task 20): ganti placeholder dengan wizard buat surat.
-        builder: (_) => const DocumentWizardPlaceholder(),
+        builder: (_) => DocumentCreateWizard(service: _service),
       ),
     );
+    if (mounted) _fetch();
   }
 
   /// Aksi per kartu: salin surat → konfirmasi → duplicateFrom → snackbar +
@@ -701,23 +703,6 @@ class DocumentDetailPlaceholder extends StatelessWidget {
         icon: Icons.description_outlined,
         title: 'Detail surat akan tersedia di pembaruan berikutnya.',
         subtitle: 'ID: $documentId',
-      ),
-    );
-  }
-}
-
-/// TODO(Task 20): placeholder wizard buat surat — form penuh dibuat di
-/// task 20. Sementara hanya penanda alur FAB "Buat Surat".
-class DocumentWizardPlaceholder extends StatelessWidget {
-  const DocumentWizardPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Buat Surat')),
-      body: const EmptyState(
-        icon: Icons.edit_note_outlined,
-        title: 'Form buat surat akan tersedia di pembaruan berikutnya.',
       ),
     );
   }

@@ -286,12 +286,34 @@ void main() {
     expect(signer.signatureReady, isFalse);
     expect(signer.title, isNull);
 
+    // Bentuk backend sesungguhnya: [{key, label}] (task 20).
     final letterType = LetterTypeModel.fromJson({
       'code': 'ST',
       'name': 'Surat Tugas',
-      'specific_fields': ['kepada', 'tanggal_selesai'],
+      'specific_fields': [
+        {'key': 'penerima_kuasa_nama', 'label': 'Nama Penerima Kuasa'},
+        {'key': 'masa_berlaku', 'label': ''}, // label kosong → fallback key
+      ],
     });
-    expect(letterType.specificFields, ['kepada', 'tanggal_selesai']);
+    expect(
+      letterType.specificFields,
+      const [
+        LetterSpecificField(
+            key: 'penerima_kuasa_nama', label: 'Nama Penerima Kuasa'),
+        LetterSpecificField(key: 'masa_berlaku', label: 'masa_berlaku'),
+      ],
+    );
+
+    // Bentuk string polos (legacy) tetap ditoleransi.
+    final legacyType = LetterTypeModel.fromJson({
+      'code': 'SK',
+      'name': 'Surat Kuasa',
+      'specific_fields': ['kepada'],
+    });
+    expect(
+      legacyType.specificFields,
+      const [LetterSpecificField(key: 'kepada', label: 'kepada')],
+    );
 
     final template = TemplateModel.fromJson({
       'id': 2,
