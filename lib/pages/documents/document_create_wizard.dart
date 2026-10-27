@@ -153,6 +153,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   String? _buildError;
   bool _finalizing = false;
 
+  /// Nomor yang dipesan (reserveNumber) sebelum pra-final pertama —
+  /// Fix C1: nomor tercetak di PDF & tampil sejak pratinjau.
+  String? _reservedNumber;
+
   @override
   void initState() {
     super.initState();
@@ -559,6 +563,15 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     if (picked != null) setState(() => _validityDate = picked);
   }
 
+  /// Fix I1 — gating masa berlaku TIDAK bergantung shape `specific_fields`:
+  /// jenis KUA (kontrak domain) ATAU specific_fields memuat key
+  /// `masa_berlaku` (bentuk kanonik seeder `[{key,label}]`; dulu object
+  /// bersarang → parser mobile menghasilkan null → validity tak tersimpan).
+  bool get _validityRelevant =>
+      _selectedType?.code == 'KUA' ||
+      (_selectedType?.specificFields ?? const <LetterSpecificField>[])
+          .any((field) => field.key == 'masa_berlaku');
+
   /// Metadata penerima + field khusus + masa berlaku (hanya yang terisi).
   ///
   /// `validity` hanya disertakan bila ada isian relevan — mengirim
@@ -575,11 +588,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       if (value.isNotEmpty) specific[key] = value;
     });
 
-    final validityRelevant =
-        (_selectedType?.specificFields ?? const []).isNotEmpty &&
-            (specific.isNotEmpty ||
-                _validityMode != ValidityMode.unlimited ||
-                _validityDate != null);
+    final validityRelevant = _validityRelevant &&
+        (specific.isNotEmpty ||
+            _validityMode != ValidityMode.unlimited ||
+            _validityDate != null);
 
     final metadata = <String, dynamic>{
       if (name.isNotEmpty)
@@ -892,6 +904,23 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
 
   // ——— langkah 6 ———
 
+  /// Pesan nomor SEBELUM pra-final pertama (Fix C1) — nomor tercetak di
+  /// PDF pra-final/final. Error diabaikan: endpoint idempoten (nomor
+  /// sudah ada → 200) dan finalize tetap mencadangkan lewat ensureReserved
+  /// bila reserve di sini gagal (mis. jaringan putus sesaat).
+  Future<void> _reserveNumberOnce() async {
+    if (_draftId == null || _reservedNumber != null) return;
+    try {
+      final result = await _service.reserveNumber(_draftId!);
+      final number = result['number']?.toString();
+      if (number != null && number.isNotEmpty) {
+        _reservedNumber = number;
+      }
+    } catch (_) {
+      // Nomor menyusul via preFinal/finalize backend.
+    }
+  }
+
   /// pre-final (mode a) → unduh bytes PDF dari URL signed (tanpa bearer).
   Future<void> _buildPreview() async {
     if (_draftId == null) return;
@@ -900,6 +929,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       _buildError = null;
     });
     try {
+      await _reserveNumberOnce();
+      if (!mounted) return;
+      setState(() {}); // tampilkan nomor yang baru dipesan di header.
       final result = await _service.preFinal(_draftId!, mode: 'a');
       final url = result['download_url']?.toString();
       if (url == null || url.isEmpty) {
@@ -928,7 +960,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     setState(() => _finalizing = true);
     try {
       final result = await _service.finalize(_draftId!, method: 'a');
-      final number = result['number']?.toString() ?? '';
+      final fromResponse = result['number']?.toString();
+      final number = (fromResponse != null && fromResponse.isNotEmpty)
+          ? fromResponse
+          : (_reservedNumber ?? '');
       final verifyUrl = result['verify_url']?.toString() ?? '';
       if (!mounted) return;
       await showDialog<void>(
@@ -967,7 +1002,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           // Backend wajib unit saat create (tanpa duplicate_from_id).
           return 'Unit wajib diisi (mis. DIR).';
         }
-        if (_selectedType?.specificFields?.isNotEmpty == true &&
+        if (_validityRelevant &&
             _validityMode == ValidityMode.untilDate &&
             _validityDate == null) {
           return 'Pilih tanggal berakhir masa berlaku.';
@@ -1245,6 +1280,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           onSaveParty: _canOfferSaveParty ? _saveParty : null,
           specificFields: specific,
           specificControllers: _specificControllers,
+          validityRelevant: _validityRelevant,
           validityMode: _validityMode,
           onValidityModeChanged: (mode) =>
               setState(() => _validityMode = mode),
@@ -1293,6 +1329,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           onBuild: _buildPreview,
           finalizing: _finalizing,
           onFinalize: _finalizeLetter,
+          number: _reservedNumber,
         );
       default:
         return const SizedBox.shrink();
@@ -1346,18 +1383,23 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
                   child: const Text('Kembali'),
                 ),
               const Spacer(),
+              // Flexible: label panjang ('Lanjut ke pratinjau') + Kembali
+              // melebihi lebar ponsel 360dp — tombol menyusut (label wrap),
+              // bukan overflow tersembunyi.
               if (!_isLastStep)
-                FilledButton.icon(
-                  onPressed: blocked == null && !_saving ? _goNext : null,
-                  style: AppButtonStyle.filled(),
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.arrow_forward_rounded),
-                  label: Text(_step == 4 ? 'Lanjut ke pratinjau' : 'Lanjut'),
+                Flexible(
+                  child: FilledButton.icon(
+                    onPressed: blocked == null && !_saving ? _goNext : null,
+                    style: AppButtonStyle.filled(),
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.arrow_forward_rounded),
+                    label: Text(_step == 4 ? 'Lanjut ke pratinjau' : 'Lanjut'),
+                  ),
                 ),
             ],
           ),

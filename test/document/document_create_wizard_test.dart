@@ -24,6 +24,13 @@ class _FakeWizardService extends DocumentService {
   final List<LetterTypeModel> letterTypes;
   final Map<String, List<TemplateModel>> _templatesPerType;
 
+  // Urutan panggilan (Fix C1: reserve SEBELUM preFinal di langkah 6).
+  int _callSeq = 0;
+  int reserveCalls = 0;
+  int? reserveCallSeq;
+  int preFinalCalls = 0;
+  int? preFinalCallSeq;
+
   String? lastCreateLetterType;
   String? lastCreateSubject;
   String? lastCreateUnit;
@@ -39,6 +46,41 @@ class _FakeWizardService extends DocumentService {
   @override
   Future<List<TemplateModel>> getTemplates(String letterTypeCode) async =>
       _templatesPerType[letterTypeCode] ?? const [];
+
+  @override
+  Future<Map<String, dynamic>> reserveNumber(String id) async {
+    reserveCalls++;
+    reserveCallSeq = ++_callSeq;
+    return {'number': '003/KUA/DIR/X/2026', 'seq': 3};
+  }
+
+  @override
+  Future<Map<String, dynamic>> preFinal(
+    String id, {
+    required String mode,
+    String? pdfBase64,
+    List<Map<String, dynamic>>? overlays,
+  }) async {
+    preFinalCalls++;
+    preFinalCallSeq = ++_callSeq;
+    // Gagal disengaja: assert hanya butuh urutan reserve→preFinal + nomor
+    // tampil di header pratinjau (unduh http tidak berjalan di test).
+    throw Exception('pra-final gagal di fake');
+  }
+
+  @override
+  Future<DocumentModel> getDetail(String id) async => DocumentModel(
+        id: id,
+        status: 'draft',
+        classification: 'umum',
+        subject: 'draf',
+      );
+
+  @override
+  Future<List<SignerModel>> getMySigners() async => const [];
+
+  @override
+  Future<List<SignerModel>> getSigners() async => const [];
 
   @override
   Future<DocumentModel> createDraft({
@@ -261,5 +303,62 @@ void main() {
     expect(service.updateDraftCalls, 1);
     expect(service.lastUpdateBodyHtml, isNotNull);
     expect(service.lastUpdateBodyHtml, contains('Isi template'));
+  });
+
+  testWidgets('Fix C1 langkah 6: reserveNumber dipanggil sebelum pra-final '
+      '& nomor tampil di header pratinjau', (tester) async {
+    final service = _FakeWizardService(
+      letterTypes: const [_kuaType],
+      templatesPerType: const {
+        'KUA': [
+          TemplateModel(
+            id: 7,
+            name: 'Template KUA Standar',
+            letterTypeCode: 'KUA',
+            bodyHtml: '<p>Isi template</p>',
+            isDefault: true,
+          ),
+        ],
+      },
+    );
+
+    await _pumpWizard(tester, service);
+    await tester.tap(find.text('Surat Kuasa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Perihal *'), 'Kuasa pengurusan pajak');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    // Langkah 3 (editor) → 4 (lampiran) → 5 (penandatangan).
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+
+    // Masuk langkah 6 memicu pra-final otomatis: reserve DULU, lalu
+    // preFinal (fake melempar — header tetap merender nomor + error).
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut ke pratinjau'));
+    await tester.pumpAndSettle();
+
+    expect(service.reserveCalls, 1,
+        reason: 'nomor dipesan sekali sebelum pra-final');
+    expect(service.preFinalCalls, 1);
+    expect(
+      service.reserveCallSeq! < service.preFinalCallSeq!,
+      isTrue,
+      reason: 'reserveNumber harus dipanggil sebelum preFinal',
+    );
+    expect(find.text('Langkah 6 dari 6 — Pratinjau & terbit'), findsOneWidget);
+    expect(
+      find.text('Nomor surat: 003/KUA/DIR/X/2026'),
+      findsOneWidget,
+      reason: 'nomor tampil di header pratinjau',
+    );
   });
 }

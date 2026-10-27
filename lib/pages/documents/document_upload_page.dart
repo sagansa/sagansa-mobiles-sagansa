@@ -148,6 +148,11 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
   Uint8List? _previewBytes;
   final List<PickedPhoto> _photos = [];
 
+  /// Nomor surat (Fix C1) — dipesan SEKALI sebelum pra-final pertama;
+  /// tampil sebagai subjudul halaman & dipakai fallback dialog sukses.
+  String? _reservedNumber;
+  bool _reserveAttempted = false;
+
   bool get _isReissue => widget.mode == DocumentUploadMode.reissue;
   String get _method => _isReissue ? widget.reissueMethod : 'b';
 
@@ -512,12 +517,33 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
 
   // ——— alur: submit ———
 
+  /// Pesan nomor sekali sebelum pra-final (Fix C1) — nomor tercetak di
+  /// PDF (teks `No. …` di atas QR default) & tampil di subjudul. Error
+  /// diabaikan: endpoint idempoten dan backend ensureReserved tetap
+  /// menjaga saat finalize; reissue selalu sudah bernomor.
+  Future<void> _reserveNumberOnce() async {
+    if (_reserveAttempted) return;
+    _reserveAttempted = true;
+    try {
+      final result = await _service.reserveNumber(widget.documentId);
+      final number = result['number']?.toString();
+      if (number != null && number.isNotEmpty) {
+        _reservedNumber = number;
+      }
+    } catch (_) {
+      // Nomor menyusul via preFinal/finalize backend.
+    }
+  }
+
   /// Mode B: pra-final (stempel overlay ke PDF unggahan) → pratinjau.
   Future<void> _submitPreFinal() async {
     final pdf = _pdf;
     if (pdf == null || _submitting) return;
     setState(() => _submitting = true);
     try {
+      await _reserveNumberOnce();
+      if (!mounted) return;
+      setState(() {}); // nomor tampil di subjudul bila baru dipesan.
       final result = await _service.preFinal(
         widget.documentId,
         mode: 'b',
@@ -764,7 +790,12 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
 
   /// Dialog sukses penerbitan: nomor + QR verifikasi (pola wizard task 20).
   Future<void> _showIssuedDialog(Map<String, dynamic> result) async {
-    final number = result['number']?.toString() ?? '';
+    final fromResponse = result['number']?.toString();
+    // Nomor aktual dari response finalize/reissue (Fix C1: kini selalu
+    // terisi); fallback nomor yang dipesan pra-final.
+    final number = (fromResponse != null && fromResponse.isNotEmpty)
+        ? fromResponse
+        : (_reservedNumber ?? '');
     // Response finalize/reissue memuat verify_url absolut dari backend.
     final verifyUrl = result['verify_url']?.toString() ?? _verifyUrl;
     await showDialog<void>(
@@ -791,6 +822,32 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
         bottom: false,
         child: Column(
           children: [
+            // Subjudul nomor (Fix C1) — tampil begitu nomor dipesan.
+            if (_reservedNumber != null)
+              Padding(
+                padding: AppSpacing.paddingHorizontalMD.copyWith(
+                  top: AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.tag_rounded,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        'Nomor surat: $_reservedNumber',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(child: _buildStage(context)),
             _buildBottomBar(context),
           ],

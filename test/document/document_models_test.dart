@@ -341,6 +341,41 @@ void main() {
     expect(party.createdAt, isNotNull);
   });
 
+  // Fix I1 — fixture bentuk seeder BARU DocumentLetterTypeSeeder (list
+  // kanonik [{key,label}]): parser harus menghasilkan 4 field KUA
+  // termasuk masa_berlaku (dulu object bersarang → specificFields null).
+  test('LetterType KUA fixture seeder (list kanonik) terparse penuh', () {
+    const seederShape = <String, dynamic>{
+      'code': 'KUA',
+      'name': 'Surat Kuasa',
+      'specific_fields': [
+        {'key': 'penerima_kuasa_nama', 'label': 'Nama Penerima Kuasa'},
+        {'key': 'penerima_kuasa_nik', 'label': 'NIK'},
+        {'key': 'penerima_kuasa_alamat', 'label': 'Alamat'},
+        {'key': 'masa_berlaku', 'label': 'Masa Berlaku'},
+      ],
+    };
+
+    final kua = LetterTypeModel.fromJson(seederShape);
+
+    expect(kua.code, 'KUA');
+    expect(
+      kua.specificFields,
+      const [
+        LetterSpecificField(
+            key: 'penerima_kuasa_nama', label: 'Nama Penerima Kuasa'),
+        LetterSpecificField(key: 'penerima_kuasa_nik', label: 'NIK'),
+        LetterSpecificField(key: 'penerima_kuasa_alamat', label: 'Alamat'),
+        LetterSpecificField(key: 'masa_berlaku', label: 'Masa Berlaku'),
+      ],
+    );
+    expect(
+      kua.specificFields!.any((f) => f.key == 'masa_berlaku'),
+      isTrue,
+      reason: 'key masa_berlaku wajib ada (gating validity wizard)',
+    );
+  });
+
   // ——— mapping error envelope ke ApiException ———
 
   test('DocumentApiClient memetakan {error:{code,message}} ke ApiException',

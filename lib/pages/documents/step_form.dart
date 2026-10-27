@@ -48,7 +48,10 @@ class StepForm extends StatelessWidget {
   final List<LetterSpecificField> specificFields;
   final Map<String, TextEditingController> specificControllers;
 
-  // Masa berlaku (hanya untuk jenis dengan field khusus).
+  // Masa berlaku — gating dari wizard (Fix I1): jenis KUA atau
+  // specific_fields memuat key `masa_berlaku` (bukan sekadar "ada field
+  // khusus apa pun", supaya tak bergantung shape object lama).
+  final bool validityRelevant;
   final ValidityMode validityMode;
   final ValueChanged<ValidityMode> onValidityModeChanged;
   final DateTime? validityDate;
@@ -69,6 +72,7 @@ class StepForm extends StatelessWidget {
     this.onSaveParty,
     required this.specificFields,
     required this.specificControllers,
+    required this.validityRelevant,
     required this.validityMode,
     required this.onValidityModeChanged,
     required this.validityDate,
@@ -107,6 +111,8 @@ class StepForm extends StatelessWidget {
         if (specificFields.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
           _specificSection(context),
+        ],
+        if (validityRelevant) ...[
           const SizedBox(height: AppSpacing.md),
           _validitySection(context),
         ],

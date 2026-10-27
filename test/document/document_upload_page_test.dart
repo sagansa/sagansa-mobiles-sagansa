@@ -12,6 +12,12 @@ import 'package:sagansa/services/document/document_service.dart';
 /// lanjutan C/D, reissue b/d, preset ponsel & drag kanvas tablet, semua
 /// lewat service fake + seam (pick/fetch/compress) tanpa jaringan.
 class _FakeUploadService extends DocumentService {
+  // Urutan panggilan lintas metode (Fix C1: reserve SEBELUM preFinal).
+  int _callSeq = 0;
+  int reserveCalls = 0;
+  int? reserveCallSeq;
+  int? preFinalCallSeq;
+
   // preFinal captures.
   int preFinalCalls = 0;
   String? lastPreFinalId;
@@ -41,6 +47,13 @@ class _FakeUploadService extends DocumentService {
   };
 
   @override
+  Future<Map<String, dynamic>> reserveNumber(String id) async {
+    reserveCalls++;
+    reserveCallSeq = ++_callSeq;
+    return {'number': '017/KUA/X/2026', 'seq': 17};
+  }
+
+  @override
   Future<Map<String, dynamic>> preFinal(
     String id, {
     required String mode,
@@ -48,6 +61,7 @@ class _FakeUploadService extends DocumentService {
     List<Map<String, dynamic>>? overlays,
   }) async {
     preFinalCalls++;
+    preFinalCallSeq = ++_callSeq;
     lastPreFinalId = id;
     lastPreFinalMode = mode;
     lastPreFinalPdfBase64 = pdfBase64;
@@ -179,6 +193,15 @@ void main() {
     // Pra-final: mode b + pdf_base64 + overlay QR preset kanan-bawah A4.
     await tester.tap(find.text('Buat pra-final'));
     await tester.pumpAndSettle();
+
+    // Fix C1: nomor dipesan SEBELUM pra-final & tampil di subjudul.
+    expect(service.reserveCalls, 1);
+    expect(
+      service.reserveCallSeq! < service.preFinalCallSeq!,
+      isTrue,
+      reason: 'reserveNumber harus dipanggil sebelum preFinal',
+    );
+    expect(find.text('Nomor surat: 017/KUA/X/2026'), findsOneWidget);
 
     expect(service.preFinalCalls, 1);
     expect(service.lastPreFinalId, 'doc-1');

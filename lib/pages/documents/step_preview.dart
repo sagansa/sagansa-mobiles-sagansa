@@ -8,6 +8,10 @@ import '../../widgets/empty_state.dart';
 
 /// Langkah 6 wizard — pra-final (render PDF server, tampil via pdfrx)
 /// lalu terbitkan (finalize metode a) dengan dialog sukses di wizard.
+///
+/// [number] nomor surat yang sudah dipesan (reserveNumber) sebelum
+/// pra-final pertama — Fix C1: nomor tampil di header pratinjau agar
+/// user melihat nomor yang akan tercetak; null = belum tersedia.
 class StepPreview extends StatelessWidget {
   final Uint8List? previewBytes;
   final bool building;
@@ -17,6 +21,8 @@ class StepPreview extends StatelessWidget {
   final bool finalizing;
   final VoidCallback onFinalize;
 
+  final String? number;
+
   const StepPreview({
     super.key,
     required this.previewBytes,
@@ -25,6 +31,7 @@ class StepPreview extends StatelessWidget {
     required this.onBuild,
     required this.finalizing,
     required this.onFinalize,
+    this.number,
   });
 
   @override
@@ -67,6 +74,20 @@ class StepPreview extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+        Padding(
+          padding: AppSpacing.paddingHorizontalMD.copyWith(
+            top: AppSpacing.xs,
+          ),
+          child: Text(
+            number == null || number!.isEmpty
+                ? 'Nomor surat dipesan otomatis saat pra-final dibuat.'
+                : 'Nomor surat: $number',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ),
         if (buildError != null)
