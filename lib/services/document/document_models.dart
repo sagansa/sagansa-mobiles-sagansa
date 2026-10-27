@@ -410,7 +410,11 @@ class DocumentModel {
   }
 
   /// Label status bahasa Indonesia untuk UI.
-  String get statusLabel {
+  String get statusLabel => statusLabelOf(status);
+
+  /// Label status dari kode — dipakai filter UI yang belum punya instans
+  /// dokumen (mis. chip filter "Semua/Draft/Terbit/..." di list page).
+  static String statusLabelOf(String status) {
     switch (status) {
       case 'draft':
         return 'Draft';

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/auth_service.dart';
+import '../services/document/document_access.dart';
 import '../services/leave_service.dart';
 import '../services/token_store.dart';
 import '../services/widget_bridge.dart';
@@ -136,6 +137,11 @@ class AuthProvider with ChangeNotifier {
       _userData = null;
       _authState = AuthState.idle;
       _errorMessage = '';
+
+      // Buang cache gate "Surat Perusahaan" (hasil cek signer sesi ini tidak
+      // boleh bocor ke sesi berikutnya). Tidak wajib untuk kebenaran — cache
+      // DocumentAccess dikunci per token — tetapi membuat invalidasi instan.
+      DocumentAccess.instance.reset();
 
       try {
         await TokenStore.instance.clear();
