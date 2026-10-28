@@ -163,6 +163,14 @@ class DocumentService {
         .toList(growable: false);
   }
 
+  /// `GET /signers/{id}/signature` — bytes PNG aset TTD tersimpan (fase 1c).
+  ///
+  /// 404 bila signer tak punya aset; dipakai sumber overlay Mode B
+  /// "Tanda tangan tersimpan".
+  Future<Uint8List> getSignatureBytes(int signerId) {
+    return _api.getBytes('signers/$signerId/signature');
+  }
+
   /// `POST /documents/{id}/signers` body `{signer_id}` — ajukan tanda
   /// tangan; dokumen pindah ke `menunggu_ttd`. Return shape request
   /// (+ `document_status`).

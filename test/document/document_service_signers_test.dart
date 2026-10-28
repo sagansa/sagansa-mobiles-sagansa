@@ -20,24 +20,24 @@ void main() {
         'role': 'direktur',
         'display_name': 'Dira Direktur',
         'title': null,
-        'signature_ready': false,
+        'has_signature': false,
       },
       {
         'id': 2,
         'role': 'komisaris',
         'display_name': 'Rina Komisaris',
         'title': 'Komisaris Utama',
-        'signature_ready': true,
+        'has_signature': true,
       },
     ]);
 
     expect(signers, hasLength(2));
     expect(signers[0].id, 1);
     expect(signers[0].roleLabel, 'Direktur');
-    expect(signers[0].signatureReady, isFalse);
+    expect(signers[0].hasSignature, isFalse);
     expect(signers[1].displayName, 'Rina Komisaris');
     expect(signers[1].title, 'Komisaris Utama');
-    expect(signers[1].signatureReady, isTrue);
+    expect(signers[1].hasSignature, isTrue);
   });
 
   test('parseSignerList: bentuk tak dikenal → list kosong, tidak melempar',
@@ -55,7 +55,7 @@ void main() {
           'role': 'komisaris',
           'display_name': 'Bona Komisaris',
           'title': null,
-          'signature_ready': true,
+          'has_signature': true,
         },
       ];
 

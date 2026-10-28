@@ -151,20 +151,23 @@ class PartyModel {
 }
 
 /// Penandatangan (signer) — bentuk di `GET /me/signer` dan di dalam
-/// signing request `{id, role, display_name, title?, signature_ready?}`.
+/// signing request `{id, role, display_name, title?, has_signature?}`.
+///
+/// [hasSignature] (fase 1c) menandakan aset TTD tersimpan di server —
+/// dipakai sebagai sumber overlay "Tanda tangan tersimpan" Mode B.
 class SignerModel {
   final int id;
   final String role;
   final String displayName;
   final String? title;
-  final bool signatureReady;
+  final bool hasSignature;
 
   const SignerModel({
     required this.id,
     required this.role,
     required this.displayName,
     this.title,
-    this.signatureReady = false,
+    this.hasSignature = false,
   });
 
   factory SignerModel.fromJson(Map<String, dynamic> json) {
@@ -173,7 +176,7 @@ class SignerModel {
       role: json['role']?.toString() ?? '',
       displayName: json['display_name']?.toString() ?? '',
       title: _nullableString(json['title']),
-      signatureReady: json['signature_ready'] == true,
+      hasSignature: json['has_signature'] == true,
     );
   }
 

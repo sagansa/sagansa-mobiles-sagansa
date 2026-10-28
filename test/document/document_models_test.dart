@@ -256,7 +256,7 @@ void main() {
         'role': 'direktur',
         'display_name': 'Ari Direktur',
         'title': 'Direktur Utama',
-        'signature_ready': true,
+        'has_signature': true,
       },
       'document': {
         'id': '0f0e8d04-63f7-4d8e-9db3-2b1c00000003',
@@ -269,7 +269,7 @@ void main() {
     final request = SigningRequestModel.fromJson(json);
     expect(request.signer?.id, 3);
     expect(request.signer?.title, 'Direktur Utama');
-    expect(request.signer?.signatureReady, isTrue);
+    expect(request.signer?.hasSignature, isTrue);
     expect(request.document?.number, '002/KUA/DPR/X/2026');
     expect(request.document?.status, 'menunggu_ttd');
   });
@@ -280,10 +280,10 @@ void main() {
       'role': 'komisaris',
       'display_name': 'Budi',
       'title': null,
-      'signature_ready': false,
+      'has_signature': false,
     });
     expect(signer.id, 11);
-    expect(signer.signatureReady, isFalse);
+    expect(signer.hasSignature, isFalse);
     expect(signer.title, isNull);
 
     // Bentuk backend sesungguhnya: [{key, label}] (task 20).

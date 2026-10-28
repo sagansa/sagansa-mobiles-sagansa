@@ -9,8 +9,9 @@ import '../../theme/app_spacing.dart';
 
 /// Jenis overlay yang bisa ditempel ke PDF (Mode B) — `qr` menempel QR
 /// verifikasi (dibuat klien, menunjuk UUID surat), `image` menempel gambar
-/// bebas PNG (mis. TTD scan / meterai visual).
-enum OverlayKind { qr, image }
+/// bebas PNG (mis. TTD scan / meterai visual), `signature` menempel aset
+/// tanda tangan tersimpan milik penandatangan (fase 1c).
+enum OverlayKind { qr, image, signature }
 
 /// Preset posisi overlay (ponsel) — koordinat mm dihitung [OverlayMath].
 enum OverlayPreset { bottomRight, bottomLeft, center }
@@ -108,6 +109,33 @@ class OverlayImageData {
   final double aspectRatio; // tinggi / lebar
 
   const OverlayImageData({required this.png, required this.aspectRatio});
+
+  /// Bungkus bytes PNG yang SUDAH tervalidasi (mis. aset TTD tersimpan dari
+  /// server) tanpa decode ulang; rasio dibaca dari header IHDR.
+  /// Null bila bytes bukan PNG sah.
+  static OverlayImageData? fromPngBytes(Uint8List bytes) {
+    const magic = <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if (bytes.length < 24) return null;
+    for (var i = 0; i < magic.length; i++) {
+      if (bytes[i] != magic[i]) return null;
+    }
+    // Chunk pertama PNG wajib IHDR (offset 12..15).
+    if (bytes[12] != 0x49 ||
+        bytes[13] != 0x48 ||
+        bytes[14] != 0x44 ||
+        bytes[15] != 0x52) {
+      return null;
+    }
+
+    final header = ByteData.sublistView(bytes);
+    final width = header.getUint32(16);
+    final height = header.getUint32(20);
+
+    if (width == 0 || height == 0) return null;
+
+    return OverlayImageData(png: bytes, aspectRatio: height / width);
+  }
 }
 
 /// Matematika konversi kanvas (pt @72dpi) ↔ mm origin kiri-bawah.
@@ -305,7 +333,9 @@ class StepOverlayPlacement extends StatefulWidget {
 
   final VoidCallback onAddQr;
   final VoidCallback onAddImage;
+  final VoidCallback? onAddSignature;
   final bool addingImage;
+  final bool addingSignature;
 
   /// Render halaman aktif (kosmetik — null saat masih merender; kotak pt
   /// tetap digambar sehingga drag/preset tetap presisi).
@@ -324,7 +354,9 @@ class StepOverlayPlacement extends StatefulWidget {
     required this.onRemoveOverlay,
     required this.onAddQr,
     required this.onAddImage,
+    this.onAddSignature,
     required this.addingImage,
+    this.addingSignature = false,
     this.pageImage,
   });
 
@@ -484,6 +516,19 @@ class _StepOverlayPlacementState extends State<StepOverlayPlacement> {
                   : const Icon(Icons.image_outlined),
               label: const Text('Gambar (TTD/meterai)'),
             ),
+            if (widget.onAddSignature != null)
+              OutlinedButton.icon(
+                onPressed:
+                    widget.addingSignature ? null : widget.onAddSignature,
+                icon: widget.addingSignature
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.gesture_rounded),
+                label: const Text('Tanda tangan tersimpan'),
+              ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
@@ -594,18 +639,22 @@ class _OverlayCard extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  item.kind == OverlayKind.qr
-                      ? Icons.qr_code_2_rounded
-                      : Icons.image_outlined,
+                  switch (item.kind) {
+                    OverlayKind.qr => Icons.qr_code_2_rounded,
+                    OverlayKind.signature => Icons.gesture_rounded,
+                    OverlayKind.image => Icons.image_outlined,
+                  },
                   size: 18,
                   color: colorScheme.primary,
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    item.kind == OverlayKind.qr
-                        ? 'QR verifikasi'
-                        : 'Gambar (TTD/meterai)',
+                    switch (item.kind) {
+                      OverlayKind.qr => 'QR verifikasi',
+                      OverlayKind.signature => 'Tanda tangan tersimpan',
+                      OverlayKind.image => 'Gambar (TTD/meterai)',
+                    },
                     style: textTheme.titleSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),

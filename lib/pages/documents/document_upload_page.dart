@@ -12,6 +12,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../services/document/document_models.dart';
 import '../../services/document/document_service.dart';
 import '../../theme/app_button_style.dart';
 import '../../theme/app_spacing.dart';
@@ -136,6 +137,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
   bool _picking = false;
   bool _submitting = false;
   bool _addingImage = false;
+  bool _addingSignature = false;
 
   PickedPdf? _pdf;
   PdfPagesInfo? _pagesInfo;
@@ -479,8 +481,109 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     }
   }
 
-  void _updateOverlay(OverlayItem updated) {
-    final page = _pagesInfo?.pageAt(updated.page) ?? PdfPagesInfo.a4;
+  /// Sumber overlay fase 1c: aset tanda tangan tersimpan milik penandatangan.
+  ///
+  /// Ambil direktori signer aktif (`GET /signers`), saring `hasSignature`,
+  /// pilih lewat bottom sheet, lalu unduh bytes PNG
+  /// (`GET /signers/{id}/signature`). Lebar default 45mm — tanda tangan
+  /// terbaca jelas tanpa menutup isi surat; rasio dari header PNG.
+  Future<void> _addStoredSignatureOverlay() async {
+    if (_addingSignature) return;
+    setState(() => _addingSignature = true);
+    try {
+      final signers = await _service.getSigners();
+      if (!mounted) return;
+
+      // Spinner hanya selama fetch direktori; modal punya interaksi sendiri
+      // (indikator animasi di balik sheet membuat pumpAndSettle tak pernah
+      // tenang dan, di perangkat nyata, terlihat berputar tanpa guna).
+      setState(() => _addingSignature = false);
+
+      final available =
+          signers.where((signer) => signer.hasSignature).toList(growable: false);
+
+      if (available.isEmpty) {
+        showErrorSnackBar(
+          context,
+          'Belum ada tanda tangan tersimpan. Minta admin mengunggah aset '
+          'TTD penandatangan lebih dulu.',
+        );
+        return;
+      }
+
+      final picked = await showModalBottomSheet<SignerModel>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (sheetContext) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: AppSpacing.paddingMD,
+                  child: Text(
+                    'Pilih tanda tangan tersimpan',
+                    style: Theme.of(sheetContext)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                for (final signer in available)
+                  ListTile(
+                    leading: const Icon(Icons.gesture_rounded),
+                    title: Text(signer.displayName),
+                    subtitle: Text(
+                      signer.title?.isNotEmpty == true
+                          ? '${signer.roleLabel} · ${signer.title}'
+                          : signer.roleLabel,
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop(signer),
+                  ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (picked == null || !mounted) return;
+
+      setState(() => _addingSignature = true);
+
+      final bytes = await _service.getSignatureBytes(picked.id);
+      if (!mounted) return;
+
+      final data = OverlayImageData.fromPngBytes(bytes);
+      if (data == null) {
+        showErrorSnackBar(context, 'Aset tanda tangan tidak dapat dibaca.');
+        return;
+      }
+
+      final item = _newOverlayAtPreset(
+        kind: OverlayKind.signature,
+        png: data.png,
+        aspectRatio: data.aspectRatio,
+        preset: OverlayPreset.bottomLeft,
+        widthMm: 45,
+      );
+      if (item == null) return;
+
+      setState(() {
+        _overlays.add(item);
+        _selectedOverlayId = item.id;
+      });
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
+    } finally {
+      if (mounted) setState(() => _addingSignature = false);
+    }
+  }
+
+  void _updateOverlay(OverlayItem updated) {    final page = _pagesInfo?.pageAt(updated.page) ?? PdfPagesInfo.a4;
     final fitted = OverlayMath.fitIntoPage(
       updated,
       pageWidthMm: OverlayMath.pageWidthMm(page.widthPt),
@@ -997,7 +1100,9 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
       onRemoveOverlay: _removeOverlay,
       onAddQr: _addQrOverlay,
       onAddImage: _addImageOverlay,
+      onAddSignature: _addStoredSignatureOverlay,
       addingImage: _addingImage,
+      addingSignature: _addingSignature,
       pageImage: _pageImage,
     );
   }
