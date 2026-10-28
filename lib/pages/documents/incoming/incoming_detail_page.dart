@@ -757,8 +757,10 @@ class _DispositionsTab extends StatelessWidget {
                   ],
                 ),
         ),
-        // Surat selesai dibekukan backend (409) — tambah disposisi
-        // ditawarkan hanya selama surat masih terbuka.
+        // Surat `selesai` = arsip final (keputusan #9 fase 1b):
+        // DispositionController menolak tambah disposisi dengan 409
+        // INCOMING_LOCKED, jadi tombol hanya tampil selama surat masih
+        // terbuka (terdaftar/diproses) — UI dan backend sepakat.
         if (letter.status != 'selesai')
           SafeArea(
             top: false,
