@@ -18,7 +18,7 @@ import 'package:sagansa/widgets/status_badge.dart';
 /// - pencarian debounce mengirim field `q`; chip status/sifat mengirim
 ///   filter ke service;
 /// - tap kartu membuka placeholder detail (TODO Task 10); FAB masuk
-///   membuka placeholder form (TODO Task 9) lalu me-refresh daftar;
+///   membuka form pendaftaran (Task 9) lalu me-refresh daftar;
 /// - menu kartu "Daftarkan sebagai balasan pihak luar" tampil namun
 ///   dinonaktifkan sampai Task 11.
 
@@ -278,7 +278,7 @@ void main() {
     expect(find.textContaining('Tugas 10'), findsOneWidget);
   });
 
-  testWidgets('FAB masuk membuka placeholder form (TODO Task 9) lalu '
+  testWidgets('FAB masuk membuka form pendaftaran (Task 9) lalu '
       'me-refresh daftar', (tester) async {
     final incoming = _FakeIncomingService(letters: _letters);
     await _pumpPage(tester, incoming: incoming);
@@ -287,8 +287,10 @@ void main() {
 
     await tester.tap(find.byTooltip('Daftar Surat Masuk'));
     await tester.pumpAndSettle();
-    expect(find.text('Form pendaftaran surat masuk'), findsOneWidget);
-    expect(find.textContaining('Tugas 9'), findsOneWidget);
+    // Form asli Task 9: judul + kolom utama + tombol daftar tampil.
+    expect(find.text('Nama pengirim *'), findsOneWidget);
+    expect(find.text('Perihal *'), findsOneWidget);
+    expect(find.text('Daftarkan Surat Masuk'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Kembali'));
     await tester.pumpAndSettle();

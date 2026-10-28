@@ -551,23 +551,3 @@ class IncomingDetailPlaceholderPage extends StatelessWidget {
     );
   }
 }
-
-/// TODO(Task 9): placeholder form pendaftaran surat masuk — diganti form
-/// penuh (pengirim, tanggal, scan, dsb). Dibuka FAB "Daftar Surat Masuk"
-/// pada tab Masuk.
-class IncomingFormPlaceholderPage extends StatelessWidget {
-  const IncomingFormPlaceholderPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPageScaffold(
-      titleText: 'Daftar Surat Masuk',
-      body: EmptyState(
-        icon: Icons.mark_email_unread_outlined,
-        title: 'Form pendaftaran surat masuk',
-        subtitle: 'Form pengisian (pengirim, tanggal, unggah scan) akan '
-            'tersedia setelah Tugas 9.',
-      ),
-    );
-  }
-}

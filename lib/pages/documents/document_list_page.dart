@@ -25,6 +25,7 @@ import '../transaction_dashboard_page.dart';
 import 'document_create_wizard.dart';
 import 'document_detail_page.dart';
 import 'document_upload_page.dart';
+import 'incoming/incoming_form_page.dart';
 import 'incoming/incoming_list_section.dart';
 import 'signing_task_page.dart';
 
@@ -36,7 +37,7 @@ import 'signing_task_page.dart';
 ///   filter status/jenis/tahun, pencarian, infinite scroll.
 /// - Tab Masuk: buku agenda surat masuk fase 1b (`IncomingListSection`).
 /// - FAB kontekstual: Keluar → wizard "Buat Surat" (task 20); Masuk →
-///   form "Daftar Surat Masuk" (Task 9, placeholder).
+///   form "Daftar Surat Masuk" (Task 9, `IncomingFormPage`).
 ///
 /// [service] & [incomingService] adalah seam test — produksi memakai
 /// instance default.
@@ -158,12 +159,17 @@ class _DocumentListPageState extends State<DocumentListPage> {
     if (mounted) _outgoingKey.currentState?.refresh();
   }
 
-  /// FAB tab Masuk — TODO(Task 9): ganti placeholder dengan form
-  /// pendaftaran surat masuk; kembali me-refresh buku agenda.
+  /// FAB tab Masuk — form pendaftaran surat masuk (Task 9); kembali dari
+  /// form (atau dari detail setelah sukses) me-refresh buku agenda.
   Future<void> _openIncomingForm() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const IncomingFormPlaceholderPage()),
+      MaterialPageRoute(
+        builder: (_) => IncomingFormPage(
+          service: _incomingService,
+          documentService: _service,
+        ),
+      ),
     );
     if (mounted) _incomingKey.currentState?.refresh();
   }

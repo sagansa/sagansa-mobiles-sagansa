@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'document_api_client.dart';
@@ -53,6 +54,11 @@ class IncomingService {
   /// [scanFileName] — default `scan.pdf`, ekstensi harus sesuai isi) ATAU
   /// [scanImages] foto multi (jpg/png, di-compose backend jadi satu PDF).
   /// Tanggal dikirim format `yyyy-MM-dd`.
+  ///
+  /// [inReplyToId] + [inReplyToType] + [inReplyToRelation] (opsional,
+  /// Task 9 fase 1b): tautkan surat baru sebagai child induk runutan
+  /// (shape `in_reply_to` backend — dipreflight server; ghost → 422
+  /// LINK_TARGET_NOT_FOUND tanpa surat tersimpan).
   Future<IncomingLetterModel> createIncoming({
     required int senderPartyId,
     String? numberExternal,
@@ -65,6 +71,9 @@ class IncomingService {
     List<int>? scanBytes,
     String? scanFileName,
     List<IncomingScanImage>? scanImages,
+    String? inReplyToType,
+    String? inReplyToId,
+    String? inReplyToRelation,
   }) async {
     if (scanBytes != null && (scanImages?.isNotEmpty ?? false)) {
       throw ArgumentError(
@@ -87,19 +96,57 @@ class IncomingService {
     final data = await _api.multipart(
       method: 'POST',
       path: 'incoming-letters',
-      fields: <String, String>{
-        'sender_party_id': senderPartyId.toString(),
-        'received_at': _formatDate(receivedAt),
-        'subject': subject,
-        'sifat': sifat,
-        if (numberExternal != null) 'number_external': numberExternal,
-        if (letterDate != null) 'letter_date': _formatDate(letterDate),
-        if (attachmentsNote != null) 'attachments_note': attachmentsNote,
-        if (companyId != null) 'company_id': companyId,
-      },
+      fields: buildCreateFields(
+        senderPartyId: senderPartyId,
+        numberExternal: numberExternal,
+        letterDate: letterDate,
+        receivedAt: receivedAt,
+        subject: subject,
+        sifat: sifat,
+        attachmentsNote: attachmentsNote,
+        companyId: companyId,
+        inReplyToType: inReplyToType,
+        inReplyToId: inReplyToId,
+        inReplyToRelation: inReplyToRelation,
+      ),
       files: files,
     );
     return IncomingLetterModel.fromJson(_asMap(data));
+  }
+
+  /// Peta field multipart `POST /incoming-letters` — dipisah dari
+  /// [createIncoming] agar bentuk wire (nama field, format tanggal
+  /// `yyyy-MM-dd`, kurung kurawal `in_reply_to[...]` PHP) teruji tanpa
+  /// HTTP.
+  @visibleForTesting
+  static Map<String, String> buildCreateFields({
+    required int senderPartyId,
+    String? numberExternal,
+    DateTime? letterDate,
+    required DateTime receivedAt,
+    required String subject,
+    required String sifat,
+    String? attachmentsNote,
+    String? companyId,
+    String? inReplyToType,
+    String? inReplyToId,
+    String? inReplyToRelation,
+  }) {
+    return <String, String>{
+      'sender_party_id': senderPartyId.toString(),
+      'received_at': _formatDate(receivedAt),
+      'subject': subject,
+      'sifat': sifat,
+      if (numberExternal != null) 'number_external': numberExternal,
+      if (letterDate != null) 'letter_date': _formatDate(letterDate),
+      if (attachmentsNote != null) 'attachments_note': attachmentsNote,
+      if (companyId != null) 'company_id': companyId,
+      if (inReplyToId != null) ...<String, String>{
+        'in_reply_to[type]': inReplyToType ?? 'document',
+        'in_reply_to[id]': inReplyToId,
+        'in_reply_to[relation]': inReplyToRelation ?? 'balasan',
+      },
+    };
   }
 
   /// `GET /incoming-letters/{id}` — detail: senderParty, dispositions,
