@@ -6,10 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../services/document/document_models.dart';
 import '../../services/document/document_service.dart';
+import '../../services/document/incoming_models.dart';
 import '../../services/document/quill_html_codec.dart';
 import '../../theme/app_button_style.dart';
 import '../../theme/app_spacing.dart';
@@ -17,6 +19,7 @@ import '../../utils/error_utils.dart';
 import '../../widgets/app_dialogs.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
+import 'document_detail_page.dart';
 import 'document_upload_page.dart';
 import 'step_attachments.dart';
 import 'step_editor.dart';
@@ -43,14 +46,34 @@ import 'step_type_template.dart';
 /// bodyHtml ke editor via HtmlToDelta) dan mulai di langkah Formulir;
 /// null (default) = alur buat baru task 20.
 ///
+/// Mode balasan (Task 11 fase 1b): isi [replyTo] dengan surat masuk yang
+/// dibalas — wizard menampilkan banner "Membalas: …", melakukan prefill
+/// langkah 2 (penerima = pengirim surat, perihal `Re: …`), menyisipkan
+/// paragraf pembuka "Menanggapi surat Saudara …" DI DEPAN isi template
+/// (langkah 3), dan mengirim `in_reply_to` saat createDraft. Jenis surat
+/// tetap dipilih pengguna (tidak di-auto).
+///
 /// [service] seam test — produksi memakai `DocumentService()`.
+/// [fetchUrl] seam unduh pratinjau pra-final (produksi: http.get tanpa
+/// bearer, URL signed) — pola DocumentDetailPage.
 class DocumentCreateWizard extends StatefulWidget {
   final DocumentService? service;
 
   /// ID draf yang diedit (dari detail page aksi "Edit"); null = draf baru.
   final String? documentId;
 
-  const DocumentCreateWizard({super.key, this.service, this.documentId});
+  /// Surat masuk yang dibalas (mode balasan); null = alur biasa.
+  final IncomingLetterModel? replyTo;
+
+  final Future<Uint8List> Function(String url)? fetchUrl;
+
+  const DocumentCreateWizard({
+    super.key,
+    this.service,
+    this.documentId,
+    this.replyTo,
+    this.fetchUrl,
+  });
 
   @override
   State<DocumentCreateWizard> createState() => _DocumentCreateWizardState();
@@ -70,6 +93,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   static const double _wideBreakpoint = 700;
 
   late final DocumentService _service = widget.service ?? DocumentService();
+  late final Future<Uint8List> Function(String url) _fetchUrl =
+      widget.fetchUrl ?? _fetchUrlDefault;
 
   int _step = 0;
   bool _saving = false;
@@ -166,6 +191,78 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     _typesLoading = _loadLetterTypes();
     final editId = widget.documentId;
     if (editId != null) _loadExistingDraft(editId);
+    final reply = widget.replyTo;
+    if (reply != null) {
+      // Prefill balasan (Task 11): perihal "Re: …" + penerima = pengirim
+      // surat masuk (resolve exact-match buku pihak agar party dikenal —
+      // tawaran "Simpan ke buku pihak" tidak muncul bila sudah terdaftar).
+      _subjectController.text = 'Re: ${reply.subject}';
+      final senderName = reply.senderParty?.name ?? '';
+      if (senderName.isNotEmpty) {
+        _recipientNameController.text = senderName;
+        _resolveReplyParty(senderName);
+      }
+    }
+  }
+
+  /// Best-effort cocokkan nama penerima prefill ke buku pihak (exact-match
+  /// case-insensitive, pola IncomingFormPage._resolveReplyParty) — cocok →
+  /// tandai sebagai hasil pilihan buku pihak; gagal/tidak ada → tetap nama
+  /// bebas (tawaran simpan buku pihak muncul saat menyimpan formulir).
+  Future<void> _resolveReplyParty(String name) async {
+    try {
+      final page = await _service.getParties(query: name);
+      if (!mounted) return;
+      final match = page.items
+          .where((party) => party.name.toLowerCase() == name.toLowerCase())
+          .firstOrNull;
+      if (match != null && _recipientNameController.text.trim() == name) {
+        setState(() => _pickedPartyName = match.name);
+      }
+    } catch (_) {
+      // Buku pihak tak terjangkau → biarkan nama bebas.
+    }
+  }
+
+  /// Payload `in_reply_to` createDraft mode balasan — null di alur biasa.
+  Map<String, dynamic>? get _inReplyToPayload {
+    final reply = widget.replyTo;
+    if (reply == null) return null;
+    return {
+      'type': 'incoming_letter',
+      'id': reply.id,
+      'relation': 'balasan',
+    };
+  }
+
+  /// Paragraf pembuka balasan (HTML) — disisipkan PALING DEPAN isi editor,
+  /// sebelum konten template. Null di alur biasa.
+  String? get _replyOpeningHtml {
+    final reply = widget.replyTo;
+    if (reply == null) return null;
+    final number =
+        reply.numberExternal ?? reply.agendaNumber;
+    final datePart = reply.letterDate == null
+        ? ''
+        : ' tanggal ${DateFormat('d MMMM yyyy', 'id_ID').format(reply.letterDate!)}';
+    return '<p>Menanggapi surat Saudara nomor ${_escapeHtml(number)}'
+        '$datePart, perihal ${_escapeHtml(reply.subject)}, '
+        'dengan ini kami sampaikan hal-hal sebagai berikut:</p>';
+  }
+
+  static String _escapeHtml(String text) => text
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
+  /// Unduh pratinjau pra-final dari URL signed (tanpa bearer) — produksi.
+  Future<Uint8List> _fetchUrlDefault(String url) async {
+    final response =
+        await http.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
+    if (response.statusCode != 200) {
+      throw Exception('Gagal mengunduh pratinjau (${response.statusCode}).');
+    }
+    return response.bodyBytes;
   }
 
   /// Future pemuatan jenis surat (dipakai mode edit menunggu daftar jenis
@@ -321,6 +418,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         unit: 'DIR',
         subject: 'Surat ${type.name}',
         date: DateTime.now(),
+        // Mode balasan + unggah sendiri: tautan tetap terjaga.
+        inReplyTo: _inReplyToPayload,
       );
       if (!mounted) return;
       await Navigator.push(
@@ -418,10 +517,15 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     };
   }
 
-  /// Prefill editor dari body template (HTML → Delta).
+  /// Prefill editor dari body template (HTML → Delta). Mode balasan:
+  /// paragraf pembuka "Menanggapi surat Saudara …" disisipkan PALING
+  /// DEPAN, sebelum konten template (Task 11 — paragraf duluan, template
+  /// menyusul). Tanpa template, editor tetap berisi paragraf pembuka.
   void _applyTemplateToEditor(TemplateModel? template) {
-    final html = template?.bodyHtml;
-    if (html == null || html.trim().isEmpty) {
+    final replyOpening = _replyOpeningHtml;
+    final templateHtml = template?.bodyHtml;
+    final html = (replyOpening ?? '') + (templateHtml ?? '');
+    if (html.trim().isEmpty) {
       _quillController.clear();
       return;
     }
@@ -459,6 +563,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         letterTypeCode: code,
         subject: 'Salinan — ${source.subject}',
         date: _date,
+        // Mode balasan + salin: isi disalin dari sumber, tautan balasan
+        // tetap dikirim agar runutan tersambung.
+        inReplyTo: _inReplyToPayload,
       );
       if (!mounted) return;
 
@@ -658,8 +765,12 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           metadata: metadata,
           templateId: template?.id,
           // Template flow: body template langsung tersimpan sebagai awal
-          // isi (editor prefill darinya). Duplicate flow: backend menyalin.
-          bodyHtml: template?.bodyHtml,
+          // isi (editor prefill darinya — termasuk paragraf pembuka
+          // balasan yang menyertainya). Duplicate flow: backend menyalin.
+          bodyHtml: template == null ? null : (_replyOpeningHtml ?? '') + (template.bodyHtml ?? ''),
+          // Mode balasan: tautkan draf sebagai balasan surat masuk (edge
+          // letter_links dibuat backend dalam transaksi create).
+          inReplyTo: _inReplyToPayload,
         );
         _draftId = draft.id;
         _syncedUnit = unit.isEmpty ? null : unit;
@@ -937,14 +1048,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       if (url == null || url.isEmpty) {
         throw Exception('URL pratinjau tidak tersedia.');
       }
-      final response = await http.get(Uri.parse(url)).timeout(
-            const Duration(seconds: 60),
-          );
-      if (response.statusCode != 200) {
-        throw Exception('Gagal mengunduh pratinjau (${response.statusCode}).');
-      }
+      final bytes = await _fetchUrl(url);
       if (!mounted) return;
-      setState(() => _previewBytes = response.bodyBytes);
+      setState(() => _previewBytes = bytes);
     } catch (e) {
       if (!mounted) return;
       setState(() =>
@@ -955,6 +1061,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   /// Finalize metode a (render server) → dialog sukses + QR verifikasi.
+  /// Mode balasan: dialog menawarkan "Lihat runutan" → detail surat keluar
+  /// baru (tab Runutan memuat thread balasan) MENGGANTIKAN wizard di
+  /// tumpukan — kembali dari detail langsung ke pemanggil wizard.
   Future<void> _finalizeLetter() async {
     if (_draftId == null || _finalizing) return;
     setState(() => _finalizing = true);
@@ -966,6 +1075,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           : (_reservedNumber ?? '');
       final verifyUrl = result['verify_url']?.toString() ?? '';
       if (!mounted) return;
+      final draftId = _draftId!;
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -976,6 +1086,19 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
             Navigator.of(dialogContext).pop();
             Navigator.of(context).pop();
           },
+          onViewThread: widget.replyTo != null
+              ? () {
+                  Navigator.of(dialogContext).pop();
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (_) => DocumentDetailPage(
+                        documentId: draftId,
+                        service: _service,
+                      ),
+                    ),
+                  );
+                }
+              : null,
         ),
       );
     } catch (e) {
@@ -1099,6 +1222,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
               final wide = constraints.maxWidth >= _wideBreakpoint;
               return Column(
                 children: [
+                  if (widget.replyTo != null) _buildReplyBanner(context),
                   _buildStepHeader(context, wide),
                   Divider(
                     height: 1,
@@ -1126,6 +1250,40 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  /// Banner mode balasan — tampil di semua langkah: "Membalas: {agenda} —
+  /// {pengirim}" (wadah secondaryContainer, pola banner IncomingFormPage).
+  Widget _buildReplyBanner(BuildContext context) {
+    final reply = widget.replyTo!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final sender = reply.senderParty?.name ?? 'pengirim tidak diketahui';
+    return Container(
+      width: double.infinity,
+      color: colorScheme.secondaryContainer,
+      padding: AppSpacing.paddingHorizontalMD.copyWith(
+        top: AppSpacing.xs + 2,
+        bottom: AppSpacing.xs + 2,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.reply_rounded,
+              size: 16, color: colorScheme.onSecondaryContainer),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              'Membalas: ${reply.agendaNumber} — $sender',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1432,16 +1590,20 @@ bool _jsonDeepEquals(dynamic a, dynamic b) {
   return a == b;
 }
 
-/// Dialog sukses penerbitan: nomor surat + QR verify_url + arsip.
+/// Dialog sukses penerbitan: nomor surat + QR verify_url + arsip. Mode
+/// balasan: aksi tambahan "Lihat runutan" ([onViewThread], null = alur
+/// biasa) membuka detail surat baru lengkap tab Runutan.
 class _PublishSuccessDialog extends StatelessWidget {
   final String number;
   final String verifyUrl;
   final VoidCallback onViewArchive;
+  final VoidCallback? onViewThread;
 
   const _PublishSuccessDialog({
     required this.number,
     required this.verifyUrl,
     required this.onViewArchive,
+    this.onViewThread,
   });
 
   @override
@@ -1453,7 +1615,7 @@ class _PublishSuccessDialog extends StatelessWidget {
         children: [
           Icon(Icons.verified_rounded, color: colorScheme.primary),
           const SizedBox(width: AppSpacing.sm),
-          const Text('Surat diterbitkan'),
+          const Expanded(child: Text('Surat diterbitkan')),
         ],
       ),
       content: Column(
@@ -1490,6 +1652,12 @@ class _PublishSuccessDialog extends StatelessWidget {
         ],
       ),
       actions: [
+        if (onViewThread != null)
+          TextButton.icon(
+            onPressed: onViewThread,
+            icon: const Icon(Icons.alt_route_rounded, size: 18),
+            label: const Text('Lihat runutan'),
+          ),
         TextButton(
           onPressed: onViewArchive,
           child: const Text('Lihat arsip'),

@@ -17,8 +17,8 @@ import 'package:sagansa/widgets/documents/letter_thread_timeline.dart';
 /// - disposisi terakhir selesai → dialog tawaran menandai surat selesai;
 /// - tambah disposisi: sheet dropdown signer aktif + instruksi wajib →
 ///   addDisposition dengan argumen benar;
-/// - menu aksi: Tandai Diproses/Selesai sesuai status, Balas (placeholder
-///   Task 11), Ubah nonaktif;
+/// - menu aksi: Tandai Diproses/Selesai sesuai status, Balas → wizard
+///   surat keluar mode balasan asli (Task 11), Ubah nonaktif;
 /// - tab Scan memuat bytes → viewer via seam pdfPreviewBuilder.
 
 const _signers = [
@@ -190,6 +190,28 @@ class _FakeIncomingService extends IncomingService {
 class _FakeDocumentService extends DocumentService {
   @override
   Future<List<SignerModel>> getSigners() async => _signers;
+
+  // Wizard balasan (Task 11) terbuka dari menu "Balas surat ini" —
+  // kebutuhan load jenis/template/buku pihak dipasok fake (tanpa HTTP).
+  @override
+  Future<List<LetterTypeModel>> getLetterTypes() async => const [];
+
+  @override
+  Future<List<TemplateModel>> getTemplates(String letterTypeCode) async =>
+      const [];
+
+  @override
+  Future<PaginatedResult<PartyModel>> getParties({
+    String? query,
+    int page = 1,
+  }) async =>
+      const PaginatedResult(
+        items: [],
+        currentPage: 1,
+        lastPage: 1,
+        total: 0,
+        perPage: 15,
+      );
 }
 
 extension on IncomingLetterModel {
@@ -408,8 +430,9 @@ void main() {
     expect(find.text('PDF-PREVIEW'), findsOneWidget);
   });
 
-  testWidgets('menu aksi surat terdaftar: Balas (placeholder Task 11), Ubah '
-      'nonaktif, Tandai Diproses → markIncomingStatus', (tester) async {
+  testWidgets('menu aksi surat terdaftar: Balas → wizard balasan asli '
+      '(Task 11), Ubah nonaktif, Tandai Diproses → markIncomingStatus',
+      (tester) async {
     final service = _FakeIncomingService(_letter(status: 'terdaftar'));
     await _pumpDetail(tester, service: service);
 
@@ -427,12 +450,21 @@ void main() {
     expect(service.statusCalls.single.id, 'il-1');
     expect(find.text('Surat ditandai Diproses.'), findsOneWidget);
 
-    // Balas surat ini → placeholder wizard balasan Task 11.
+    // Balas surat ini → wizard surat keluar mode balasan (Task 11):
+    // banner Membalas + pulang me-refresh detail.
+    final detailCallsBefore = service.detailCalls;
     await tester.tap(find.byTooltip('Aksi Surat Masuk'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Balas surat ini'));
     await tester.pumpAndSettle();
-    expect(find.text('Wizard balasan menyusul'), findsOneWidget);
+    expect(find.text('Buat Surat'), findsOneWidget);
+    expect(find.text('Membalas: SM-017/X/2026 — PT ABC Makmur'), findsOneWidget);
+
+    // Kembali dari wizard → detail dimuat ulang (runutan bisa bertambah).
+    await tester.tap(find.byTooltip('Kembali'));
+    await tester.pumpAndSettle();
+    expect(find.text('Detail Surat Masuk'), findsOneWidget);
+    expect(service.detailCalls, greaterThan(detailCallsBefore));
   });
 
   testWidgets('surat selesai: tanpa aksi status & tanpa tombol tambah '

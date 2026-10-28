@@ -99,18 +99,21 @@ class DocumentService {
   }
 
   /// Duplikasi surat: isi (unit/body/metadata/klasifikasi) disalin dari
-  /// sumber; `subject` & `date` wajib dari pemanggil.
+  /// sumber; `subject` & `date` wajib dari pemanggil. [inReplyTo] (fase 1b)
+  /// diteruskan ke createDraft — salinan tetap terautkan sebagai balasan.
   Future<DocumentModel> duplicateFrom(
     String sourceId, {
     required String letterTypeCode,
     required String subject,
     required DateTime date,
+    Map<String, dynamic>? inReplyTo,
   }) {
     return createDraft(
       letterTypeCode: letterTypeCode,
       subject: subject,
       date: date,
       duplicateFromId: sourceId,
+      inReplyTo: inReplyTo,
     );
   }
 

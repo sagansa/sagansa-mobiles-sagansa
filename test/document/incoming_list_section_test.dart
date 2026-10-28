@@ -20,17 +20,46 @@ import 'package:sagansa/widgets/status_badge.dart';
 /// - tap kartu membuka detail penuh (Task 10); kembali dari detail
 ///   me-refresh buku agenda; FAB masuk membuka form pendaftaran (Task 9)
 ///   lalu me-refresh daftar;
-/// - menu kartu "Daftarkan sebagai balasan pihak luar" tampil namun
-///   dinonaktifkan sampai Task 11.
+/// - menu kartu "Daftarkan sebagai balasan pihak luar" aktif (Task 11):
+///   sheet pilih surat keluar terbit → form registrasi mode balasan
+///   eksternal dengan prefill pengirim penerima surat keluar.
 
 /// Outgoing service minimal — tab Keluar kosong (fokus test tab Masuk);
-/// badge tugas ttd di-override agar tidak ada request nyata.
+/// badge tugas ttd di-override agar tidak ada request nyata. Menu kartu
+/// "Daftarkan sebagai balasan pihak luar" (Task 11) memakai getDocuments
+/// (status terbit) + getDetail (metadata penerima) + getParties.
 class _FakeDocumentService extends DocumentService {
+  /// Surat keluar terbit untuk picker balasan pihak luar.
+  final List<DocumentModel> terbitDocs;
+
+  _FakeDocumentService({this.terbitDocs = const []});
+
   @override
   Future<PaginatedResult<DocumentModel>> getDocuments({
     String? status,
     String? letterType,
     int? year,
+    String? query,
+    int page = 1,
+  }) async =>
+      PaginatedResult(
+        items: status == 'terbit' ? terbitDocs : const [],
+        currentPage: 1,
+        lastPage: 1,
+        total: status == 'terbit' ? terbitDocs.length : 0,
+        perPage: 15,
+      );
+
+  @override
+  Future<DocumentModel> getDetail(String id) async => terbitDocs
+      .firstWhere((doc) => doc.id == id,
+          orElse: () => throw Exception('dokumen tidak ditemukan'));
+
+  @override
+  Future<List<LetterTypeModel>> getLetterTypes() async => const [];
+
+  @override
+  Future<PaginatedResult<PartyModel>> getParties({
     String? query,
     int page = 1,
   }) async =>
@@ -41,9 +70,6 @@ class _FakeDocumentService extends DocumentService {
         total: 0,
         perPage: 15,
       );
-
-  @override
-  Future<List<LetterTypeModel>> getLetterTypes() async => const [];
 
   @override
   Future<PaginatedResult<SigningRequestModel>> mySigningRequests({
@@ -144,6 +170,7 @@ final _letters = [
 Future<void> _pumpPage(
   WidgetTester tester, {
   required _FakeIncomingService incoming,
+  _FakeDocumentService? documentService,
 }) async {
   await initializeDateFormatting('id_ID');
   tester.view.physicalSize = const Size(1080, 3200);
@@ -152,7 +179,7 @@ Future<void> _pumpPage(
   await tester.pumpWidget(
     MaterialApp(
       home: DocumentListPage(
-        service: _FakeDocumentService(),
+        service: documentService ?? _FakeDocumentService(),
         incomingService: incoming,
       ),
     ),
@@ -316,20 +343,57 @@ void main() {
     expect(find.text('SM-001/X/2026'), findsOneWidget);
   });
 
-  testWidgets('menu kartu menampilkan aksi balasan pihak luar yang '
-      'dinonaktifkan sampai Task 11', (tester) async {
+  testWidgets('menu kartu "Daftarkan sebagai balasan pihak luar" (Task 11): '
+      'pilih surat keluar terbit → form mode balasan dengan prefill pengirim '
+      'penerima surat keluar', (tester) async {
     final incoming = _FakeIncomingService(letters: [_letters.first]);
-    await _pumpPage(tester, incoming: incoming);
+    final documentService = _FakeDocumentService(
+      terbitDocs: [
+        DocumentModel(
+          id: 'doc-9',
+          number: '020/ST/DIR/X/2026',
+          status: 'terbit',
+          classification: 'umum',
+          subject: 'Surat tugas audit',
+          metadata: const {
+            'recipient': {'name': 'PT Mitra Jaya'},
+          },
+        ),
+      ],
+    );
+    await _pumpPage(
+      tester,
+      incoming: incoming,
+      documentService: documentService,
+    );
     await _openIncomingTab(tester);
 
     await tester.tap(find.byTooltip('Aksi Surat Masuk'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Daftarkan sebagai balasan pihak luar'), findsOneWidget);
-    expect(find.text('Tersedia setelah Tugas 11'), findsOneWidget);
+    // Menu kini aktif (Task 11) — tidak lagi "tersedia setelah Tugas 11".
     final item =
         tester.widget<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>));
-    expect(item.enabled, isFalse);
+    expect(item.enabled, isTrue);
+
+    await tester.tap(find.text('Daftarkan sebagai balasan pihak luar'));
+    await tester.pumpAndSettle();
+
+    // Sheet pilih surat keluar yang dibalas pihak luar.
+    expect(find.text('Surat keluar yang dibalas pihak luar'), findsOneWidget);
+    expect(find.text('020/ST/DIR/X/2026'), findsOneWidget);
+
+    await tester.tap(find.text('020/ST/DIR/X/2026'));
+    await tester.pumpAndSettle();
+
+    // Form registrasi mode balasan eksternal (Task 9): banner induk +
+    // pengirim terprefill penerima surat keluar.
+    expect(find.text('Daftar Surat Masuk'), findsOneWidget);
+    expect(
+      find.textContaining('Mendaftarkan balasan atas surat keluar'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(TextField, 'PT Mitra Jaya'), findsOneWidget);
   });
 
   testWidgets('state error menampilkan pesan + coba lagi yang memuat ulang',

@@ -8,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/document/document_models.dart';
 import '../../services/document/document_service.dart';
+import '../../services/document/incoming_models.dart';
+import '../../services/document/incoming_service.dart';
 import '../../theme/app_button_style.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/constants.dart';
@@ -16,26 +18,43 @@ import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/documents/document_status_badge.dart';
 import '../../widgets/documents/issuance_timeline.dart';
+import '../../widgets/documents/letter_thread_timeline.dart';
 import '../../widgets/empty_state.dart';
 import 'document_create_wizard.dart';
 import 'document_upload_page.dart';
+import 'incoming/incoming_detail_page.dart';
+import 'incoming/incoming_form_page.dart';
 
 /// Detail surat — tab Info (metadata + penandatangan + lampiran + isi
 /// draft), Terbitan ([IssuanceTimeline]), PDF (berkas terbitan aktif /
-/// pra-final draft), dan Verifikasi (QR + URL).
+/// pra-final draft), Verifikasi (QR + URL), dan Runutan (fase 1b Task 11 —
+/// [LetterThreadTimeline] via `IncomingService.getThread('document', id)`;
+/// tap node membuka detail terkait, node saat ini no-op).
+///
+/// Header menampilkan chip "Membalas: {nomor/agenda}" bila surat ini
+/// balasan/tindak lanjut surat lain (`in_reply_to` detail) — tap membuka
+/// detail surat induk.
 ///
 /// Aksi sesuai status (menu AppBar):
 /// - draft|menunggu_ttd → "Edit" (wizard membuka draf yang sama),
 ///   "Batalkan surat" (alasan wajib → voidDocument);
 /// - terbit → "Terbitkan ulang…" (sheet metode b/c/d → DocumentUploadPage
-///   mode reissue), "Batalkan surat", dan bila jenis KUA → "Cabut kuasa"
-///   (alasan + tanggal → revoke).
+///   mode reissue), "Batalkan surat", bila jenis KUA → "Cabut kuasa"
+///   (alasan + tanggal → revoke), dan "Daftarkan surat masuk (balasan
+///   pihak luar)" → `IncomingFormPage` mode balasan eksternal (Task 11 —
+///   surat masuk baru menjadi ANAK surat ini: parent=document ini,
+///   child=incoming, relation=balasan; arah link dibuat backend benar).
 ///
-/// [service] seam test — produksi memakai `DocumentService()`.
-/// [fetchUrl]/[launchUrlImpl]/[pdfPreviewBuilder] seam injeksi test.
+/// [service] & [incomingService] seam test — produksi memakai instance
+/// default. [fetchUrl]/[launchUrlImpl]/[pdfPreviewBuilder] seam injeksi
+/// test.
 class DocumentDetailPage extends StatefulWidget {
   final String documentId;
   final DocumentService? service;
+
+  /// Runutan (fase 1b) — thread lintas jenis + detail surat masuk saat
+  /// node runutan/chip induk dibuka.
+  final IncomingService? incomingService;
 
   final Future<Uint8List> Function(String url)? fetchUrl;
   final Future<bool> Function(Uri url)? launchUrlImpl;
@@ -46,6 +65,7 @@ class DocumentDetailPage extends StatefulWidget {
     super.key,
     required this.documentId,
     this.service,
+    this.incomingService,
     this.fetchUrl,
     this.launchUrlImpl,
     this.pdfPreviewBuilder,
@@ -58,13 +78,19 @@ class DocumentDetailPage extends StatefulWidget {
 class _DocumentDetailPageState extends State<DocumentDetailPage>
     with SingleTickerProviderStateMixin {
   late final DocumentService _service = widget.service ?? DocumentService();
+  late final IncomingService _incomingService =
+      widget.incomingService ?? IncomingService();
   late final Future<Uint8List> Function(String url) _fetchUrl =
       widget.fetchUrl ?? _fetchUrlDefault;
   late final Future<bool> Function(Uri url) _launchUrl =
       widget.launchUrlImpl ?? _launchUrlDefault;
 
+  /// Index tab Runutan (paling belakang — Info, Terbitan, PDF, Verifikasi,
+  /// Runutan).
+  static const int _runutanTabIndex = 4;
+
   late final TabController _tabController = TabController(
-    length: 4,
+    length: 5,
     vsync: this,
   );
   static final DateFormat _dateFormatter = DateFormat('d MMM yyyy', 'id_ID');
@@ -78,6 +104,12 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
   Uint8List? _pdfBytes;
   bool _pdfLoading = false;
   String? _pdfError;
+
+  // ——— tab Runutan (fase 1b) ———
+  ThreadModel? _thread;
+  bool _threadLoading = false;
+  String? _threadError;
+  bool _threadLoaded = false;
 
   // ——— implementasi default seam (produksi) ———
 
@@ -97,6 +129,7 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
   @override
   void initState() {
     super.initState();
+    _tabController.addListener(_onTabChanged);
     _loadDetail();
   }
 
@@ -120,6 +153,13 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
         _pdfBytes = null; // berkas mungkin berubah (reissue/void) — muat ulang.
         _pdfError = null;
       });
+      // Runutan bisa bertambah (balasan baru didaftarkan dari detail ini
+      // maupun dari surat lain) — muat ulang thread yang sudah pernah
+      // termuat; bila tab Runutan sedang terbuka, segera.
+      if (_threadLoaded) {
+        _threadLoaded = false;
+        if (_tabController.index == _runutanTabIndex) _loadThread();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -128,6 +168,138 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
         _isLoading = false;
       });
     }
+  }
+
+  // ——— runutan (fase 1b) ———
+
+  /// Muat thread saat tab Runutan dibuka (malas — hemat request; pola
+  /// lazy tab Scan/Task 10). Reentry-safe.
+  void _onTabChanged() {
+    if (_tabController.index == _runutanTabIndex) _loadThread();
+  }
+
+  Future<void> _loadThread() async {
+    if (_threadLoading || _threadLoaded) return;
+    setState(() {
+      _threadLoading = true;
+      _threadError = null;
+    });
+    try {
+      final thread =
+          await _incomingService.getThread('document', widget.documentId);
+      if (!mounted) return;
+      setState(() {
+        _thread = thread;
+        _threadLoading = false;
+        _threadLoaded = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _threadError = ErrorUtils.sanitize(e,
+            fallback: 'Gagal memuat runutan surat.');
+        _threadLoading = false;
+      });
+    }
+  }
+
+  /// Tap node runutan → detail terkait (pola simetris `_onThreadNodeTap`
+  /// detail masuk Task 10): node keluar lain membuka detail surat keluar,
+  /// node masuk membuka detail surat masuk. Node saat ini diabaikan
+  /// (halaman ini sudah menampilkannya) — guard dokumen kini simetris
+  /// dengan guard surat masuk (OPNOTE Task 10).
+  Future<void> _onThreadNodeTap(ThreadNodeModel node) async {
+    if (node.isIncomingLetter) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => IncomingDetailPage(
+            letterId: node.id,
+            service: _incomingService,
+            documentService: _service,
+            pdfPreviewBuilder: widget.pdfPreviewBuilder,
+          ),
+        ),
+      );
+    } else {
+      if (node.id == widget.documentId) return; // node saat ini — no-op.
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentDetailPage(
+            documentId: node.id,
+            service: _service,
+            incomingService: _incomingService,
+            fetchUrl: widget.fetchUrl,
+            launchUrlImpl: widget.launchUrlImpl,
+            pdfPreviewBuilder: widget.pdfPreviewBuilder,
+          ),
+        ),
+      );
+    }
+    if (mounted) _loadDetail(); // runutan/detail bisa berubah di sana.
+  }
+
+  /// Buka detail surat induk (`in_reply_to`) — dipanggil chip header.
+  Future<void> _openInReplyTo(InReplyToRef ref) async {
+    if (ref.isIncomingLetter) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => IncomingDetailPage(
+            letterId: ref.id,
+            service: _incomingService,
+            documentService: _service,
+            pdfPreviewBuilder: widget.pdfPreviewBuilder,
+          ),
+        ),
+      );
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentDetailPage(
+            documentId: ref.id,
+            service: _service,
+            incomingService: _incomingService,
+            fetchUrl: widget.fetchUrl,
+            launchUrlImpl: widget.launchUrlImpl,
+            pdfPreviewBuilder: widget.pdfPreviewBuilder,
+          ),
+        ),
+      );
+    }
+    if (mounted) _loadDetail();
+  }
+
+  /// "Daftarkan surat masuk (balasan pihak luar)" — form registrasi mode
+  /// balasan eksternal: surat masuk baru jadi ANAK surat ini (backend
+  /// menautkan edge balasan dari `in_reply_to` dalam transaksi registrasi,
+  /// Task 9). Prefill pengirim = penerima surat ini bila tersedia di
+  /// metadata.
+  Future<void> _registerExternalReply() async {
+    final doc = _doc;
+    if (doc == null || _acting) return;
+    final recipient = doc.metadata?['recipient'];
+    final partyName = recipient is Map
+        ? (recipient['name']?.toString() ?? '')
+        : '';
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IncomingFormPage(
+          service: _incomingService,
+          documentService: _service,
+          replyToDocument: ReplyToDocument(
+            id: doc.id,
+            partyName: partyName,
+            subject: doc.subject,
+            number: doc.number,
+          ),
+        ),
+      ),
+    );
+    if (mounted) _loadDetail(); // runutan bertambah setelah balasan.
   }
 
   DocumentModel? get _doc => _document;
@@ -340,6 +512,8 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                   _revoke();
                 case 'void':
                   _voidDocument();
+                case 'register_reply':
+                  _registerExternalReply();
               }
             },
             itemBuilder: (context) => [
@@ -375,11 +549,13 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                           _buildHeader(context, doc),
                           TabBar(
                             controller: _tabController,
+                            isScrollable: false,
                             tabs: const [
                               Tab(text: 'Info'),
                               Tab(text: 'Terbitan'),
                               Tab(text: 'PDF'),
                               Tab(text: 'Verifikasi'),
+                              Tab(text: 'Runutan'),
                             ],
                           ),
                           Expanded(
@@ -407,6 +583,14 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                                   onCopyUrl: _copyVerifyUrl,
                                   onOpenUrl: () => _openUrl(_verifyUrl),
                                 ),
+                                _ThreadTab(
+                                  documentId: widget.documentId,
+                                  thread: _thread,
+                                  loading: _threadLoading,
+                                  error: _threadError,
+                                  onRetry: _loadThread,
+                                  onNodeTap: _onThreadNodeTap,
+                                ),
                               ],
                             ),
                           ),
@@ -419,6 +603,7 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
   List<(String, String)> _menuItems(DocumentModel doc) {
     return [
       if (_isEditable) ('edit', 'Edit'),
+      if (_isTerbit) ('register_reply', 'Daftarkan surat masuk (balasan pihak luar)'),
       if (_isTerbit) ('reissue', 'Terbitkan ulang…'),
       if (_isTerbit && _isKua) ('revoke', 'Cabut kuasa'),
       // Void: draft|menunggu_ttd|terbit (guard backend); dicabut/dibatalkan
@@ -460,6 +645,10 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
               DocumentStatusBadge(document: doc),
             ],
           ),
+          if (doc.inReplyTo != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _InReplyToChip(ref: doc.inReplyTo!, onTap: _openInReplyTo),
+          ],
         ],
       ),
     );
@@ -996,6 +1185,123 @@ class _VerifyTab extends StatelessWidget {
             ),
           ],
         ),
+      ],
+    );
+  }
+}
+
+// ——— chip induk runutan (fase 1b) ———
+
+/// Chip "Membalas: {nomor/agenda}" di header detail surat keluar — tap
+/// membuka detail surat induk (warna wadah chip Masuk timeline: induk
+/// balasan paling sering surat masuk).
+class _InReplyToChip extends StatelessWidget {
+  final InReplyToRef ref;
+  final ValueChanged<InReplyToRef> onTap;
+
+  const _InReplyToChip({required this.ref, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: InkWell(
+        onTap: () => onTap(ref),
+        borderRadius: AppSpacing.borderRadiusFull,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer,
+            borderRadius: AppSpacing.borderRadiusFull,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.reply_rounded,
+                  size: 14, color: colorScheme.onSecondaryContainer),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  '${ref.relationLabel}: ${ref.numberOrAgenda ?? ref.id}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.chevron_right_rounded,
+                  size: 14, color: colorScheme.onSecondaryContainer),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ——— tab Runutan (fase 1b) ———
+
+/// Tab Runutan surat keluar — [LetterThreadTimeline] dimuat malas saat
+/// tab dibuka (`getThread('document', id)`), node saat ini = surat ini.
+class _ThreadTab extends StatelessWidget {
+  final String documentId;
+  final ThreadModel? thread;
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
+  final ValueChanged<ThreadNodeModel> onNodeTap;
+
+  const _ThreadTab({
+    required this.documentId,
+    required this.thread,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+    required this.onNodeTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (error != null) {
+      return EmptyState(
+        icon: Icons.error_outline_rounded,
+        title: error!,
+        subtitle: 'Terjadi kesalahan saat memuat runutan surat',
+        action: ElevatedButton.icon(
+          onPressed: onRetry,
+          style: AppButtonStyle.elevated(),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Coba Lagi'),
+        ),
+      );
+    }
+    return ListView(
+      padding: AppSpacing.paddingMD,
+      children: [
+        LetterThreadTimeline(
+          thread: thread ??
+              const ThreadModel(rootType: '', rootId: '', nodes: []),
+          currentNodeType: 'document',
+          currentNodeId: documentId,
+          onNodeTap: onNodeTap,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Tap surat pada runutan untuk membuka detailnya.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.lg),
       ],
     );
   }

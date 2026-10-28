@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../services/document/document_models.dart';
+import '../../../services/document/document_service.dart';
 import '../../../services/document/incoming_models.dart';
 import '../../../services/document/incoming_service.dart';
 import '../../../theme/app_button_style.dart';
@@ -13,26 +15,38 @@ import '../../../widgets/filter_chip_row.dart';
 import '../../../widgets/modern_bottom_nav.dart';
 import '../../../widgets/status_badge.dart';
 import 'incoming_detail_page.dart';
+import 'incoming_form_page.dart';
 
 /// Bagian "Masuk" arsip Surat Perusahaan — buku agenda surat masuk
 /// (`IncomingService.getIncoming`) dengan pola persis bagian "Keluar"
 /// fase 1: pencarian debounce, chip filter, infinite scroll,
 /// pull-to-refresh, serta state loading/error/kosong.
 ///
+/// Menu kartu "Daftarkan sebagai balasan pihak luar" (Task 11): mendaftar
+/// surat masuk BARU sebagai balasan pihak luar atas salah satu surat
+/// keluar terbit — pengguna memilih surat keluarnya (sheet pencarian),
+/// lalu `IncomingFormPage` mode `replyToDocument` terbuka (surat masuk
+/// baru = ANAK surat keluar terpilih; edge balasan dibuat backend dari
+/// `in_reply_to` dalam transaksi registrasi).
+///
 /// Dipakai sebagai anak `IndexedStack` di `DocumentListPage` sehingga
 /// state tiap tab terpisah dan dipertahankan saat pindah tab.
 ///
-/// [service] adalah seam test — produksi memakai instance default
-/// `IncomingService()`. [onSearchStateChanged] memberi tahu induk saat
-/// baris pencarian dibuka/ditutup (ikon search AppBar mengikuti tab
-/// aktif).
+/// [service] & [documentService] seam test — produksi memakai instance
+/// default. [onSearchStateChanged] memberi tahu induk saat baris pencarian
+/// dibuka/ditutup (ikon search AppBar mengikuti tab aktif).
 class IncomingListSection extends StatefulWidget {
   final IncomingService? service;
+
+  /// Surat keluar: pencarian picker balasan + prefill buku pihak form.
+  final DocumentService? documentService;
+
   final VoidCallback? onSearchStateChanged;
 
   const IncomingListSection({
     super.key,
     this.service,
+    this.documentService,
     this.onSearchStateChanged,
   });
 
@@ -42,6 +56,8 @@ class IncomingListSection extends StatefulWidget {
 
 class IncomingListSectionState extends State<IncomingListSection> {
   late final IncomingService _service = widget.service ?? IncomingService();
+  late final DocumentService _documentService =
+      widget.documentService ?? DocumentService();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final DateFormat _dateFormatter = DateFormat('d MMM yyyy', 'id_ID');
@@ -218,6 +234,64 @@ class IncomingListSectionState extends State<IncomingListSection> {
       ),
     );
     if (mounted) refresh();
+  }
+
+  /// Menu kartu "Daftarkan sebagai balasan pihak luar" (Task 11): pilih
+  /// surat keluar terbit yang dibalas (sheet pencarian) → `IncomingFormPage`
+  /// mode balasan eksternal. Surat masuk baru adalah ANAK surat keluar
+  /// terpilih (parent=document, child=incoming, relation=balasan — arah
+  /// link benar, dibuat backend Task 9 dari `in_reply_to`). Prefill
+  /// pengirim = penerima surat keluar (metadata detail, best-effort —
+  /// payload list tidak memuatnya; gagal → ketik bebas).
+  Future<void> _registerAsExternalReply(IncomingLetterModel letter) async {
+    final document = await showModalBottomSheet<DocumentModel>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _OutgoingPickerSheet(
+        onSearch: (query) async {
+          final page = await _documentService.getDocuments(
+            status: 'terbit',
+            query: query.isEmpty ? null : query,
+          );
+          return page.items;
+        },
+      ),
+    );
+    if (document == null || !mounted) return;
+
+    // Best-effort prefill pengirim = penerima surat keluar (metadata
+    // hanya ada di detail, bukan payload list).
+    var partyName = '';
+    try {
+      final detail = await _documentService.getDetail(document.id);
+      final recipient = detail.metadata?['recipient'];
+      if (recipient is Map) {
+        partyName = recipient['name']?.toString() ?? '';
+      }
+    } catch (_) {
+      // Detail tak terjangkau → pengirim diketik/pilih di form.
+    }
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IncomingFormPage(
+          service: _service,
+          documentService: _documentService,
+          replyToDocument: ReplyToDocument(
+            id: document.id,
+            partyName: partyName,
+            subject: document.subject,
+            number: document.number,
+          ),
+        ),
+      ),
+    );
+    if (mounted) refresh(); // balasan terdaftar → buku agenda bertambah.
   }
 
   @override
@@ -421,26 +495,16 @@ class IncomingListSectionState extends State<IncomingListSection> {
                             color: colorScheme.onSurfaceVariant,
                           ),
                           padding: EdgeInsets.zero,
-                          // TODO(Task 11): tangani 'reply_external' →
-                          // wizard balasan pihak luar.
-                          itemBuilder: (context) => [
+                          onSelected: (value) {
+                            if (value == 'reply_external') {
+                              _registerAsExternalReply(letter);
+                            }
+                          },
+                          itemBuilder: (context) => const [
                             PopupMenuItem(
                               value: 'reply_external',
-                              // Dinonaktifkan sampai Task 11 — caption
-                              // menjelaskan kapan tersedia.
-                              enabled: false,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                      'Daftarkan sebagai balasan pihak luar'),
-                                  Text(
-                                    'Tersedia setelah Tugas 11',
-                                    style: textTheme.labelSmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant),
-                                  ),
-                                ],
-                              ),
+                              child: Text(
+                                  'Daftarkan sebagai balasan pihak luar'),
                             ),
                           ],
                         ),
@@ -530,5 +594,145 @@ class IncomingListSectionState extends State<IncomingListSection> {
       _ => StatusType.neutral,
     };
     return StatusBadge(label: letter.statusLabel, type: type);
+  }
+}
+
+/// Sheet pilih surat keluar terbit untuk mode "balasan pihak luar" —
+/// pencarian debounce 400 ms (pola `_SenderPartySheet`/`_PartySheet`);
+/// memilih mem-pop [DocumentModel].
+class _OutgoingPickerSheet extends StatefulWidget {
+  final Future<List<DocumentModel>> Function(String query) onSearch;
+
+  const _OutgoingPickerSheet({required this.onSearch});
+
+  @override
+  State<_OutgoingPickerSheet> createState() => _OutgoingPickerSheetState();
+}
+
+class _OutgoingPickerSheetState extends State<_OutgoingPickerSheet> {
+  static const _sheetHeightFactor = 0.7;
+
+  final TextEditingController _controller = TextEditingController();
+  Timer? _debounce;
+  List<DocumentModel> _results = [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _runSearch();
+    _controller.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.removeListener(_onChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), _runSearch);
+  }
+
+  Future<void> _runSearch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = await widget.onSearch(_controller.text.trim());
+      if (!mounted) return;
+      setState(() {
+        _results = items;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = ErrorUtils.sanitize(e);
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      child: SizedBox(
+        height: mediaQuery.size.height * _sheetHeightFactor,
+        child: Column(
+          children: [
+            Padding(
+              padding: AppSpacing.paddingMD,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Surat keluar yang dibalas pihak luar',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Surat masuk baru akan terautkan sebagai balasan surat '
+                    'keluar terpilih.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    controller: _controller,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Cari nomor / perihal surat keluar…',
+                      prefixIcon: Icon(Icons.search_rounded),
+                      isDense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(child: Text(_error!))
+                      : _results.isEmpty
+                          ? const Center(
+                              child: Text('Tidak ada surat keluar yang cocok.'),
+                            )
+                          : ListView.builder(
+                              itemCount: _results.length,
+                              itemBuilder: (context, index) {
+                                final document = _results[index];
+                                return ListTile(
+                                  leading: const Icon(
+                                      Icons.north_east_rounded),
+                                  title: Text(
+                                      document.number ?? 'Belum bernomor'),
+                                  subtitle: Text(
+                                    document.subject,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () =>
+                                      Navigator.of(context).pop(document),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

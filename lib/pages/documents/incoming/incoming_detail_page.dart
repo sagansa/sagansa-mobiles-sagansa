@@ -15,6 +15,7 @@ import '../../../widgets/app_snackbar.dart';
 import '../../../widgets/documents/letter_thread_timeline.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/status_badge.dart';
+import '../document_create_wizard.dart';
 import '../document_detail_page.dart';
 
 /// Detail surat masuk (fase 1b) — header nomor agenda besar + badge sifat
@@ -26,7 +27,9 @@ import '../document_detail_page.dart';
 /// node saat ini = surat ini; tap node lain membuka detail terkait).
 ///
 /// Menu AppBar sesuai status (hanya maju terdaftar→diproses→selesai):
-/// - "Balas surat ini" → wizard balasan surat keluar (placeholder Task 11);
+/// - "Balas surat ini" → wizard surat keluar mode balasan (Task 11:
+///   prefill penerima = pengirim, perihal `Re: …`, paragraf pembuka di
+///   editor, `in_reply_to` = surat ini) — pulang me-refresh detail;
 /// - "Ubah" — disediakan namun dinonaktifkan (penyuntingan menyusul);
 /// - "Tandai Diproses" (terdaftar) / "Tandai Selesai" (diproses).
 ///
@@ -280,12 +283,13 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
   // ——— runutan ———
 
   /// Tap node runutan → detail terkait. Node masuk lain membuka detail
-  /// masuk; node keluar membuka detail surat keluar (fase 1). Node saat
-  /// ini diabaikan (halaman ini sudah menampilkannya).
-  void _onThreadNodeTap(ThreadNodeModel node) {
+  /// masuk; node keluar membuka detail surat keluar (fase 1 — kini lengkap
+  /// tab Runutan, service surat masuk diteruskan). Node saat ini diabaikan
+  /// (halaman ini sudah menampilkannya).
+  Future<void> _onThreadNodeTap(ThreadNodeModel node) async {
     if (node.type == 'incoming_letter') {
       if (node.id == widget.letterId) return;
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => IncomingDetailPage(
@@ -297,16 +301,18 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
         ),
       );
     } else {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => DocumentDetailPage(
             documentId: node.id,
             service: _documentService,
+            incomingService: _service,
           ),
         ),
       );
     }
+    if (mounted) _loadDetail();
   }
 
   // ——— build ———
@@ -420,12 +426,25 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
     );
   }
 
-  /// Wizard balasan surat keluar atas surat ini — placeholder Task 11.
+  /// Wizard balasan surat keluar atas surat masuk ini (Task 11): wizard
+  /// mode `replyTo` — banner "Membalas", prefill penerima = pengirim,
+  /// perihal `Re: …`, paragraf pembuka di editor, createDraft mengirim
+  /// `in_reply_to {type: incoming_letter, id: surat ini}`. Pulang dari
+  /// wizard (biasa maupun "Lihat runutan" yang menggantikan wizard dengan
+  /// detail surat baru) → detail dimuat ulang: runutan bisa bertambah.
   Future<void> _openReplyWizard() async {
+    final letter = _doc;
+    if (letter == null || _acting) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const _ReplyWizardPlaceholderPage()),
+      MaterialPageRoute(
+        builder: (_) => DocumentCreateWizard(
+          service: _documentService,
+          replyTo: letter,
+        ),
+      ),
     );
+    if (mounted) _loadDetail();
   }
 
   Widget _buildHeader(BuildContext context, IncomingLetterModel letter) {
@@ -1079,28 +1098,6 @@ class _AddDispositionSheetState extends State<_AddDispositionSheet> {
             const SizedBox(height: AppSpacing.sm),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ——— placeholder wizard balasan (Task 11) ———
-
-/// TODO(Task 11): ganti dengan wizard surat keluar mode balasan atas surat
-/// masuk ini (prefill penerima = pengirim, `in_reply_to` = surat ini,
-/// relasi balasan). Placeholder eksplisit agar aksi menu jelas arahnya.
-class _ReplyWizardPlaceholderPage extends StatelessWidget {
-  const _ReplyWizardPlaceholderPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPageScaffold(
-      titleText: 'Balas Surat',
-      body: const EmptyState(
-        icon: Icons.reply_rounded,
-        title: 'Wizard balasan menyusul',
-        subtitle: 'Membuat surat keluar balasan atas surat masuk ini '
-            'tersedia setelah Tugas 11.',
       ),
     );
   }

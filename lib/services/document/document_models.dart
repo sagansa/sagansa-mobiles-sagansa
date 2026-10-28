@@ -355,6 +355,54 @@ class SigningRequestModel {
   bool get isPending => status == 'diminta';
 }
 
+/// Induk runutan surat ini (fase 1b) — embed `in_reply_to` pada detail
+/// dokumen: edge terbaru `letter_links` tempat dokumen ini menjadi CHILD.
+/// `{type: document|incoming_letter, id, number_or_agenda?, relation}`.
+class InReplyToRef {
+  /// document | incoming_letter.
+  final String type;
+  final String id;
+
+  /// Nomor surat keluar / nomor agenda surat masuk induk — null bila baris
+  /// induk sudah tidak ada (edge append-only tetap mengirim identitas).
+  final String? numberOrAgenda;
+
+  /// balasan | tindak_lanjut | referensi.
+  final String relation;
+
+  const InReplyToRef({
+    required this.type,
+    required this.id,
+    this.numberOrAgenda,
+    required this.relation,
+  });
+
+  factory InReplyToRef.fromJson(Map<String, dynamic> json) {
+    return InReplyToRef(
+      type: json['type']?.toString() ?? '',
+      id: json['id']?.toString() ?? '',
+      numberOrAgenda: _nullableString(json['number_or_agenda']),
+      relation: json['relation']?.toString() ?? '',
+    );
+  }
+
+  bool get isIncomingLetter => type == 'incoming_letter';
+
+  /// Label relasi ramah pengguna (pemetaan sama `ThreadNodeModel`).
+  String get relationLabel {
+    switch (relation) {
+      case 'balasan':
+        return 'Membalas';
+      case 'tindak_lanjut':
+        return 'Menindaklanjuti';
+      case 'referensi':
+        return 'Mereferensikan';
+      default:
+        return relation;
+    }
+  }
+}
+
 /// Surat — bentuk dasar (list/create) + relasi detail via whenLoaded
 /// (active_issuance, issuances, attachments, signing_requests).
 class DocumentModel {
@@ -387,6 +435,10 @@ class DocumentModel {
   /// detail page (tampilan isi draft) & wizard mode edit (prefill editor).
   final String? bodyHtml;
 
+  /// Induk runutan (fase 1b) — hanya bentuk detail; null = surat berdiri
+  /// sendiri (bukan balasan/tindak lanjut surat lain).
+  final InReplyToRef? inReplyTo;
+
   const DocumentModel({
     required this.id,
     this.number,
@@ -405,6 +457,7 @@ class DocumentModel {
     this.attachments = const [],
     this.signingRequests = const [],
     this.bodyHtml,
+    this.inReplyTo,
   });
 
   factory DocumentModel.fromJson(Map<String, dynamic> json) {
@@ -436,6 +489,10 @@ class DocumentModel {
       signingRequests: _modelList<SigningRequestModel>(
           json['signing_requests'], SigningRequestModel.fromJson),
       bodyHtml: _nullableString(json['body_html']),
+      inReplyTo: json['in_reply_to'] is Map<String, dynamic>
+          ? InReplyToRef.fromJson(
+              json['in_reply_to'] as Map<String, dynamic>)
+          : null,
     );
   }
 

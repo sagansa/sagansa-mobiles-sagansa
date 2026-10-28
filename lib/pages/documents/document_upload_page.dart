@@ -19,6 +19,7 @@ import '../../utils/constants.dart';
 import '../../utils/error_utils.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
+import 'document_detail_page.dart';
 import 'overlay_placement_step.dart';
 
 /// Mode halaman upload (task 21):
@@ -789,6 +790,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
   }
 
   /// Dialog sukses penerbitan: nomor + QR verifikasi (pola wizard task 20).
+  /// Aksi "Lihat detail" (Task 11) membuka detail surat (lengkap tab
+  /// Runutan) MENGGANTIKAN halaman ini di tumpukan.
   Future<void> _showIssuedDialog(Map<String, dynamic> result) async {
     final fromResponse = result['number']?.toString();
     // Nomor aktual dari response finalize/reissue (Fix C1: kini selalu
@@ -798,6 +801,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
         : (_reservedNumber ?? '');
     // Response finalize/reissue memuat verify_url absolut dari backend.
     final verifyUrl = result['verify_url']?.toString() ?? _verifyUrl;
+    var navigatedToDetail = false;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -805,9 +809,23 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
         title: _isReissue ? 'Surat diterbitkan ulang' : 'Surat diterbitkan',
         number: number,
         verifyUrl: verifyUrl,
+        onViewDetail: () {
+          navigatedToDetail = true;
+          Navigator.of(dialogContext).pop();
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => DocumentDetailPage(
+                documentId: widget.documentId,
+                service: _service,
+              ),
+            ),
+          );
+        },
       ),
     );
-    if (mounted) Navigator.of(context).pop();
+    // Bila detail sudah menggantikan halaman ini, state ter-dispose —
+    // pop berikutnya justru akan menutup detail yang baru dibuka.
+    if (mounted && !navigatedToDetail) Navigator.of(context).pop();
   }
 
   // ——— build ———
@@ -1281,16 +1299,19 @@ class _NoteDialogState extends State<_NoteDialog> {
 }
 
 /// Dialog sukses penerbitan/terbitkan-ulang — nomor + QR verify_url
-/// (bentuk sama dengan wizard task 20).
+/// (bentuk sama dengan wizard task 20). Aksi opsional "Lihat detail"
+/// (Task 11) membuka detail surat lengkap (termasuk tab Runutan).
 class _IssuedSuccessDialog extends StatelessWidget {
   final String title;
   final String number;
   final String verifyUrl;
+  final VoidCallback? onViewDetail;
 
   const _IssuedSuccessDialog({
     required this.title,
     required this.number,
     required this.verifyUrl,
+    this.onViewDetail,
   });
 
   @override
@@ -1339,6 +1360,12 @@ class _IssuedSuccessDialog extends StatelessWidget {
         ],
       ),
       actions: [
+        if (onViewDetail != null)
+          TextButton.icon(
+            onPressed: onViewDetail,
+            icon: const Icon(Icons.open_in_new_rounded, size: 18),
+            label: const Text('Lihat detail'),
+          ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Tutup'),

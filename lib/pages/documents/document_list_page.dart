@@ -240,6 +240,7 @@ class _DocumentListPageState extends State<DocumentListPage> {
                     IncomingListSection(
                       key: _incomingKey,
                       service: _incomingService,
+                      documentService: _service,
                       onSearchStateChanged: _onSearchStateChanged,
                     )
                   else

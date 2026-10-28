@@ -141,8 +141,13 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
       // Prefill pengirim = penerima surat keluar; cocokkan best-effort ke
       // buku pihak (exact match) agar party_id terpakai tanpa duplikat
       // baru. Gagal/di luar buku → tetap nama bebas (createParty submit).
-      _senderController.text = reply.partyName;
-      _resolveReplyParty(reply.partyName);
+      // Nama kosong (penerima tak tercatat di metadata) → tanpa prefill,
+      // pengguna memilih/mengetik sendiri — jangan kirim query kosong.
+      final partyName = reply.partyName.trim();
+      if (partyName.isNotEmpty) {
+        _senderController.text = partyName;
+        _resolveReplyParty(partyName);
+      }
     }
   }
 
