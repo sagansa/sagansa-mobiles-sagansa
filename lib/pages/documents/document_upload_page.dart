@@ -78,8 +78,7 @@ class DocumentUploadPage extends StatefulWidget {
   final Future<OverlayImageData?> Function(Uint8List bytes)? decodeImageToPng;
   final Future<Uint8List?> Function(String path)? compressImage;
   final Future<File> Function(Uint8List bytes, String name)? writeTempFile;
-  final Widget Function(BuildContext context, Uint8List bytes)?
-      previewBuilder;
+  final Widget Function(BuildContext context, Uint8List bytes)? previewBuilder;
 
   const DocumentUploadPage({
     super.key,
@@ -192,8 +191,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     final files = await FilePicker.pickFiles(type: FileType.image);
     return [
       for (final file in files)
-        if (file.path != null)
-          PickedPhoto(path: file.path!, name: file.name),
+        if (file.path != null) PickedPhoto(path: file.path!, name: file.name),
     ];
   }
 
@@ -244,8 +242,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
       final frame = await codec.getNextFrame();
       final image = frame.image;
       try {
-        final png =
-            await image.toByteData(format: ui.ImageByteFormat.png);
+        final png = await image.toByteData(format: ui.ImageByteFormat.png);
         if (png == null) return null;
         return OverlayImageData(
           png: png.buffer.asUint8List(),
@@ -306,7 +303,9 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
       if (picked == null) return;
       if (!_looksLikePdf(picked.bytes)) {
         if (mounted) {
-          showErrorSnackBar(context, 'Berkas bukan PDF valid (magic %PDF '
+          showErrorSnackBar(
+              context,
+              'Berkas bukan PDF valid (magic %PDF '
               'tidak ditemukan).');
         }
         return;
@@ -349,19 +348,18 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
   Future<void> _renderActivePage() async {
     final pdf = _pdf;
     if (pdf == null) return;
+    try {
+      final doc = await PdfDocument.openData(pdf.bytes, sourceName: pdf.name);
       try {
-        final doc = await PdfDocument.openData(pdf.bytes,
-            sourceName: pdf.name);
-        try {
-          final page = doc.pages[_activePage - 1];
-          const targetWidth = 1240.0;
-          final targetHeight =
-              (targetWidth * page.height / page.width).roundToDouble();
-          final rendered = await page.render(
-            fullWidth: targetWidth,
-            fullHeight: targetHeight,
-          );
-          if (rendered == null) return;
+        final page = doc.pages[_activePage - 1];
+        const targetWidth = 1240.0;
+        final targetHeight =
+            (targetWidth * page.height / page.width).roundToDouble();
+        final rendered = await page.render(
+          fullWidth: targetWidth,
+          fullHeight: targetHeight,
+        );
+        if (rendered == null) return;
         final image = await rendered.createImage();
         rendered.dispose();
         if (!mounted) {
@@ -453,8 +451,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     try {
       final photos = await _pickImages();
       if (photos.isEmpty || !mounted) return;
-      final data = await _decodeImageToPng(
-          await File(photos.first.path).readAsBytes());
+      final data =
+          await _decodeImageToPng(await File(photos.first.path).readAsBytes());
       if (data == null) {
         if (mounted) {
           showErrorSnackBar(context, 'Gambar tidak dapat dibaca.');
@@ -499,8 +497,9 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
       // tenang dan, di perangkat nyata, terlihat berputar tanpa guna).
       setState(() => _addingSignature = false);
 
-      final available =
-          signers.where((signer) => signer.hasSignature).toList(growable: false);
+      final available = signers
+          .where((signer) => signer.hasSignature)
+          .toList(growable: false);
 
       if (available.isEmpty) {
         showErrorSnackBar(
@@ -583,7 +582,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     }
   }
 
-  void _updateOverlay(OverlayItem updated) {    final page = _pagesInfo?.pageAt(updated.page) ?? PdfPagesInfo.a4;
+  void _updateOverlay(OverlayItem updated) {
+    final page = _pagesInfo?.pageAt(updated.page) ?? PdfPagesInfo.a4;
     final fitted = OverlayMath.fitIntoPage(
       updated,
       pageWidthMm: OverlayMath.pageWidthMm(page.widthPt),
@@ -653,7 +653,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
         mode: 'b',
         pdfBase64: base64Encode(pdf.bytes),
         // Overlays kosong → tidak dikirim → server menempel QR default.
-        overlays: _overlays.isEmpty ? null : OverlayPayloads.toRequest(_overlays),
+        overlays:
+            _overlays.isEmpty ? null : OverlayPayloads.toRequest(_overlays),
       );
       final url = result['download_url']?.toString();
       if (url == null || url.isEmpty) {
@@ -952,8 +953,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                 child: Row(
                   children: [
                     Icon(Icons.tag_rounded,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary),
+                        size: 16, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
@@ -1093,8 +1093,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
       onPageChanged: _onActivePageChanged,
       overlays: _overlays,
       selectedId: _selectedOverlayId,
-      onSelectOverlay: (item) =>
-          setState(() => _selectedOverlayId = item.id),
+      onSelectOverlay: (item) => setState(() => _selectedOverlayId = item.id),
       onUpdateOverlay: _updateOverlay,
       onDragOverlay: _dragOverlay,
       onRemoveOverlay: _removeOverlay,
@@ -1190,9 +1189,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
           return Padding(
             padding: AppSpacing.paddingMD,
             child: FilledButton.icon(
-              onPressed: _photos.isEmpty || _submitting
-                  ? null
-                  : _submitReissueD,
+              onPressed:
+                  _photos.isEmpty || _submitting ? null : _submitReissueD,
               style: AppButtonStyle.filled(),
               icon: _submitting
                   ? const SizedBox(
@@ -1321,8 +1319,8 @@ class _MethodCard extends StatelessWidget {
                             ?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 2),
                     Text(subtitle,
-                        style: textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant)),
+                        style: textTheme.bodySmall
+                            ?.copyWith(color: colorScheme.onSurfaceVariant)),
                   ],
                 ),
               ),
@@ -1359,9 +1357,8 @@ class _NoteDialogState extends State<_NoteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.mandatory
-          ? 'Alasan terbitkan ulang'
-          : 'Catatan (opsional)'),
+      title: Text(
+          widget.mandatory ? 'Alasan terbitkan ulang' : 'Catatan (opsional)'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
