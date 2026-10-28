@@ -503,6 +503,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingTemplates = false);
+      // Mode balasan: template gagal dimuat tidak boleh ikut menghilangkan
+      // paragraf pembuka "Menanggapi surat Saudara …" (Task 11) — editor
+      // diisi pembuka saja; template menyusul bila user memuat ulang.
+      if (widget.replyTo != null) _applyTemplateToEditor(null);
       showErrorSnackBar(context, e);
     }
   }
@@ -521,6 +525,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   /// paragraf pembuka "Menanggapi surat Saudara …" disisipkan PALING
   /// DEPAN, sebelum konten template (Task 11 — paragraf duluan, template
   /// menyusul). Tanpa template, editor tetap berisi paragraf pembuka.
+  ///
+  /// Template yang gagal dikonversi TIDAK boleh menelan paragraf pembuka:
+  /// konversi dicoba ulang untuk pembuka saja (banner peringatan template
+  /// tetap tampil).
   void _applyTemplateToEditor(TemplateModel? template) {
     final replyOpening = _replyOpeningHtml;
     final templateHtml = template?.bodyHtml;
@@ -529,7 +537,11 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       _quillController.clear();
       return;
     }
-    final delta = QuillHtmlCodec.tryHtmlToDelta(html);
+    var delta = QuillHtmlCodec.tryHtmlToDelta(html);
+    final openingOnlyFallback = delta == null && replyOpening != null;
+    if (openingOnlyFallback) {
+      delta = QuillHtmlCodec.tryHtmlToDelta(replyOpening);
+    }
     setState(() {
       _editorUnsupported = QuillHtmlCodec.hasUnsupportedHtml(html);
       _editorParseFailed = delta == null;

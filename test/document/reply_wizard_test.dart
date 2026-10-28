@@ -39,7 +39,10 @@ final _replyLetter = IncomingLetterModel(
 class _FakeReplyWizardService extends DocumentService {
   final List<PartyModel> parties;
 
-  _FakeReplyWizardService({this.parties = const []});
+  /// Simulasi jaringan gagal saat memuat template jenis surat.
+  final bool failTemplates;
+
+  _FakeReplyWizardService({this.parties = const [], this.failTemplates = false});
 
   /// ID detail yang diminta (membuktikan detail surat baru terbuka).
   final List<String> detailIds = [];
@@ -54,16 +57,18 @@ class _FakeReplyWizardService extends DocumentService {
   Future<List<LetterTypeModel>> getLetterTypes() async => const [_stType];
 
   @override
-  Future<List<TemplateModel>> getTemplates(String letterTypeCode) async =>
-      const [
-        TemplateModel(
-          id: 7,
-          name: 'Template ST Standar',
-          letterTypeCode: 'ST',
-          bodyHtml: '<p>Isi template</p>',
-          isDefault: true,
-        ),
-      ];
+  Future<List<TemplateModel>> getTemplates(String letterTypeCode) async {
+    if (failTemplates) throw Exception('jaringan terputus');
+    return const [
+      TemplateModel(
+        id: 7,
+        name: 'Template ST Standar',
+        letterTypeCode: 'ST',
+        bodyHtml: '<p>Isi template</p>',
+        isDefault: true,
+      ),
+    ];
+  }
 
   @override
   Future<PaginatedResult<PartyModel>> getParties({
@@ -296,6 +301,48 @@ void main() {
 
     expect(find.widgetWithText(TextField, 'PT ABC Makmur'), findsOneWidget);
     expect(find.text('Simpan ke buku pihak'), findsOneWidget);
+  });
+
+  testWidgets('template gagal dimuat → paragraf pembuka balasan TETAP '
+      'tersisip di editor (tidak hilang bersama template)', (tester) async {
+    final service = _FakeReplyWizardService(
+      parties: const [PartyModel(id: 9, name: 'PT ABC Makmur')],
+      failTemplates: true,
+    );
+    await _pumpReplyWizard(tester, service);
+
+    await tester.tap(find.text('Surat Tugas'));
+    await tester.pumpAndSettle();
+    // Snackbar error template muncul; alur tetap bisa lanjut.
+    expect(find.textContaining('jaringan terputus'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4)); // snackbar error hilang.
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    // Langkah 2: perihal & penerima tetap terprefill walau template gagal.
+    expect(find.widgetWithText(TextField, 'Re: Undangan rapat tahunan'),
+        findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4)); // snackbar formulir.
+    await tester.pumpAndSettle();
+
+    expect(service.lastCreateInReplyTo, {
+      'type': 'incoming_letter',
+      'id': 'il-1',
+      'relation': 'balasan',
+    });
+    // Tanpa template, createDraft tidak mengirim body — paragraf pembuka
+    // disimpan saat langkah editor (Lanjut) dari isi editor.
+    expect(service.lastCreateBodyHtml, isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+
+    expect(service.lastUpdateBodyHtml, isNotNull);
+    expect(service.lastUpdateBodyHtml, contains('Menanggapi surat Saudara'));
   });
 
   testWidgets('finalize sukses mode balasan → dialog "Lihat runutan" membuka '
