@@ -17,8 +17,9 @@ import 'package:sagansa/widgets/status_badge.dart';
 ///   benar;
 /// - pencarian debounce mengirim field `q`; chip status/sifat mengirim
 ///   filter ke service;
-/// - tap kartu membuka placeholder detail (TODO Task 10); FAB masuk
-///   membuka form pendaftaran (Task 9) lalu me-refresh daftar;
+/// - tap kartu membuka detail penuh (Task 10); kembali dari detail
+///   me-refresh buku agenda; FAB masuk membuka form pendaftaran (Task 9)
+///   lalu me-refresh daftar;
 /// - menu kartu "Daftarkan sebagai balasan pihak luar" tampil namun
 ///   dinonaktifkan sampai Task 11.
 
@@ -92,6 +93,12 @@ class _FakeIncomingService extends IncomingService {
       perPage: 15,
     );
   }
+
+  /// Detail untuk Task 10 — default surat pertama daftar.
+  @override
+  Future<IncomingLetterModel> getIncomingDetail(String id) async =>
+      letters.firstWhere((letter) => letter.id == id,
+          orElse: () => letters.first);
 }
 
 IncomingLetterModel _incoming(
@@ -264,18 +271,28 @@ void main() {
     expect(find.text('SM-001/X/2026'), findsOneWidget);
   });
 
-  testWidgets('tap kartu membuka placeholder detail (TODO Task 10)',
-      (tester) async {
+  testWidgets('tap kartu membuka detail penuh (Task 10) & buku agenda '
+      'di-refresh saat kembali', (tester) async {
     final incoming = _FakeIncomingService(letters: [_letters.first]);
     await _pumpPage(tester, incoming: incoming);
     await _openIncomingTab(tester);
+    final callsBefore = incoming.calls;
 
     await tester.tap(find.text('SM-001/X/2026'));
     await tester.pumpAndSettle();
 
+    // Detail asli: header agenda + 4 tab + perihal.
     expect(find.text('Detail Surat Masuk'), findsOneWidget);
     expect(find.text('SM-001/X/2026'), findsOneWidget);
-    expect(find.textContaining('Tugas 10'), findsOneWidget);
+    expect(find.text('Undangan rapat tahunan'), findsOneWidget);
+    expect(find.text('Disposisi'), findsOneWidget);
+    expect(find.text('Runutan'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Kembali'));
+    await tester.pumpAndSettle();
+    // Status/disposisi bisa berubah di detail → daftar dimuat ulang.
+    expect(incoming.calls, callsBefore + 1);
+    expect(find.text('SM-001/X/2026'), findsOneWidget);
   });
 
   testWidgets('FAB masuk membuka form pendaftaran (Task 9) lalu '

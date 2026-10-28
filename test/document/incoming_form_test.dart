@@ -69,7 +69,8 @@ class _FakeIncomingService extends IncomingService {
     lastInReplyToType = inReplyToType;
     lastInReplyToId = inReplyToId;
     lastInReplyToRelation = inReplyToRelation;
-    return IncomingLetterModel(
+    return _createdLetter =
+        IncomingLetterModel(
       id: 'il-1',
       agendaNumber: 'SM-001/X/2026',
       subject: subject,
@@ -78,6 +79,21 @@ class _FakeIncomingService extends IncomingService {
       status: 'terdaftar',
     );
   }
+
+  /// Surat hasil create terakhir — dipakai getIncomingDetail (jalan pintas
+  /// "Lihat detail" Task 10).
+  IncomingLetterModel _createdLetter = IncomingLetterModel(
+    id: 'il-1',
+    agendaNumber: 'SM-001/X/2026',
+    subject: '-',
+    sifat: 'biasa',
+    classification: 'umum',
+    status: 'terdaftar',
+  );
+
+  @override
+  Future<IncomingLetterModel> getIncomingDetail(String id) async =>
+      _createdLetter;
 }
 
 class _FakeDocumentService extends DocumentService {
@@ -372,11 +388,19 @@ void main() {
     expect(fields['in_reply_to[id]'], 'doc-parent-1');
     expect(fields['in_reply_to[relation]'], 'balasan');
 
-    // Jalan pintas detail → placeholder Task 10.
+    // Jalan pintas detail → halaman detail penuh (Task 10) menggantikan
+    // form di tumpukan navigasi.
     await tester.tap(find.text('Lihat detail'));
     await tester.pumpAndSettle();
     expect(find.text('Detail Surat Masuk'), findsOneWidget);
-    expect(find.textContaining('Tugas 10'), findsOneWidget);
+    expect(find.text('SM-001/X/2026'), findsOneWidget);
+    expect(find.text('Undangan pengiriman proposal'), findsNothing);
+    expect(find.text('Disposisi'), findsOneWidget);
+    expect(find.text('Runutan'), findsOneWidget);
+    // Form sudah tidak ada di tumpukan — kembali langsung ke launcher.
+    await tester.tap(find.byTooltip('Kembali'));
+    await tester.pumpAndSettle();
+    expect(find.text('Buka form'), findsOneWidget);
   });
 
   testWidgets('pengirim dipilih dari buku pihak: party_id terpakai tanpa '

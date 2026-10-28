@@ -8,11 +8,11 @@ import '../../../services/document/incoming_service.dart';
 import '../../../theme/app_button_style.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../utils/error_utils.dart';
-import '../../../widgets/app_page_scaffold.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/filter_chip_row.dart';
 import '../../../widgets/modern_bottom_nav.dart';
 import '../../../widgets/status_badge.dart';
+import 'incoming_detail_page.dart';
 
 /// Bagian "Masuk" arsip Surat Perusahaan — buku agenda surat masuk
 /// (`IncomingService.getIncoming`) dengan pola persis bagian "Keluar"
@@ -205,15 +205,19 @@ class IncomingListSectionState extends State<IncomingListSection> {
     _fetch();
   }
 
-  /// TODO(Task 10): ganti placeholder dengan halaman detail surat masuk
-  /// (info surat, disposisi, runutan, pratinjau scan).
-  void _openDetail(IncomingLetterModel letter) {
-    Navigator.push(
+  /// Buka detail surat masuk penuh (Task 10). Sekembali dari detail,
+  /// buku agenda di-refresh — status/disposisi bisa berubah di sana.
+  Future<void> _openDetail(IncomingLetterModel letter) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => IncomingDetailPlaceholderPage(letter: letter),
+        builder: (_) => IncomingDetailPage(
+          letterId: letter.id,
+          service: _service,
+        ),
       ),
     );
+    if (mounted) refresh();
   }
 
   @override
@@ -526,28 +530,5 @@ class IncomingListSectionState extends State<IncomingListSection> {
       _ => StatusType.neutral,
     };
     return StatusBadge(label: letter.statusLabel, type: type);
-  }
-}
-
-/// TODO(Task 10): placeholder halaman detail surat masuk — diganti
-/// halaman detail penuh (info surat, disposisi, runutan, pratinjau
-/// scan). Sementara menampilkan ringkas data list yang sudah ada.
-class IncomingDetailPlaceholderPage extends StatelessWidget {
-  final IncomingLetterModel letter;
-
-  const IncomingDetailPlaceholderPage({super.key, required this.letter});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPageScaffold(
-      titleText: 'Detail Surat Masuk',
-      body: EmptyState(
-        icon: Icons.inbox_outlined,
-        title: letter.agendaNumber,
-        subtitle:
-            'Detail surat masuk (disposisi, runutan, pratinjau scan) akan '
-            'tersedia setelah Tugas 10.',
-      ),
-    );
   }
 }

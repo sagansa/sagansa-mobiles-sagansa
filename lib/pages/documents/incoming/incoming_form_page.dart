@@ -17,7 +17,7 @@ import '../../../utils/error_utils.dart';
 import '../../../widgets/app_page_scaffold.dart';
 import '../../../widgets/app_snackbar.dart';
 import '../document_upload_page.dart' show PickedPdf, PickedPhoto;
-import 'incoming_list_section.dart' show IncomingDetailPlaceholderPage;
+import 'incoming_detail_page.dart';
 
 /// Induk runutan untuk mode "balasan eksternal" (Task 9 fase 1b) —
 /// surat keluar yang dibalas pihak luar lewat surat masuk ini.
@@ -412,7 +412,7 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
   }
 
   /// Dialog sukses: agenda number (di-generate backend) + jalan pintas
-  /// detail (placeholder Task 10) atau selesai kembali ke buku agenda
+  /// detail penuh (Task 10) atau selesai kembali ke buku agenda
   /// (pemanggil me-refresh).
   Future<void> _showSuccessDialog(IncomingLetterModel letter) async {
     final viewDetail = await showDialog<bool>(
@@ -439,11 +439,15 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
     );
     if (!mounted) return;
     if (viewDetail == true) {
-      // TODO(Task 10): ganti placeholder dengan halaman detail penuh.
+      // Detail penuh (Task 10) menggantikan form di tumpukan navigasi —
+      // kembali dari detail langsung ke buku agenda.
       await Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => IncomingDetailPlaceholderPage(letter: letter),
+          builder: (_) => IncomingDetailPage(
+            letterId: letter.id,
+            service: _service,
+          ),
         ),
       );
     } else {
