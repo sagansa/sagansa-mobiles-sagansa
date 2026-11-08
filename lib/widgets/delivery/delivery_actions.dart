@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/app_colors.dart';
+import '../detail/detail_section_card.dart';
 
 class MarkReadyToShipCard extends StatelessWidget {
   final bool isLoading;
@@ -16,71 +18,66 @@ class MarkReadyToShipCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.warning.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.inventory_2_outlined,
-                    color: AppColors.warning, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Order Belum Siap Dikirim',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.warning,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tandai order ini sebagai siap dikirim sebelum mengunggah bukti pengiriman.',
-              style: textTheme.bodySmall
-                  ?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.warning,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                onPressed: isLoading ? null : onMarkReady,
-                icon: isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Icon(Icons.local_shipping, color: Colors.white),
-                label: Text(
-                  isLoading ? 'Memproses...' : 'Tandai Siap Dikirim',
-                  style: textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-            ),
-          ],
+    return DetailSectionCard(
+      title: 'Order Belum Siap Dikirim',
+      icon: Icons.inventory_2_outlined,
+      iconColor: AppColors.warning,
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          'Belum Siap',
+          style: textTheme.labelSmall?.copyWith(
+            color: AppColors.warning,
+            fontWeight: FontWeight.bold,
+            fontSize: 10,
+          ),
         ),
       ),
+      children: [
+        Text(
+          'Tandai order ini sebagai siap dikirim sebelum kurir melakukan penjemputan atau mengunggah bukti pengiriman.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(40),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
+            ),
+            onPressed: isLoading ? null : onMarkReady,
+            icon: isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.check_circle_outline, size: 18),
+            label: Text(
+              isLoading ? 'Memproses...' : 'Tandai Siap Dikirim',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -95,6 +92,11 @@ class SubmitDeliveryCard extends StatelessWidget {
   final ValueChanged<int> onStatusChanged;
   final VoidCallback onSubmit;
 
+  /// Sembunyikan pilihan "Dikembalikan". Order online hanya boleh direfund
+  /// setelah status Sudah Dikirim (tombol Refund terpisah), jadi form
+  /// pengiriman online tidak menawarkan opsi retur.
+  final bool showReturnOption;
+
   const SubmitDeliveryCard({
     super.key,
     required this.selectedStatus,
@@ -105,113 +107,87 @@ class SubmitDeliveryCard extends StatelessWidget {
     required this.photoUploader,
     required this.onStatusChanged,
     required this.onSubmit,
+    this.showReturnOption = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side:
-            BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              selectedStatus == 6
-                  ? 'Laporkan Barang Kembali'
-                  : 'Kirim Bukti Pengiriman',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
+    return DetailSectionCard(
+      title: selectedStatus == 6
+          ? 'Laporkan Barang Kembali'
+          : 'Kirim Bukti Pengiriman',
+      icon: selectedStatus == 6
+          ? Icons.assignment_return_outlined
+          : Icons.local_shipping_outlined,
+      children: [
+        if (showReturnOption) ...[
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Text('Sudah Dikirim')),
+                  selected: selectedStatus == 3,
+                  onSelected: (selected) {
+                    if (selected) onStatusChanged(3);
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('Sudah Dikirim')),
-                    selected: selectedStatus == 3,
-                    onSelected: (selected) {
-                      if (selected) onStatusChanged(3);
-                    },
-                  ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Text('Dikembalikan')),
+                  selected: selectedStatus == 6,
+                  onSelected: (selected) {
+                    if (selected) onStatusChanged(6);
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Center(child: Text('Dikembalikan')),
-                    selected: selectedStatus == 6,
-                    onSelected: (selected) {
-                      if (selected) onStatusChanged(6);
-                    },
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (selectedStatus == 3) receiverField else notesField,
+        const SizedBox(height: 10),
+        photoUploader,
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(42),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
             ),
-            const SizedBox(height: 16),
-            if (selectedStatus == 3) receiverField else notesField,
-            const SizedBox(height: 16),
-            photoUploader,
-            const SizedBox(height: 20),
-            _buildSubmitButton(colorScheme, textTheme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubmitButton(ColorScheme colorScheme, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      height: 48,
-      decoration: BoxDecoration(
-        gradient: hasPhotos ? AppColors.primaryGradient : null,
-        color: hasPhotos
-            ? null
-            : colorScheme.outlineVariant.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: hasPhotos
-            ? [
-                BoxShadow(
-                  color: colorScheme.primary.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                )
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: hasPhotos ? onSubmit : null,
-          borderRadius: BorderRadius.circular(12),
-          child: Center(
-            child: isSubmitting
-                ? const CircularProgressIndicator(color: Colors.white)
-                : Text(
-                    selectedStatus == 6
-                        ? 'Laporkan Barang Kembali'
-                        : 'Kirim Bukti Pengiriman',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: hasPhotos
-                          ? Colors.white
-                          : colorScheme.onSurfaceVariant,
+            onPressed: hasPhotos && !isSubmitting ? onSubmit : null,
+            icon: isSubmitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
                     ),
+                  )
+                : Icon(
+                    selectedStatus == 6
+                        ? Icons.assignment_return
+                        : Icons.check_circle_outline,
+                    size: 18,
                   ),
+            label: Text(
+              isSubmitting
+                  ? 'Mengirim...'
+                  : (selectedStatus == 6
+                      ? 'Laporkan Barang Kembali'
+                      : 'Kirim Bukti Pengiriman'),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -229,15 +205,135 @@ class RefundButton extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         foregroundColor: colorScheme.error,
         side: BorderSide(color: colorScheme.error.withValues(alpha: 0.6)),
-        minimumSize: const Size(double.infinity, 48),
+        minimumSize: const Size(double.infinity, 42),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
-      icon: const Icon(Icons.assignment_return, size: 20),
-      label: const Text('Refund / Kembalikan Order',
-          style: TextStyle(fontWeight: FontWeight.bold)),
+      icon: const Icon(Icons.assignment_return, size: 18),
+      label: const Text(
+        'Refund / Kembalikan Order',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
       onPressed: onRefund,
+    );
+  }
+}
+
+/// Tombol pembatalan order online oleh admin — pola RefundButton.
+class CancelOrderButton extends StatelessWidget {
+  final VoidCallback onCancel;
+
+  const CancelOrderButton({super.key, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colorScheme.error,
+        side: BorderSide(color: colorScheme.error.withValues(alpha: 0.6)),
+        minimumSize: const Size(double.infinity, 42),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+      icon: const Icon(Icons.cancel_outlined, size: 18),
+      label: const Text(
+        'Batalkan Order',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      onPressed: onCancel,
+    );
+  }
+}
+
+/// Dialog konfirmasi pembatalan: alasan wajib (default
+/// "Dibatalkan oleh pembeli"), confirm memanggil [onConfirm] dengan
+/// alasan hasil trim. Disabled saat alasan kosong.
+class CancelOrderDialog extends StatefulWidget {
+  final void Function(String reason) onConfirm;
+
+  const CancelOrderDialog({super.key, required this.onConfirm});
+
+  @override
+  State<CancelOrderDialog> createState() => _CancelOrderDialogState();
+}
+
+class _CancelOrderDialogState extends State<CancelOrderDialog> {
+  late final TextEditingController _reasonController =
+      TextEditingController(text: 'Dibatalkan oleh pembeli');
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return AlertDialog(
+      backgroundColor: colorScheme.surface,
+      title: Row(
+        children: [
+          Icon(Icons.cancel_outlined, color: colorScheme.error),
+          const SizedBox(width: 10),
+          Text(
+            'Batalkan Order',
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Apakah Anda yakin ingin membatalkan order ini? '
+            'Status order akan diubah menjadi "Dibatalkan" dan tidak '
+            'dapat diubah lagi.',
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reasonController,
+            maxLines: 2,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              labelText: 'Alasan Pembatalan (Wajib)',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: colorScheme.error,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _reasonController.text.trim().isEmpty
+              ? null
+              : () => widget.onConfirm(_reasonController.text.trim()),
+          child: const Text('Ya, Batalkan'),
+        ),
+      ],
     );
   }
 }
