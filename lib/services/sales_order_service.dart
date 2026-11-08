@@ -40,6 +40,8 @@ class SalesOrderService {
     required int deliveryServiceId,
     required String receiptNo,
     required List<SalesOrderItemRequest> items,
+    required String idempotencyKey,
+    bool confirmDuplicateReceipt = false,
     File? imagePayment,
     Uint8List? imagePaymentBytes,
   }) async {
@@ -49,6 +51,10 @@ class SalesOrderService {
       'online_shop_provider_id': onlineShopProviderId.toString(),
       'delivery_service_id': deliveryServiceId.toString(),
       'receipt_no': receiptNo,
+      // Idempotency: key sama saat retry → backend mengembalikan order
+      // existing (200), bukan membuat order kedua.
+      'idempotency_key': idempotencyKey,
+      if (confirmDuplicateReceipt) 'confirm_duplicate_receipt': 'true',
     };
 
     for (var i = 0; i < items.length; i++) {
@@ -73,10 +79,66 @@ class SalesOrderService {
       fields['image_payment'] = path;
     }
 
-    await _api.multipart(
-      method: 'POST',
-      path: 'sales-orders/online',
-      fields: fields,
+    try {
+      await _api.multipart(
+        method: 'POST',
+        path: 'sales-orders/online',
+        fields: fields,
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 409 && e.body?['duplicate_receipt'] == true) {
+        final data = (e.body?['data'] as Map<String, dynamic>?) ?? const {};
+        throw DuplicateReceiptException(
+          message: e.message,
+          existingOrderId: (data['existing_order_id'] as num?)?.toInt() ?? 0,
+          receiptNo: (data['receipt_no'] as String?) ?? receiptNo,
+          deliveryDate: data['delivery_date'] as String?,
+          totalPrice: data['total_price'] == null
+              ? null
+              : (data['total_price'] as num).toInt(),
+          storeNickname: data['store_nickname'] as String?,
+          existingCreatedAt: data['existing_created_at'] as String?,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Batalkan order online (admin) — POST sales-orders/{id}/cancel.
+  /// [reason] wajib: backend menyimpannya ke kolom notes. Error backend
+  /// (403/400/422) dilempar sebagai ApiException dengan pesan asli.
+  Future<void> cancelOrder({
+    required int orderId,
+    required String reason,
+  }) async {
+    await _api.postRaw(
+      'sales-orders/$orderId/cancel',
+      body: {'reason': reason},
     );
   }
+}
+
+/// Order online dengan resi yang sama sudah ada dalam window (backend 409).
+/// toString() = message polos agar dialog generik tetap kompatibel.
+class DuplicateReceiptException implements Exception {
+  final String message;
+  final int existingOrderId;
+  final String receiptNo;
+  final String? deliveryDate;
+  final int? totalPrice;
+  final String? storeNickname;
+  final String? existingCreatedAt;
+
+  DuplicateReceiptException({
+    required this.message,
+    required this.existingOrderId,
+    required this.receiptNo,
+    this.deliveryDate,
+    this.totalPrice,
+    this.storeNickname,
+    this.existingCreatedAt,
+  });
+
+  @override
+  String toString() => message;
 }
