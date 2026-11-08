@@ -222,10 +222,18 @@ class RefundButton extends StatelessWidget {
 }
 
 /// Tombol pembatalan order online oleh admin — pola RefundButton.
+/// Saat [isLoading] (request pembatalan in-flight) tombol disabled dan
+/// menampilkan indikator progres — pola [MarkReadyToShipCard.isLoading] —
+/// untuk mencegah double-submit.
 class CancelOrderButton extends StatelessWidget {
+  final bool isLoading;
   final VoidCallback onCancel;
 
-  const CancelOrderButton({super.key, required this.onCancel});
+  const CancelOrderButton({
+    super.key,
+    this.isLoading = false,
+    required this.onCancel,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -241,12 +249,21 @@ class CancelOrderButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
       ),
-      icon: const Icon(Icons.cancel_outlined, size: 18),
-      label: const Text(
-        'Batalkan Order',
-        style: TextStyle(fontWeight: FontWeight.bold),
+      icon: isLoading
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                color: colorScheme.error,
+                strokeWidth: 2,
+              ),
+            )
+          : const Icon(Icons.cancel_outlined, size: 18),
+      label: Text(
+        isLoading ? 'Memproses...' : 'Batalkan Order',
+        style: const TextStyle(fontWeight: FontWeight.bold),
       ),
-      onPressed: onCancel,
+      onPressed: isLoading ? null : onCancel,
     );
   }
 }

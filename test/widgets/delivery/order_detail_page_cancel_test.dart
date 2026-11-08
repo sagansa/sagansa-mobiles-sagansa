@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -107,6 +109,59 @@ void main() {
     expect(find.text('Dibatalkan oleh pembeli'), findsOneWidget);
     verify(() => sales.cancelOrder(
           orderId: 42,
+          reason: 'Dibatalkan oleh pembeli',
+        )).called(1);
+  });
+
+  testWidgets('admin: tombol Batalkan disable saat request in-flight',
+      (tester) async {
+    // Request tidak pernah selesai selama assertion in-flight berjalan.
+    final pending = Completer<void>();
+    when(() => sales.cancelOrder(
+          orderId: any(named: 'orderId'),
+          reason: any(named: 'reason'),
+        )).thenAnswer((_) => pending.future);
+    final provider = await buildProvider(admin: true);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OrderDetailPage(
+        order: <String, dynamic>{
+          'id': 46,
+          'receipt_no': 'REC-46',
+          'delivery_status': 4,
+          'items': <Map<String, dynamic>>[],
+        },
+        orderMode: OrderMode.online,
+        provider: provider,
+      ),
+    ));
+    await tester.pump(); // post-frame selectOrder(widget.order)
+    await tester.pump();
+
+    await tester.ensureVisible(find.text('Batalkan Order'));
+    await tester.tap(find.text('Batalkan Order'));
+    await tester.pump(); // dialog muncul
+    await tester.tap(find.text('Ya, Batalkan'));
+    await tester.pump(); // dialog tutup, service dipanggil
+
+    // In-flight: label jadi "Memproses..." + progress, bukan label normal.
+    expect(find.text('Memproses...'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Batalkan Order'), findsNothing);
+
+    // Tap kedua diabaikan (tombol disabled) — service tetap cuma 1x.
+    await tester.tap(find.text('Memproses...'), warnIfMissed: false);
+    await tester.pump();
+    expect(find.text('Memproses...'), findsOneWidget);
+
+    pending.complete();
+    await tester.pump(); // sukses: status jadi 7
+    await tester.pump(const Duration(milliseconds: 50)); // state update
+    await tester.pump(const Duration(milliseconds: 50)); // loadInitialOrders
+
+    expect(find.text('Memproses...'), findsNothing);
+    verify(() => sales.cancelOrder(
+          orderId: 46,
           reason: 'Dibatalkan oleh pembeli',
         )).called(1);
   });

@@ -38,6 +38,20 @@ void main() {
       expect(find.byType(DeliveryStepper), findsOneWidget);
     });
 
+    testWidgets('cancelled online: langkah terminal jadi Dibatalkan',
+        (tester) async {
+      await tester.pumpWidget(wrap(
+        const DeliveryStepper(
+          status: DeliveryStatus.cancelled,
+          orderMode: OrderMode.online,
+        ),
+      ));
+      expect(find.byType(DeliveryStepper), findsOneWidget);
+      // Langkah aktif bukan "Belum Kirim" — terminal "Dibatalkan".
+      expect(find.text('Dibatalkan'), findsOneWidget);
+      expect(find.byIcon(Icons.cancel_outlined), findsOneWidget);
+    });
+
     testWidgets('renders for ready status', (tester) async {
       await tester.pumpWidget(wrap(
         const DeliveryStepper(

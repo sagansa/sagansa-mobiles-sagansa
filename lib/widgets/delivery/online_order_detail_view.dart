@@ -120,6 +120,7 @@ class OnlineOrderDetailView extends StatelessWidget {
           if (listState.isAdmin && deliveryStatus.canCancel) ...[
             const SizedBox(height: 10),
             CancelOrderButton(
+              isLoading: formState.isCancelling,
               onCancel: () => _showCancelOrderDialog(context, provider),
             ),
           ],

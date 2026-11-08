@@ -18,6 +18,28 @@ void main() {
       await tester.tap(find.byType(CancelOrderButton));
       expect(tapped, isTrue);
     });
+
+    testWidgets('isLoading: tampilkan progress dan abaikan tap (anti double-submit)',
+        (tester) async {
+      var tapped = false;
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CancelOrderButton(
+            isLoading: true,
+            onCancel: () => tapped = true,
+          ),
+        ),
+      ));
+
+      expect(find.text('Memproses...'), findsOneWidget);
+      expect(find.text('Batalkan Order'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.tap(find.byType(CancelOrderButton));
+      await tester.pump();
+      expect(tapped, isFalse);
+    });
   });
 
   group('CancelOrderDialog', () {

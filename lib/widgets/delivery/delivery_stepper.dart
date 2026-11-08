@@ -20,17 +20,23 @@ class DeliveryStepper extends StatelessWidget {
     if (orderMode.isOnline) {
       if (code == 1) return isStickerPrinted ? 1 : 0;
       if (code == 4) return 2;
-      if (code == 3 || code == 2 || code == 6) return 3;
+      if (code == 3 || code == 2 || code == 6 || code == 7) return 3;
       return 0;
     } else {
       if (code == 1) return 0;
       if (code == 4) return 1;
-      if (code == 3 || code == 2 || code == 6) return 2;
+      if (code == 3 || code == 2 || code == 6 || code == 7) return 2;
       return 0;
     }
   }
 
   bool get _isReturned => status == DeliveryStatus.returned;
+
+  bool get _isCancelled => status == DeliveryStatus.cancelled;
+
+  /// Status terminal yang berakhir tidak normal (retur & batal) — keduanya
+  /// memakai treatment error (merah), pola retur.
+  bool get _isTerminalFailed => _isReturned || _isCancelled;
 
   @override
   Widget build(BuildContext context) {
@@ -44,10 +50,14 @@ class DeliveryStepper extends StatelessWidget {
         {'label': 'Resi Dicetak', 'icon': Icons.print_outlined},
         {'label': 'Siap Kirim', 'icon': Icons.inventory_2_outlined},
         {
-          'label': _isReturned ? 'Retur' : 'Terkirim',
-          'icon': _isReturned
-              ? Icons.assignment_return_outlined
-              : Icons.check_circle_outline,
+          'label': _isCancelled
+              ? 'Dibatalkan'
+              : (_isReturned ? 'Retur' : 'Terkirim'),
+          'icon': _isCancelled
+              ? Icons.cancel_outlined
+              : (_isReturned
+                  ? Icons.assignment_return_outlined
+                  : Icons.check_circle_outline),
         },
       ];
     } else {
@@ -55,10 +65,14 @@ class DeliveryStepper extends StatelessWidget {
         {'label': 'Belum Kirim', 'icon': Icons.pending_actions},
         {'label': 'Siap Kirim', 'icon': Icons.inventory_2_outlined},
         {
-          'label': _isReturned ? 'Retur' : 'Terkirim',
-          'icon': _isReturned
-              ? Icons.assignment_return_outlined
-              : Icons.check_circle_outline,
+          'label': _isCancelled
+              ? 'Dibatalkan'
+              : (_isReturned ? 'Retur' : 'Terkirim'),
+          'icon': _isCancelled
+              ? Icons.cancel_outlined
+              : (_isReturned
+                  ? Icons.assignment_return_outlined
+                  : Icons.check_circle_outline),
         },
       ];
     }
@@ -93,13 +107,13 @@ class DeliveryStepper extends StatelessWidget {
           FontWeight fontWeight = FontWeight.normal;
 
           if (isActive) {
-            iconBgColor = _isReturned
+            iconBgColor = _isTerminalFailed
                 ? AppColors.error.withValues(alpha: 0.15)
                 : colorScheme.primary.withValues(alpha: 0.15);
             iconColor =
-                _isReturned ? AppColors.error : colorScheme.primary;
+                _isTerminalFailed ? AppColors.error : colorScheme.primary;
             textColor =
-                _isReturned ? AppColors.error : colorScheme.primary;
+                _isTerminalFailed ? AppColors.error : colorScheme.primary;
             fontWeight = FontWeight.bold;
           } else if (isCompleted) {
             iconBgColor = AppColors.success.withValues(alpha: 0.15);
@@ -131,7 +145,7 @@ class DeliveryStepper extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: isActive
-                              ? (_isReturned
+                              ? (_isTerminalFailed
                                   ? AppColors.error
                                   : colorScheme.primary)
                               : (isCompleted
