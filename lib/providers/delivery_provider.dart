@@ -9,6 +9,7 @@ import '../services/delivery_status_repository.dart';
 import '../services/image_service.dart';
 import '../services/payment_proof_pdf_service.dart';
 import '../services/presence_service.dart';
+import '../services/sales_order_service.dart';
 import '../services/sticker_print_orchestrator.dart';
 
 @immutable
@@ -22,6 +23,7 @@ class DeliveryListState {
   final bool isPrintingPaymentProof;
   final bool isAdmin;
   final bool canManageSalesLink;
+  final bool canEditDeliveryPhotos;
   final Set<int> printedStickers;
 
   const DeliveryListState({
@@ -34,6 +36,7 @@ class DeliveryListState {
     this.isPrintingPaymentProof = false,
     this.isAdmin = false,
     this.canManageSalesLink = false,
+    this.canEditDeliveryPhotos = false,
     this.printedStickers = const {},
   });
 
@@ -47,6 +50,7 @@ class DeliveryListState {
     bool? isPrintingPaymentProof,
     bool? isAdmin,
     bool? canManageSalesLink,
+    bool? canEditDeliveryPhotos,
     Set<int>? printedStickers,
   }) {
     return DeliveryListState(
@@ -60,6 +64,8 @@ class DeliveryListState {
           isPrintingPaymentProof ?? this.isPrintingPaymentProof,
       isAdmin: isAdmin ?? this.isAdmin,
       canManageSalesLink: canManageSalesLink ?? this.canManageSalesLink,
+      canEditDeliveryPhotos:
+          canEditDeliveryPhotos ?? this.canEditDeliveryPhotos,
       printedStickers: printedStickers ?? this.printedStickers,
     );
   }
@@ -81,6 +87,8 @@ class DeliveryFormState {
   final bool isMarkingReady;
   final bool isPrintingSticker;
   final bool isUpdatingAssignment;
+  final bool isUpdatingPhotos;
+  final bool isCancelling;
   final bool isPrintingPaymentProof;
 
   const DeliveryFormState({
@@ -90,6 +98,8 @@ class DeliveryFormState {
     this.isMarkingReady = false,
     this.isPrintingSticker = false,
     this.isUpdatingAssignment = false,
+    this.isUpdatingPhotos = false,
+    this.isCancelling = false,
     this.isPrintingPaymentProof = false,
   });
 
@@ -101,6 +111,8 @@ class DeliveryFormState {
     bool? isMarkingReady,
     bool? isPrintingSticker,
     bool? isUpdatingAssignment,
+    bool? isUpdatingPhotos,
+    bool? isCancelling,
     bool? isPrintingPaymentProof,
   }) {
     return DeliveryFormState(
@@ -111,6 +123,8 @@ class DeliveryFormState {
       isPrintingSticker: isPrintingSticker ?? this.isPrintingSticker,
       isUpdatingAssignment:
           isUpdatingAssignment ?? this.isUpdatingAssignment,
+      isUpdatingPhotos: isUpdatingPhotos ?? this.isUpdatingPhotos,
+      isCancelling: isCancelling ?? this.isCancelling,
       isPrintingPaymentProof:
           isPrintingPaymentProof ?? this.isPrintingPaymentProof,
     );
@@ -124,6 +138,7 @@ class DeliveryProvider extends ChangeNotifier {
   final DeliveryStatusRepository repository;
   final PaymentProofPdfService pdfService;
   final StickerPrintOrchestrator stickerOrchestrator;
+  final SalesOrderService salesOrderService;
   final OrderMode orderMode;
   final ScrollController scrollController = ScrollController();
 
@@ -141,11 +156,13 @@ class DeliveryProvider extends ChangeNotifier {
     DeliveryStatusRepository? repository,
     PaymentProofPdfService? pdfService,
     StickerPrintOrchestrator? stickerOrchestrator,
+    SalesOrderService? salesOrderService,
   })  : presenceService = presenceService ?? PresenceService(),
         repository = repository ?? DeliveryStatusRepository(),
         pdfService = pdfService ?? PaymentProofPdfService(),
         stickerOrchestrator =
-            stickerOrchestrator ?? StickerPrintOrchestrator() {
+            stickerOrchestrator ?? StickerPrintOrchestrator(),
+        salesOrderService = salesOrderService ?? SalesOrderService() {
     scrollController.addListener(_onScroll);
   }
 
@@ -177,10 +194,13 @@ class DeliveryProvider extends ChangeNotifier {
   Future<void> initialize() async {
     final admin = await repository.loadAdminRole();
     final canManageSalesLink = await repository.loadCanManageSalesLink();
+    final canEditDeliveryPhotos =
+        await repository.loadDeliveryPhotoEditRole();
     final stickers = await repository.loadPrintedStickers();
     _listState = _listState.copyWith(
         isAdmin: admin,
         canManageSalesLink: canManageSalesLink,
+        canEditDeliveryPhotos: canEditDeliveryPhotos,
         printedStickers: stickers);
     notifyListeners();
     loadInitialOrders();
@@ -307,6 +327,45 @@ class DeliveryProvider extends ChangeNotifier {
     }
   }
 
+  /// Ganti seluruh daftar foto bukti pengiriman order direct terpilih
+  /// (khusus admin/super_admin). Paths berupa daftar LENGKAP hasil edit
+  /// (path lama yang dipertahankan + path baru). Setelah sukses, order
+  /// terpilih diganti dengan data terbaru dari server sehingga detail
+  /// langsung menampilkan foto yang baru.
+  Future<void> updateDeliveryPhotos(List<String> paths) async {
+    final order = _formState.selectedOrder;
+    final orderId = int.tryParse(order?['id']?.toString() ?? '');
+    if (order == null || orderId == null) {
+      throw Exception('Tidak ada order terpilih.');
+    }
+
+    _formState = _formState.copyWith(isUpdatingPhotos: true);
+    notifyListeners();
+
+    try {
+      final result = await presenceService.updateDeliveryPhotos(
+        orderId: orderId,
+        paths: paths,
+      );
+
+      if (result['success'] == true && result['data'] is Map<String, dynamic>) {
+        _selectOrderInternal(result['data'] as Map<String, dynamic>);
+        _formState = _formState.copyWith(isUpdatingPhotos: false);
+        notifyListeners();
+        loadInitialOrders();
+      } else {
+        _formState = _formState.copyWith(isUpdatingPhotos: false);
+        notifyListeners();
+        throw Exception(
+            result['message'] ?? 'Gagal memperbarui foto pengiriman.');
+      }
+    } catch (e) {
+      _formState = _formState.copyWith(isUpdatingPhotos: false);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   void selectOrder(Map<String, dynamic> order) {
     _selectOrderInternal(order);
     notifyListeners();
@@ -397,13 +456,15 @@ class DeliveryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final isDirect = orderMode.isDirect;
-      final orderId = isDirect
-          ? int.tryParse(_formState.selectedOrder!['id'].toString())
-          : null;
+      // Selalu kirim order_id (online maupun direct) agar backend
+      // meng-update baris yang persis dilihat user. Resi bisa duplikat di
+      // DB (legacy sync marketplace selalu INSERT) — lookup by receipt_no
+      // bisa mendarat di duplikat yang salah.
+      final orderId =
+          int.tryParse(_formState.selectedOrder!['id'].toString());
 
       final result = await presenceService.updateDeliveryStatus(
-        receiptNo: isDirect ? null : receiptNo,
+        receiptNo: orderMode.isDirect ? null : receiptNo,
         orderId: orderId,
         imageFiles: imageFiles,
         receivedBy: _formState.selectedStatus == 6
@@ -416,7 +477,44 @@ class DeliveryProvider extends ChangeNotifier {
       );
 
       if (result['success'] == true) {
-        _clearFormInternal();
+        final data = result['data'] as Map<String, dynamic>?;
+        final newStatus =
+            data?['delivery_status'] ?? _formState.selectedStatus;
+        final rawUrls = data?['image_delivery_urls'];
+        final List<dynamic>? urls = rawUrls is List ? rawUrls : null;
+        final String? firstUrl = (urls != null && urls.isNotEmpty)
+            ? urls.first.toString()
+            : data?['image_delivery_url']?.toString();
+        final rawPaths = data?['image_delivery_paths'];
+        final List<dynamic>? paths = rawPaths is List ? rawPaths : null;
+
+        final updatedOrder = <String, dynamic>{
+          ...?_formState.selectedOrder,
+          'delivery_status': newStatus,
+          if (_formState.selectedStatus != 6 &&
+              receiverController.text.trim().isNotEmpty)
+            'received_by': receiverController.text.trim(),
+          if (_formState.selectedStatus == 6 &&
+              notesController.text.trim().isNotEmpty)
+            'notes': notesController.text.trim(),
+          // Paths & urls HARUS ditimpa berdampingan — sheet edit foto admin
+          // meng-seed dari pasangan ini; paths stale bisa membuat penyimpanan
+          // berikutnya menghapus file yang salah.
+          if (paths != null) 'image_delivery_paths': paths,
+          if (urls != null) 'image_delivery_urls': urls,
+          if (firstUrl != null) 'image_delivery_url': firstUrl,
+        };
+
+        imageFiles.clear();
+        receiverController.clear();
+        notesController.clear();
+
+        _formState = _formState.copyWith(
+          selectedOrder: updatedOrder,
+          selectedStatus:
+              (newStatus is int) ? newStatus : _formState.selectedStatus,
+          isSubmitting: false,
+        );
         notifyListeners();
         onSuccess();
         loadInitialOrders();
@@ -470,6 +568,44 @@ class DeliveryProvider extends ChangeNotifier {
       }
     } catch (e) {
       _formState = _formState.copyWith(isMarkingReady: false);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Batalkan order online yang dipilih (admin). [reason] wajib — backend
+  /// menyimpannya ke kolom notes. Sukses: selectedOrder jadi status 7 dan
+  /// list di-refresh. Gagal: error dilempar ke UI (snackbar generik).
+  Future<void> cancelOrder(String reason) async {
+    if (_formState.selectedOrder == null) return;
+
+    final orderId =
+        int.tryParse(_formState.selectedOrder!['id'].toString());
+    if (orderId == null) {
+      throw Exception('ID order tidak tersedia.');
+    }
+
+    _formState = _formState.copyWith(isCancelling: true);
+    notifyListeners();
+
+    try {
+      await salesOrderService.cancelOrder(
+        orderId: orderId,
+        reason: reason,
+      );
+
+      _formState = _formState.copyWith(
+        selectedOrder: {
+          ..._formState.selectedOrder!,
+          'delivery_status': 7,
+          'notes': reason,
+        },
+        isCancelling: false,
+      );
+      notifyListeners();
+      loadInitialOrders();
+    } catch (e) {
+      _formState = _formState.copyWith(isCancelling: false);
       notifyListeners();
       rethrow;
     }
