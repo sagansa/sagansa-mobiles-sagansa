@@ -1,11 +1,13 @@
 import '../widgets/status_badge.dart';
 
 class StatusMappers {
-  /// Delivery status (1=pending, 2=valid, 3=delivered, 4=ready, 5=fix, 6=returned)
+  /// Delivery status (1=pending, 2=valid, 3=delivered, 4=ready, 5=fix,
+  /// 6=returned, 7=cancelled)
   static StatusType deliveryStatus(int? code) => switch (code) {
         2 => StatusType.success,
         3 => StatusType.info,
         6 => StatusType.error,
+        7 => StatusType.error,
         _ => StatusType.warning,
       };
 
@@ -16,6 +18,7 @@ class StatusMappers {
         4 => 'Siap Dikirim',
         5 => 'Perbaiki',
         6 => 'Dikembalikan',
+        7 => 'Dibatalkan',
         _ => 'Tidak Diketahui',
       };
 
