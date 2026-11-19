@@ -6,12 +6,11 @@ import '../models/utility_usage_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/utility_usage_service.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/empty_state.dart';
-import '../widgets/filter_app_bar_action.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
 import 'utility_usage_detail_page.dart';
 import 'utility_usage_form_page.dart';
@@ -274,41 +273,56 @@ class _UtilityUsageListPageState extends State<UtilityUsageListPage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Pemakaian Utility'),
         actions: [
-          if (_hasActiveFilters)
-            IconButton(
-              icon: const Icon(Icons.filter_list_off),
-              onPressed: _clearFilters,
-              tooltip: 'Hapus Filter',
+          BarButtonCluster(actions: [
+            if (_hasActiveFilters)
+              BarButtonSpec(
+                icon: Icons.filter_list_off,
+                tooltip: 'Hapus Filter',
+                onTap: _clearFilters,
+              ),
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _activeFilterCount,
+              onTap: _openFilterSheet,
             ),
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
-            onTap: _openFilterSheet,
-          ),
+            if (_canManage)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Pemakaian Utility',
+                onTap: () => _openForm(),
+              ),
+          ]),
         ],
       ),
-      floatingActionButton:
-          _canManage ? AddFab(onPressed: () => _openForm()) : null,
       bottomNavigationBar: ModernBottomNav(
-        currentIndex: 2, // Ops tab
+        currentIndex: 4, // Ops tab
         onTap: (index) {},
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? _buildError()
-                    : !_hasLoaded
-                        ? const Center(child: CircularProgressIndicator())
-                        : _items.isEmpty
-                            ? _buildEmpty(colorScheme)
-                            : _buildList(colorScheme, textTheme),
-          ),
-        ],
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                      ? _buildError()
+                      : !_hasLoaded
+                          ? const Center(child: CircularProgressIndicator())
+                          : _items.isEmpty
+                              ? _buildEmpty(colorScheme)
+                              : _buildList(colorScheme, textTheme),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -319,7 +333,7 @@ class _UtilityUsageListPageState extends State<UtilityUsageListPage> {
       child: ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(
-            16, 12, 16, ModernBottomNav.height + context.systemBottomInset),
+            16, 12, 16, ModernBottomNav.clearance(context)),
         itemCount: _items.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, idx) {
           if (idx == _items.length) {

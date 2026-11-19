@@ -10,6 +10,8 @@ import '../services/region_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/snackbar_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/safe_bottom_bar.dart';
@@ -141,6 +143,9 @@ class _DeliveryAddressFormPageState extends State<DeliveryAddressFormPage> {
             _postalCodes = await _regionService.getPostalCodes(s.id);
             _postalCode =
                 _postalCodes.where((x) => x.id == a.postalCodeId).firstOrNull;
+            // Konsumen lama yang dibuat tanpa kode pos: isi otomatis bila
+            // kelurahannya hanya punya satu kode pos.
+            _postalCode ??= _postalCodes.length == 1 ? _postalCodes.first : null;
           }
         }
       }
@@ -235,6 +240,9 @@ class _DeliveryAddressFormPageState extends State<DeliveryAddressFormPage> {
       if (mounted) {
         setState(() {
           _postalCodes = postalCodes;
+          // Hampir semua kelurahan hanya punya satu kode pos — pilih
+          // otomatis agar user tidak perlu memilih manual.
+          if (postalCodes.length == 1) _postalCode = postalCodes.first;
           _loadingPostalCodes = false;
         });
       }
@@ -324,7 +332,9 @@ class _DeliveryAddressFormPageState extends State<DeliveryAddressFormPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isEdit ? 'Edit Konsumen' : 'Konsumen Baru'),
       ),
       body: _loadingInitial
@@ -334,7 +344,7 @@ class _DeliveryAddressFormPageState extends State<DeliveryAddressFormPage> {
               child: ListView(
                 padding: EdgeInsets.fromLTRB(
                   AppSpacing.md,
-                  AppSpacing.md,
+                  AppBarInsets.top(context),
                   AppSpacing.md,
                   AppSpacing.md + context.systemBottomInset,
                 ),
@@ -505,8 +515,8 @@ class _DeliveryAddressFormPageState extends State<DeliveryAddressFormPage> {
               width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
           const SizedBox(width: AppSpacing.md),
           Text(hint,
-              style: const TextStyle(
-                  color: AppColors.onSurfaceVariant, fontSize: 14)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.onSurfaceVariant)),
         ],
       );
     }

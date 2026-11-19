@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import 'safe_bottom_bar.dart';
+import 'modern_picker_sheet.dart';
 
 /// Field spec untuk FilterBottomSheet.
 abstract class FilterField<T> {
@@ -34,6 +34,22 @@ class DropdownFilterField<T> extends FilterField<T?> {
   })  : assert(dependsOn == null || optionFilter != null,
             'optionFilter wajib bila dependsOn diisi'),
         super();
+
+  /// Opsi efektif untuk [dependencyValue] saat ini (opsi penuh bila tidak
+  /// ada dependency).
+  ///
+  /// [optionFilter] tidak boleh dibaca langsung dari luar lewat referensi
+  /// bertipe mentah (`DropdownFilterField` tanpa type argument, seperti di
+  /// [_FilterBottomSheetState._buildField]): getter generik yang menaruh T
+  /// di posisi kontravarian (parameter fungsi) menjalani cek runtime, dan
+  /// `List<(int, String)> Function(...)` bukan subtype dari
+  /// `List<(dynamic, String)> Function(...)` — TypeError saat build sheet.
+  /// Di dalam metode ini akses member bertipe persis, jadi aman.
+  List<(dynamic, String)> resolveOptions(dynamic dependencyValue) {
+    final filter = optionFilter;
+    if (dependsOn == null || filter == null) return options;
+    return filter(options, dependencyValue);
+  }
 }
 
 /// Date-range field.
@@ -49,7 +65,17 @@ class ChipFilterField<T> extends FilterField<T?> {
     required super.label,
     required super.value,
     required this.options,
-  }) : super();
+  });
+}
+
+/// Field teks bebas (pencarian nama/email/dll).
+class TextFilterField extends FilterField<String?> {
+  final String? hint;
+  const TextFilterField({
+    required super.label,
+    required super.value,
+    this.hint,
+  });
 }
 
 /// Bottom sheet generik untuk filter.
@@ -149,10 +175,20 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             padding: AppSpacing.paddingMD,
             child: Row(
               children: [
-                Text(widget.title, style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                if (widget.onReset != null)
+                // Judul dalam Expanded + ellipsis: judul panjang / skala
+                // teks besar tidak membuat baris header meluap.
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (widget.onReset != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
                   TextButton(onPressed: widget.onReset, child: const Text('Reset')),
+                ],
               ],
             ),
           ),
@@ -206,10 +242,8 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
 
   Widget _buildField(FilterField field) {
     if (field is DropdownFilterField) {
-      var options = field.options;
-      if (field.dependsOn != null && field.optionFilter != null) {
-        options = field.optionFilter!(field.options, _values[field.dependsOn]);
-      }
+      final options = field.resolveOptions(
+          field.dependsOn == null ? null : _values[field.dependsOn]);
       return _DropdownFieldWidget(
         label: field.label,
         value: _values[field.label],
@@ -229,6 +263,14 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
         label: field.label,
         value: _values[field.label],
         options: field.options,
+        onChanged: (v) => _updateValue(field.label, v),
+      );
+    }
+    if (field is TextFilterField) {
+      return _TextFieldWidget(
+        label: field.label,
+        initialvalue: field.value,
+        hint: field.hint,
         onChanged: (v) => _updateValue(field.label, v),
       );
     }
@@ -309,83 +351,15 @@ class _DropdownFieldWidget<T> extends StatelessWidget {
   }
 
   void _showDropdown(BuildContext context) {
-    showModalBottomSheet(
+    ModernPickerSheet.showFromTuples<T?>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        expand: false,
-        builder: (_, controller) => Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(width: 40, height: 4, color: Theme.of(context).colorScheme.outlineVariant),
-            Padding(
-              padding: AppSpacing.paddingMD,
-              child: Row(
-                children: [
-                  Text(label, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView.separated(
-                controller: controller,
-                padding: EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  0,
-                  AppSpacing.md,
-                  // Item terakhir tidak boleh tertutup system navigation bar.
-                  // systemBottomInset dibaca langsung dari view engine
-                  // (bulletproof terhadap MediaQuery yang dimodifikasi
-                  // ancestor — lihat SafeBottomBar).
-                  context.systemBottomInset + AppSpacing.lg,
-                ),
-                itemCount: options.length + 1,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) {
-                  if (i == 0) {
-                    return ListTile(
-                      title: Text('Semua $label', style: Theme.of(context).textTheme.bodyMedium),
-                      leading: Radio<T?>(
-                        value: null,
-                        // ignore: deprecated_member_use
-                        groupValue: value,
-                        // ignore: deprecated_member_use
-                        onChanged: (v) {
-                          onChanged(v);
-                          Navigator.pop(ctx);
-                        },
-                      ),
-                    );
-                  }
-                  final opt = options[i - 1];
-                  return ListTile(
-                    title: Text(opt.$2),
-                    leading: Radio<T?>(
-                      value: opt.$1,
-                      // ignore: deprecated_member_use
-                      groupValue: value,
-                      // ignore: deprecated_member_use
-                      onChanged: (v) {
-                        onChanged(v);
-                        Navigator.pop(ctx);
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+      title: label,
+      options: options.map((opt) => (opt.$1 as T?, opt.$2)).toList(),
+      selectedItem: value,
+      showAllOption: true,
+      allOptionLabel: 'Semua $label',
+      allOptionValue: null,
+      onSelected: (val) => onChanged(val),
     );
   }
 }
@@ -503,6 +477,74 @@ class _ChipFieldWidget<T> extends StatelessWidget {
                   onSelected: (_) => onChanged(opt.$1),
                 )),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TextFieldWidget extends StatefulWidget {
+  final String label;
+  final String? initialvalue;
+  final String? hint;
+  final ValueChanged<String?> onChanged;
+
+  const _TextFieldWidget({
+    required this.label,
+    required this.initialvalue,
+    required this.onChanged,
+    this.hint,
+  });
+
+  @override
+  State<_TextFieldWidget> createState() => _TextFieldWidgetState();
+}
+
+class _TextFieldWidgetState extends State<_TextFieldWidget> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialvalue ?? '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.label,
+            style: tt.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
+        AppSpacing.gapVerticalXS,
+        TextField(
+          controller: _controller,
+          textInputAction: TextInputAction.search,
+          onChanged: (v) => widget.onChanged(v.trim().isEmpty ? null : v.trim()),
+          decoration: InputDecoration(
+            hintText: widget.hint ?? 'Cari...',
+            prefixIcon: Icon(Icons.search, color: AppColors.info),
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: AppSpacing.borderRadiusMD,
+              borderSide: BorderSide(color: cs.outlineVariant),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: AppSpacing.borderRadiusMD,
+              borderSide: BorderSide(color: cs.outlineVariant),
+            ),
+            filled: true,
+            fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+          ),
         ),
       ],
     );

@@ -406,6 +406,7 @@ class _EmployeeTabContentState extends State<_EmployeeTabContent> {
   String? _error;
 
   bool _isSales = false;
+  bool _isAdmin = false;
 
   int? _selectedSalesId;
 
@@ -423,6 +424,11 @@ class _EmployeeTabContentState extends State<_EmployeeTabContent> {
       if (mounted) {
         setState(() {
           _isSales = roles.contains('sales');
+          // Set role admin yang sama dengan tab Online/Direct (listState
+          // .isAdmin) supaya aturan tampil nominal konsisten antar tab.
+          _isAdmin = roles.contains('admin') ||
+              roles.contains('super_admin') ||
+              roles.contains('supervisor');
         });
       }
     }
@@ -520,6 +526,7 @@ class _EmployeeTabContentState extends State<_EmployeeTabContent> {
         final o = _items[index];
         return EmployeeOrderListCard(
           order: o,
+          isAdmin: _isAdmin,
           onTap: () => _openDetail(o),
         );
       },

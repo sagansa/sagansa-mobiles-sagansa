@@ -1,41 +1,51 @@
 import 'package:flutter/material.dart';
 
-import 'error_utils.dart';
+import '../widgets/app_snackbar.dart';
 
-/// Snackbar dengan teks selalu putih agar kontras di light & dark mode,
-/// baik pada background sukses (hijau) maupun error (merah).
+export '../widgets/app_snackbar.dart'
+    show
+        snackBarTextColor,
+        buildAppSnackBar,
+        showAppSnackBar,
+        showSuccessSnackBar,
+        showErrorSnackBar,
+        showWarningSnackBar,
+        showInfoSnackBar;
+
+/// Snackbar dengan teks kontras otomatis terhadap background-nya, floating layout,
+/// safe margins, dan icon semantic.
 class SnackbarUtils {
+  static Color textColorFor(Color background) => snackBarTextColor(background);
+
   static void show(
     BuildContext context,
     String message, {
     required Color backgroundColor,
     Duration duration = const Duration(seconds: 3),
+    IconData? icon,
   }) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white),
-        ),
-        backgroundColor: backgroundColor,
-        duration: duration,
-      ),
+    showAppSnackBar(
+      context,
+      message,
+      background: backgroundColor,
+      duration: duration,
+      icon: icon,
     );
   }
 
   static void success(BuildContext context, String message) {
-    show(context, message, backgroundColor: const Color(0xFF4CAF50));
+    showSuccessSnackBar(context, message);
   }
 
   static void error(BuildContext context, dynamic message) {
-    show(
-      context,
-      ErrorUtils.sanitize(message),
-      backgroundColor: const Color(0xFFB71C1C),
-    );
+    showErrorSnackBar(context, message);
   }
 
   static void warning(BuildContext context, String message) {
-    show(context, message, backgroundColor: const Color(0xFFFF9800));
+    showWarningSnackBar(context, message);
+  }
+
+  static void info(BuildContext context, String message) {
+    showInfoSnackBar(context, message);
   }
 }

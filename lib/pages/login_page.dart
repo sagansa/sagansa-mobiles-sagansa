@@ -187,6 +187,7 @@ class LoginPageState extends State<LoginPage> {
                                     obscureText: !_passwordVisible,
                                     autofillHints: const [AutofillHints.password],
                                     suffixIcon: IconButton(
+                                      tooltip: 'Tampilkan kata sandi',
                                       icon: Icon(
                                         _passwordVisible
                                             ? Icons.visibility

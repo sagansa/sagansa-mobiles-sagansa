@@ -70,8 +70,8 @@ class StepAttachments extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         if (pending.isNotEmpty) ...[
           Text('Siap diunggah',
-              style: textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+              style:
+                  textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: AppSpacing.sm),
           for (var i = 0; i < pending.length; i++)
             _PendingRow(
@@ -85,14 +85,14 @@ class StepAttachments extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
         ],
         Text('Terunggah (${uploaded.length})',
-            style: textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold)),
+            style:
+                textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: AppSpacing.sm),
         if (uploaded.isEmpty)
           Text(
             'Belum ada lampiran terunggah.',
-            style: textTheme.bodySmall
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           )
         else
           for (final attachment in uploaded)
@@ -129,7 +129,13 @@ class _PendingRow extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       elevation: 0,
-      color: colorScheme.surfaceContainerLow,
+      color: colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.paddingSM,
         child: Column(
@@ -218,7 +224,13 @@ class _UploadedRow extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       elevation: 0,
-      color: colorScheme.surfaceContainerLow,
+      color: colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
       child: ListTile(
         contentPadding: AppSpacing.paddingSM,
         leading: const Icon(Icons.task_rounded),

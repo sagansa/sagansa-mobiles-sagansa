@@ -10,10 +10,22 @@ class ClosingStoreService {
     return data as List<dynamic>? ?? [];
   }
 
-  Future<Map<String, dynamic>> getClosingStoresPaged({int page = 1, int perPage = 20}) async {
+  Future<Map<String, dynamic>> getClosingStoresPaged({
+    int page = 1,
+    int perPage = 20,
+    int? storeId,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? status,
+  }) async {
     final response = await _api.getRaw('closing-stores', queryParams: {
       'page': page.toString(),
       'per_page': perPage.toString(),
+      if (storeId != null) 'store_id': storeId.toString(),
+      if (dateFrom != null)
+        'date_from': dateFrom.toIso8601String().substring(0, 10),
+      if (dateTo != null) 'date_to': dateTo.toIso8601String().substring(0, 10),
+      if (status != null) 'status': status.toString(),
     });
     final List data = response['data'] as List<dynamic>? ?? [];
     final meta = response['pagination'] ?? {};

@@ -329,7 +329,35 @@ class ApiClient {
 
     final streamedResponse = await request.send().timeout(_requestTimeout);
     final response = await http.Response.fromStream(streamedResponse);
-    return _handleResponse(response, path: path);
+
+    if (response.statusCode == 401) {
+      _onUnauthorized(path: path);
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return _handleResponse(response, path: path);
+    }
+
+    // Non-2xx: lempar ApiException berbody ter-parse agar pemanggil bisa
+    // membaca payload terstruktur (mis. duplicate_receipt pada 409).
+    final json = jsonDecode(response.body);
+    final map = json is Map<String, dynamic> ? json : null;
+    final errors = map?['errors'];
+    if (errors != null && errors is Map) {
+      final message = errors.values.expand((e) => e as List).join(', ');
+      throw ApiException(
+        message: message,
+        statusCode: response.statusCode,
+        body: map,
+      );
+    }
+
+    throw ApiException(
+      message: map?['message']?.toString() ??
+          'Terjadi kesalahan pada server (Status ${response.statusCode}).',
+      statusCode: response.statusCode,
+      body: map,
+    );
   }
 
   /// Sama seperti [multipart], tapi mengembalikan SELURUH body JSON agar

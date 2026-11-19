@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/detail_row.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_state.dart';
 import '../widgets/filter_chip_row.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_text_field.dart';
@@ -36,15 +40,16 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Elegant Design Demo'),
-        actions: [
-          const ThemeToggleButton(),
-          AppSpacing.gapHorizontalSM,
-        ],
       ),
       body: SingleChildScrollView(
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD.copyWith(
+          top: AppBarInsets.top(context),
+          bottom: ModernBottomNav.clearance(context),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -200,6 +205,15 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
         ),
         AppSpacing.gapVerticalMD,
         Card(
+          elevation: 0,
+          color: colorScheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppSpacing.borderRadiusLG,
+            side: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+              width: 1,
+            ),
+          ),
           child: Padding(
             padding: AppSpacing.paddingLG,
             child: Column(
@@ -353,16 +367,10 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
   }
 
   void _showSnackBar(String message) {
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(color: Colors.white)),
-        backgroundColor: colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppSpacing.borderRadiusSM,
-        ),
-      ),
+    showAppSnackBar(
+      context,
+      message,
+      background: Theme.of(context).colorScheme.primary,
     );
   }
 
@@ -471,7 +479,16 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
           title: 'Transaction Details',
           icon: Icons.receipt_long,
           actions: [
-            IconButton(onPressed: () {}, icon: const Icon(Icons.edit, size: 18)),
+            BarButtonCluster(
+              actions: [
+                BarButtonSpec(
+                  icon: Icons.edit,
+                  iconSize: 18,
+                  tooltip: 'Ubah',
+                  onTap: () {},
+                ),
+              ],
+            ),
           ],
           child: const Text('Card body content goes here.'),
         ),
@@ -512,6 +529,7 @@ class _DesignDemoPageState extends State<DesignDemoPage> {
           controller: _textController,
           hintText: 'Cari nomor resi / nama...',
           suffixWidget: IconButton(
+            tooltip: 'Pindai QR',
             onPressed: () {},
             icon: const Icon(Icons.qr_code_scanner, size: 20),
           ),

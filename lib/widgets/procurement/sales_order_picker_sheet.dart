@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/procurement_model.dart';
 import '../../utils/format_utils.dart';
+import '../safe_bottom_bar.dart';
 
 /// Bottom sheet daftar penjualan untuk dikaitkan ke invoice.
 ///
@@ -66,7 +67,10 @@ class _SalesOrderPickerSheetState extends State<SalesOrderPickerSheet> {
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        // Inset sistem bawah (home indicator / gesture bar) — tanpa ini
+        // kandidat terakhir tertutup; `useSafeArea` hanya sisi atas.
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + context.systemBottomInset),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

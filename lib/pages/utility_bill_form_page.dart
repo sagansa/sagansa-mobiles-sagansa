@@ -1,18 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 
 import '../models/utility_bill_model.dart';
 import '../services/image_service.dart';
 import '../services/image_upload_service.dart';
 import '../services/utility_bill_service.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../utils/format_utils.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
 import '../widgets/app_snackbar.dart';
-import '../widgets/glass_container.dart';
-import '../widgets/modern_bottom_nav.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/safe_bottom_bar.dart';
@@ -67,7 +68,7 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
   void _initForm() {
     final b = widget.bill;
     if (b != null) {
-      _amountCtrl.text = b.amount.replaceAll('.', '');
+      _amountCtrl.text = FormatUtils.formatAmount(parseAmountInt(b.amount));
       _initialCtrl.text = b.initialIndicator;
       _lastCtrl.text = b.lastIndicator;
       _selectedDate = DateTime.tryParse(b.date);
@@ -150,16 +151,13 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
 
   Future<void> _pickPhoto() async {
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
+      final photo = await ImageService.pickAndResizeImage(
         source: ImageSource.camera,
-        imageQuality: 75,
       );
-      if (picked == null) return;
+      if (photo == null) return;
 
-      final compressed = await ImageUtils.compressImage(picked.path);
       setState(() {
-        _photoFile = compressed;
+        _photoFile = photo;
         _uploadedPhotoPath = null;
       });
     } catch (e) {
@@ -213,7 +211,7 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
         'utility_id': _selectedUtility!['id'],
         'date':
             '${_selectedDate!.year.toString().padLeft(4, '0')}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
-        'amount': _amountCtrl.text.trim().replaceAll('.', ''),
+        'amount': parseAmountInt(_amountCtrl.text).toString(),
         'initial_indicator': _initialCtrl.text.trim(),
         'last_indicator': _lastCtrl.text.trim(),
         if (imagePath != null) 'image': imagePath,
@@ -247,7 +245,10 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title:
             Text(isEditing ? 'Edit Tagihan Utility' : 'Tambah Tagihan Utility'),
       ),
@@ -257,130 +258,142 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
               key: _formKey,
               child: ListView(
                 padding: EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    ModernBottomNav.height + context.systemBottomInset),
+                  AppSpacing.md,
+                  AppBarInsets.top(context) + AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.xl * 2,
+                ),
                 children: [
-                  _buildSectionHeader('Toko', Icons.store_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildFieldContainer(
-                    colorScheme: colorScheme,
-                    child: ModernDropdown<Map<String, dynamic>>(
-                      value: _selectedStore,
-                      labelText: 'Toko',
-                      hint: 'Pilih toko...',
-                      isRequired: true,
-                      prefixIcon: const Icon(Icons.storefront, size: 20),
-                      items: _stores,
-                      getLabel: (s) =>
-                          s['nickname']?.toString() ?? 'Toko #${s['id']}',
-                      getSubtitle: (s) => s['address']?.toString() ?? '',
-                      onChanged: (val) => _onStoreChanged(val),
-                      validator: (v) => v == null ? 'Toko wajib dipilih' : null,
+                  // Section 1: Toko & Utility
+                  FormSectionCard(
+                    title: 'Toko & Utility',
+                    subtitle: 'Pilih cabang dan jenis layanan utility',
+                    icon: Icons.storefront_rounded,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ModernDropdown<Map<String, dynamic>>(
+                          value: _selectedStore,
+                          labelText: 'Toko',
+                          hint: 'Pilih toko...',
+                          isRequired: true,
+                          prefixIcon: const Icon(Icons.storefront, size: 20),
+                          items: _stores,
+                          getLabel: (s) =>
+                              s['nickname']?.toString() ?? 'Toko #${s['id']}',
+                          getSubtitle: (s) => s['address']?.toString() ?? '',
+                          onChanged: (val) => _onStoreChanged(val),
+                          validator: (v) =>
+                              v == null ? 'Toko wajib dipilih' : null,
+                        ),
+                        AppSpacing.gapVerticalMD,
+                        ModernDropdown<Map<String, dynamic>>(
+                          value: _selectedUtility,
+                          labelText: 'Utility',
+                          hint: _selectedStore == null
+                              ? 'Pilih toko terlebih dahulu'
+                              : 'Pilih utility...',
+                          isRequired: true,
+                          enabled: _selectedStore != null,
+                          prefixIcon:
+                              const Icon(Icons.electrical_services, size: 20),
+                          items: _filteredUtilities,
+                          getLabel: (u) =>
+                              '${u['utility_name'] ?? 'Utility #${u['id']}'}${u['unit'] != null ? ' (${u['unit']})' : ''}',
+                          onChanged: (val) =>
+                              setState(() => _selectedUtility = val),
+                          validator: (v) =>
+                              v == null ? 'Utility wajib dipilih' : null,
+                        ),
+                      ],
                     ),
                   ),
                   AppSpacing.gapVerticalMD,
-                  _buildSectionHeader('Utility',
-                      Icons.electrical_services_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildFieldContainer(
-                    colorScheme: colorScheme,
-                    child: ModernDropdown<Map<String, dynamic>>(
-                      value: _selectedUtility,
-                      labelText: 'Utility',
-                      hint: _selectedStore == null
-                          ? 'Pilih toko dulu'
-                          : 'Pilih utility...',
-                      isRequired: true,
-                      enabled: _selectedStore != null,
-                      prefixIcon:
-                          const Icon(Icons.electrical_services, size: 20),
-                      items: _filteredUtilities,
-                      getLabel: (u) =>
-                          '${u['utility_name'] ?? 'Utility #${u['id']}'}${u['unit'] != null ? ' (${u['unit']})' : ''}',
-                      onChanged: (val) =>
-                          setState(() => _selectedUtility = val),
-                      validator: (v) =>
-                          v == null ? 'Utility wajib dipilih' : null,
-                    ),
-                  ),
-                  AppSpacing.gapVerticalMD,
-                  _buildSectionHeader(
-                      'Tanggal', Icons.calendar_today_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildFieldContainer(
-                    colorScheme: colorScheme,
-                    child: _buildDateField(colorScheme),
-                  ),
-                  AppSpacing.gapVerticalMD,
-                  _buildSectionHeader(
-                      'Nominal Tagihan', Icons.payments_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildFieldContainer(
-                    colorScheme: colorScheme,
-                    child: TextFormField(
-                      controller: _amountCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Jumlah Tagihan *',
-                        prefixText: 'Rp ',
-                        hintText: '0',
-                      ),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Wajib diisi'
-                          : null,
-                    ),
-                  ),
-                  AppSpacing.gapVerticalMD,
-                  _buildSectionHeader(
-                      'Indikator Meter', Icons.speed_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildFieldContainer(
-                    colorScheme: colorScheme,
+
+                  // Section 2: Waktu & Nominal
+                  FormSectionCard(
+                    title: 'Waktu & Nominal',
+                    subtitle: 'Tanggal tagihan dan jumlah pembayaran',
+                    icon: Icons.payments_rounded,
                     child: Column(
                       children: [
+                        _buildDateField(colorScheme),
+                        AppSpacing.gapVerticalMD,
                         TextFormField(
-                          controller: _initialCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          decoration: InputDecoration(
-                            labelText: 'Indikator Awal *',
-                            suffixText: _selectedUnit,
-                            suffixStyle: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.primary,
-                            ),
+                          controller: _amountCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: rupiahInputFormatters,
+                          decoration: const InputDecoration(
+                            labelText: 'Jumlah Tagihan *',
+                            prefixText: 'Rp ',
+                            hintText: '0',
                           ),
                           validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Wajib diisi'
-                              : null,
-                        ),
-                        AppSpacing.gapVerticalSM,
-                        TextFormField(
-                          controller: _lastCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          decoration: InputDecoration(
-                            labelText: 'Indikator Akhir *',
-                            suffixText: _selectedUnit,
-                            suffixStyle: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Wajib diisi'
+                              ? 'Jumlah tagihan wajib diisi'
                               : null,
                         ),
                       ],
                     ),
                   ),
                   AppSpacing.gapVerticalMD,
-                  _buildSectionHeader(
-                      'Foto Tagihan', Icons.camera_alt_rounded, colorScheme),
-                  AppSpacing.gapVerticalSM,
-                  _buildPhotoSection(colorScheme),
+
+                  // Section 3: Indikator Meter
+                  FormSectionCard(
+                    title: 'Indikator Meter',
+                    subtitle: 'Pencatatan angka meter awal dan akhir',
+                    icon: Icons.speed_rounded,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _initialCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Indikator Awal *',
+                              suffixText: _selectedUnit,
+                              suffixStyle: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Wajib diisi'
+                                : null,
+                          ),
+                        ),
+                        AppSpacing.gapHorizontalMD,
+                        Expanded(
+                          child: TextFormField(
+                            controller: _lastCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Indikator Akhir *',
+                              suffixText: _selectedUnit,
+                              suffixStyle: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Wajib diisi'
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AppSpacing.gapVerticalMD,
+
+                  // Section 4: Foto Tagihan
+                  FormSectionCard(
+                    title: 'Foto Tagihan',
+                    subtitle: 'Lampirkan foto bukti meteran atau struk tagihan',
+                    icon: Icons.camera_alt_rounded,
+                    child: _buildPhotoSection(colorScheme),
+                  ),
                 ],
               ),
             ),
@@ -412,6 +425,7 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
           prefixIcon: const Icon(Icons.calendar_today, size: 20),
           suffixIcon: _selectedDate != null
               ? IconButton(
+                  tooltip: 'Hapus',
                   icon: const Icon(Icons.clear_rounded, size: 18),
                   onPressed: () => setState(() => _selectedDate = null),
                 )
@@ -452,114 +466,70 @@ class _UtilityBillFormPageState extends State<UtilityBillFormPage> {
   Widget _buildPhotoSection(ColorScheme colorScheme) {
     final hasImage = _photoFile != null || _uploadedPhotoPath != null;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppSpacing.borderRadiusLG,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasImage) ...[
-            if (_photoFile != null)
-              ClipRRect(
-                borderRadius: AppSpacing.borderRadiusSM,
-                child: Image.file(
-                  _photoFile!,
-                  height: 160,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              ClipRRect(
-                borderRadius: AppSpacing.borderRadiusSM,
-                child: Image.network(
-                  ImageService.buildUrl(_uploadedPhotoPath) ?? '',
-                  height: 160,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: colorScheme.surfaceContainerHighest,
-                    child:
-                        const Center(child: Icon(Icons.broken_image_rounded)),
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (hasImage) ...[
+          if (_photoFile != null)
+            ClipRRect(
+              borderRadius: AppSpacing.borderRadiusMD,
+              child: Image.file(
+                _photoFile!,
+                height: 180,
+                fit: BoxFit.cover,
+              ),
+            )
+          else
+            ClipRRect(
+              borderRadius: AppSpacing.borderRadiusMD,
+              child: Image.network(
+                ImageService.buildUrl(_uploadedPhotoPath) ?? '',
+                height: 180,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 180,
+                  color: colorScheme.surfaceContainerHighest,
+                  child: const Center(child: Icon(Icons.broken_image_rounded)),
                 ),
               ),
-            AppSpacing.gapVerticalSM,
-          ],
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Row(
-              children: [
-                Expanded(
-                  child: hasImage
-                      ? OutlinedButton.icon(
-                          onPressed: _removePhoto,
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('Hapus Foto'),
-                        )
-                      : OutlinedButton.icon(
-                          onPressed: _pickPhoto,
-                          icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                          label: const Text('Ambil Foto'),
-                        ),
-                ),
-              ],
             ),
-          ),
+          AppSpacing.gapVerticalSM,
         ],
-      ),
-    );
-  }
-
-  Widget _buildFieldContainer({
-    required ColorScheme colorScheme,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppSpacing.borderRadiusLG,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-        ),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildSectionHeader(
-      String title, IconData icon, ColorScheme colorScheme) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: AppColors.info),
-        AppSpacing.gapHorizontalXS,
-        Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: colorScheme.primary,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: hasImage
+                  ? OutlinedButton.icon(
+                      onPressed: _removePhoto,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('Hapus Foto'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.error,
+                        side: BorderSide(
+                          color: colorScheme.error.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: _pickPhoto,
+                      icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                      label: const Text('Ambil Foto'),
+                    ),
+            ),
+          ],
         ),
       ],
     );
   }
 
   Widget _buildBottomBar() {
-    return GlassContainer.bottomBar(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.sm + 4, AppSpacing.md, AppSpacing.lg),
+    return SafeBottomBar(
       child: ModernButton(
         text: isEditing ? 'Simpan Perubahan' : 'Tambah Tagihan',
         icon: isEditing ? Icons.save_rounded : Icons.add_circle_rounded,
         onPressed: _isSaving ? null : _submit,
         isLoading: _isSaving,
+        height: 52,
       ),
     );
   }

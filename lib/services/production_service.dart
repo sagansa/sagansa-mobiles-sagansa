@@ -51,6 +51,22 @@ class ProductionService {
     return Production.fromJson(data as Map<String, dynamic>);
   }
 
+  /// Daftar detail invoice yang masih tersedia (status '1') di sebuah toko
+  /// untuk dijadikan bahan baku produksi. Definisi produksi: wajib dibuat
+  /// berdasarkan invoice (sinkron dengan admin ProductionMainFroms).
+  Future<List<ProductionDetailInvoice>> availableDetailInvoices(
+      int storeId) async {
+    final data = await _api.get(
+      '${_relative(ApiConstants.productions)}/detail-invoices',
+      queryParams: {'store_id': storeId.toString()},
+    );
+    final list = data as List? ?? const [];
+    return list
+        .map((e) =>
+            ProductionDetailInvoice.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Create produksi baru. Bila `recipeId` diisi, backend akan auto-prefill
   /// items dari resep.
   Future<Production> create({

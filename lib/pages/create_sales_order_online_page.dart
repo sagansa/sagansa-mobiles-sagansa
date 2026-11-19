@@ -1,23 +1,46 @@
+import 'dart:async';
 import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/import_model.dart';
 import '../models/sales_order_online_model.dart';
 import '../models/store_model.dart';
+import '../services/image_service.dart';
+import '../services/import_service.dart';
 import '../services/sales_order_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../utils/format_utils.dart';
+import '../utils/mete_pricing.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/forms/form_image_tile.dart';
+import '../widgets/forms/form_item_card.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/modern_button.dart';
+import '../widgets/modern_date_field.dart';
 import '../widgets/modern_dropdown.dart';
+import '../widgets/modern_text_form_field.dart';
 
 class CreateSalesOrderOnlinePage extends StatefulWidget {
-  const CreateSalesOrderOnlinePage({super.key});
+  const CreateSalesOrderOnlinePage({
+    super.key,
+    this.storeService,
+    this.salesOrderService,
+  });
+
+  /// Seam untuk test — null → instance default.
+  final StoreService? storeService;
+  final SalesOrderService? salesOrderService;
 
   @override
   State<CreateSalesOrderOnlinePage> createState() =>
@@ -26,9 +49,15 @@ class CreateSalesOrderOnlinePage extends StatefulWidget {
 
 class _CreateSalesOrderOnlinePageState
     extends State<CreateSalesOrderOnlinePage> {
-  final StoreService _storeService = StoreService();
-  final SalesOrderService _salesOrderService = SalesOrderService();
-  final ImagePicker _picker = ImagePicker();
+  late final StoreService _storeService;
+  late final SalesOrderService _salesOrderService;
+
+  /// Idempotency key per sesi form: dibuat SEKALI dan dipakai ulang di
+  /// setiap percobaan submit (termasuk retry setelah timeout & konfirmasi
+  /// resi duplikat) — backend mengenali retry dan mengembalikan order
+  /// existing alih-alih membuat double order.
+  late final String _idempotencyKey;
+
   final TextEditingController _receiptNoController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
@@ -42,7 +71,10 @@ class _CreateSalesOrderOnlinePageState
   DeliveryServiceOption? _selectedDeliveryService;
   DateTime _selectedDate = DateTime.now();
   File? _imageResi;
-  Uint8List? _imageResiBytes;
+
+  /// HPP pembelian impor terbaru per grade (base name) — dasar info harga
+  /// jual mete pada pilihan produk. Fase informasi: tidak tersimpan.
+  final Map<String, double> _hppByBase = {};
 
   bool _isLoadingData = true;
   bool _isSubmitting = false;
@@ -55,6 +87,9 @@ class _CreateSalesOrderOnlinePageState
   @override
   void initState() {
     super.initState();
+    _storeService = widget.storeService ?? StoreService();
+    _salesOrderService = widget.salesOrderService ?? SalesOrderService();
+    _idempotencyKey = const Uuid().v4();
     _loadInitialData();
   }
 
@@ -92,6 +127,61 @@ class _CreateSalesOrderOnlinePageState
         _isLoadingData = false;
       });
     }
+
+    // Info harga jual dari trend impor — kegagalan memuatnya tidak boleh
+    // menghalangi form Penjualan.
+    unawaited(_loadSellingPriceInfo());
+  }
+
+  /// Titik trend mana yang lebih baru: tanggal belakang menang; tanggal
+  /// sama → yang sudah terealisasi menang.
+  bool _isLaterPoint(ImportPriceTrendPoint a, ImportPriceTrendPoint b) {
+    final ad = a.date ?? DateTime(1900);
+    final bd = b.date ?? DateTime(1900);
+    if (ad.isAtSameMomentAs(bd)) return a.isRealized && !b.isRealized;
+    return ad.isAfter(bd);
+  }
+
+  Future<void> _loadSellingPriceInfo() async {
+    try {
+      // Persentase harga (bisa dioverride per produk) + trend HPP impor.
+      await MetePricingStore.instance.load();
+      final trends = await ImportService().getPriceTrends();
+      if (!mounted) return;
+
+      final bestByBase = <String, ImportPriceTrendPoint>{};
+      for (final trend in trends) {
+        for (final point in trend.points) {
+          if (point.unitPriceIdr <= 0) continue;
+          final base = meteBaseName(trend.productName);
+          final prev = bestByBase[base];
+          if (prev == null || _isLaterPoint(point, prev)) {
+            bestByBase[base] = point;
+          }
+        }
+      }
+
+      setState(() {
+        _hppByBase
+          ..clear()
+          ..addAll({
+            for (final e in bestByBase.entries) e.key: e.value.unitPriceIdr,
+          });
+      });
+    } catch (_) {
+      // Info harga bersifat pelengkap — biarkan subtitle produk tanpa harga.
+    }
+  }
+
+  /// Subtitle produk Penjualan: satuan + harga jual info (konfigurasi mete
+  /// per grade atas HPP impor terbaru) bila tersedia.
+  String _productSubtitle(SalesOrderOnlineProduct p) {
+    final base = meteBaseName(p.name);
+    final hpp = _hppByBase[base] ?? 0;
+    final config = MetePricingStore.instance.configFor(base);
+    final price = hpp > 0 ? meteInfoPrice(hpp, p.name, config) : 0;
+    if (price <= 0) return p.unit;
+    return '${p.unit} • Rp ${FormatUtils.formatAmount(price.round())}/unit';
   }
 
   void _addItem() {
@@ -118,9 +208,8 @@ class _CreateSalesOrderOnlinePageState
       final qty =
           int.tryParse((item['qtyController'] as TextEditingController).text) ??
               0;
-      final price = int.tryParse(
-              (item['priceController'] as TextEditingController).text) ??
-          0;
+      final price = parseAmountInt(
+          (item['priceController'] as TextEditingController).text);
       total += qty * price;
     }
     return total;
@@ -153,33 +242,18 @@ class _CreateSalesOrderOnlinePageState
 
     if (source == null) return;
     try {
-      final photo = await _picker.pickImage(
-        source: source,
-        imageQuality: 75,
-        maxWidth: 1024,
-      );
-      if (photo != null) {
-        final bytes = await photo.readAsBytes();
-        if (kIsWeb) {
-          if (mounted) {
-            setState(() => _imageResiBytes = bytes);
-          }
-        } else {
-          final compressed = await ImageUtils.compressImage(photo.path);
-          if (mounted) {
-            setState(() => _imageResi = compressed);
-          }
-        }
+      // Pipeline standar: pick native terkompresi (lihat ImageService).
+      final photo = await ImageService.pickAndResizeImage(source: source);
+      if (photo != null && mounted) {
+        setState(() => _imageResi = photo);
       }
     } catch (e) {
       if (!mounted) return;
       final cs = Theme.of(context).colorScheme;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal mengambil foto: $e',
-              style: const TextStyle(color: Colors.white)),
-          backgroundColor: cs.error,
-        ),
+      showAppSnackBar(
+        context,
+        'Gagal mengambil foto: $e',
+        background: cs.error,
       );
     }
   }
@@ -194,19 +268,7 @@ class _CreateSalesOrderOnlinePageState
     }
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
-  }
-
-  Future<void> _submit() async {
+  Future<void> _submit({bool confirmDuplicateReceipt = false}) async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedStore == null ||
         _selectedProvider == null ||
@@ -235,9 +297,8 @@ class _CreateSalesOrderOnlinePageState
         final qty = int.tryParse(
                 (item['qtyController'] as TextEditingController).text) ??
             1;
-        final price = int.tryParse(
-                (item['priceController'] as TextEditingController).text) ??
-            0;
+        final price = parseAmountInt(
+            (item['priceController'] as TextEditingController).text);
         return SalesOrderItemRequest(
           productId: product.id,
           quantity: qty,
@@ -245,32 +306,95 @@ class _CreateSalesOrderOnlinePageState
         );
       }).toList();
 
-      await _salesOrderService.createOnlineOrder(
-        selectedStore: _selectedStore!,
-        deliveryDate:
-            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-        onlineShopProviderId: _selectedProvider!.id,
-        deliveryServiceId: _selectedDeliveryService!.id,
-        receiptNo: _receiptNoController.text.trim(),
-        items: items,
-        imagePayment: kIsWeb ? null : _imageResi,
-        imagePaymentBytes: kIsWeb ? _imageResiBytes : null,
-      );
+      // Retry in-place: seluruh siklus (dialog konfirmasi + percobaan ulang)
+      // berada dalam SATU pemanggilan _submit, sehingga _isSubmitting tetap
+      // true selama request retry berjalan — tombol tidak bisa memicu submit
+      // kedua atau menumpuk dialog konfirmasi ganda.
+      var confirm = confirmDuplicateReceipt;
+      while (true) {
+        try {
+          await _salesOrderService.createOnlineOrder(
+            selectedStore: _selectedStore!,
+            deliveryDate:
+                '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+            onlineShopProviderId: _selectedProvider!.id,
+            deliveryServiceId: _selectedDeliveryService!.id,
+            receiptNo: _receiptNoController.text.trim(),
+            items: items,
+            imagePayment: _imageResi,
+            imagePaymentBytes: null,
+            idempotencyKey: _idempotencyKey,
+            confirmDuplicateReceipt: confirm,
+          );
+          break;
+        } on DuplicateReceiptException catch (e) {
+          if (!mounted) return;
+          // Dialog memutuskan: false=Batal (hentikan tanpa order),
+          // true=Tetap Simpan (loop ulang — key SAMA dikirim ulang).
+          final retry = await _confirmDuplicateDialog(e);
+          if (!retry) return; // Batal — finally reset _isSubmitting.
+          confirm = true;
+        }
+      }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sales order online berhasil dibuat.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Sales order online berhasil dibuat.',
+        background: AppColors.success,
       );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _showError(e.toString().replaceAll('Exception: ', ''));
+      // Timeout/jaringan lambat: order BISA JADI sudah terkirim di server.
+      // Jangan mengundang retry buta — arahkan cek daftar order.
+      final message = e.toString().replaceAll('Exception: ', '');
+      final isTimeout = message.contains('TimeoutException') ||
+          message.contains('Connection');
+      _showError(isTimeout
+          ? 'Koneksi lambat — order mungkin sudah terkirim. Periksa daftar order sebelum mengirim ulang.\n\n$message'
+          : message);
     } finally {
+      // Reset sekali, HANYA setelah seluruh alur (dialog + retry) selesai —
+      // tidak pernah saat request retry masih berjalan.
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  /// Dialog konfirmasi resi duplikat: return true bila [Tetap Simpan]
+  /// (pemanggil loop melanjutkan retry dengan confirmDuplicateReceipt=true,
+  /// idempotency key SAMA), false bila [Batal] atau dialog tertutup tanpa
+  /// pilihan. Pemanggil yang menangani retry — tombol di sini tidak pernah
+  /// memicu _submit lagi.
+  Future<bool> _confirmDuplicateDialog(DuplicateReceiptException e) async {
+    final price = e.totalPrice == null
+        ? ''
+        : ' • Total Rp ${_formatCurrency(e.totalPrice!)}';
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Resi Sudah Tercatat'),
+        content: Text(
+          '${e.message}\n\n'
+          'Toko: ${e.storeNickname ?? '-'}$price\n'
+          'Tgl order: ${e.existingCreatedAt ?? '-'}\n\n'
+          'Bila ini order yang sama, pilih Batal. Bila memang order baru '
+          'dengan resi sama, pilih Tetap Simpan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Tetap Simpan'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _showError(String message) {
@@ -302,7 +426,10 @@ class _CreateSalesOrderOnlinePageState
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tambah Sales Order Online')),
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(title: const Text('Tambah Sales Order Online')),
       body: _isLoadingData
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -336,235 +463,273 @@ class _CreateSalesOrderOnlinePageState
                     onTap: () => FocusScope.of(context).unfocus(),
                     behavior: HitTestBehavior.translucent,
                     child: ListView(
-                      padding: AppSpacing.paddingMD,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ).copyWith(top: AppBarInsets.top(context)),
                       children: [
                         // === Header fields ===
-                        Card(
-                          child: Padding(
-                            padding: AppSpacing.paddingMD,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Informasi Order',
-                                    style: textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold)),
-                                AppSpacing.gapVerticalMD,
-                                ModernDropdown<StoreModel>(
-                                  labelText: 'Toko',
-                                  hint: 'Pilih toko...',
-                                  isRequired: true,
-                                  prefixIcon:
-                                      const Icon(Icons.storefront, size: 20),
-                                  value: _selectedStore,
-                                  items: _stores,
-                                  getLabel: (s) => s.nickname,
-                                  onChanged: (v) =>
-                                      setState(() => _selectedStore = v),
-                                  validator: (v) =>
-                                      v == null ? 'Pilih toko' : null,
-                                ),
-                                AppSpacing.gapVerticalSM,
-                                ModernDropdown<OnlineShopProvider>(
-                                  labelText: 'Online Shop Provider',
-                                  hint: 'Pilih provider...',
-                                  isRequired: true,
-                                  prefixIcon: const Icon(
-                                      Icons.shopping_bag_outlined,
-                                      size: 20),
-                                  value: _selectedProvider,
-                                  items: _providers,
-                                  getLabel: (p) => p.name,
-                                  onChanged: (v) =>
-                                      setState(() => _selectedProvider = v),
-                                  validator: (v) =>
-                                      v == null ? 'Pilih provider' : null,
-                                ),
-                                AppSpacing.gapVerticalSM,
-                                ModernDropdown<DeliveryServiceOption>(
-                                  labelText: 'Delivery Service',
-                                  hint: 'Pilih kurir...',
-                                  isRequired: true,
-                                  prefixIcon: const Icon(
-                                      Icons.local_shipping_outlined,
-                                      size: 20),
-                                  value: _selectedDeliveryService,
-                                  items: _deliveryServices,
-                                  getLabel: (d) => d.name,
-                                  onChanged: (v) => setState(
-                                      () => _selectedDeliveryService = v),
-                                  validator: (v) => v == null
-                                      ? 'Pilih delivery service'
-                                      : null,
-                                ),
-                                AppSpacing.gapVerticalSM,
-                                InkWell(
-                                  onTap: _pickDate,
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Tanggal Pengiriman *',
-                                      prefixIcon: Icon(Icons.calendar_today),
-                                    ),
-                                    child: Text(
-                                      '${_selectedDate.day.toString().padLeft(2, '0')}/${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.year}',
-                                    ),
+                        FormSectionCard(
+                          title: 'Informasi Order',
+                          icon: Icons.receipt_long_outlined,
+                          children: [
+                            ModernDropdown<StoreModel>(
+                              labelText: 'Toko',
+                              hint: 'Pilih toko...',
+                              isRequired: true,
+                              prefixIcon:
+                                  const Icon(Icons.storefront, size: 20),
+                              value: _selectedStore,
+                              items: _stores,
+                              getLabel: (s) => s.nickname,
+                              onChanged: (v) =>
+                                  setState(() => _selectedStore = v),
+                              validator: (v) => v == null ? 'Pilih toko' : null,
+                            ),
+                            ModernDropdown<OnlineShopProvider>(
+                              labelText: 'Online Shop Provider',
+                              hint: 'Pilih provider...',
+                              isRequired: true,
+                              prefixIcon: const Icon(
+                                  Icons.shopping_bag_outlined,
+                                  size: 20),
+                              value: _selectedProvider,
+                              items: _providers,
+                              getLabel: (p) => p.name,
+                              onChanged: (v) =>
+                                  setState(() => _selectedProvider = v),
+                              validator: (v) =>
+                                  v == null ? 'Pilih provider' : null,
+                            ),
+                            ModernDropdown<DeliveryServiceOption>(
+                              labelText: 'Delivery Service',
+                              hint: 'Pilih kurir...',
+                              isRequired: true,
+                              prefixIcon: const Icon(
+                                  Icons.local_shipping_outlined,
+                                  size: 20),
+                              value: _selectedDeliveryService,
+                              items: _deliveryServices,
+                              getLabel: (d) => d.name,
+                              onChanged: (v) =>
+                                  setState(() => _selectedDeliveryService = v),
+                              validator: (v) =>
+                                  v == null ? 'Pilih delivery service' : null,
+                            ),
+                            ModernDateField(
+                              labelText: 'Tanggal Pengiriman',
+                              isRequired: true,
+                              value: _selectedDate,
+                              firstDate: DateTime(2020),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
+                              onChanged: (d) {
+                                if (d != null) {
+                                  setState(() => _selectedDate = d);
+                                }
+                              },
+                            ),
+                            ModernTextFormField(
+                              controller: _receiptNoController,
+                              labelText: 'Nomor Resi',
+                              isRequired: true,
+                              prefixIcon:
+                                  const Icon(Icons.receipt_outlined, size: 20),
+                              suffixIcon: IconButton(
+                                icon:
+                                    const Icon(Icons.qr_code_scanner, size: 20),
+                                tooltip: 'Scan Barcode / QR',
+                                onPressed: _scanBarcode,
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'Nomor resi wajib diisi';
+                                }
+                                return null;
+                              },
+                            ),
+                            FormImageTile(
+                              imageFile: _imageResi,
+                              label: 'Foto Bukti Resi',
+                              hint: 'Lampirkan label pengiriman / resi paket',
+                              onPick: _pickImage,
+                              onRemove: _imageResi != null
+                                  ? () => setState(() => _imageResi = null)
+                                  : null,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // === Items ===
+                        FormSectionCard(
+                          title: 'Detail Item',
+                          icon: Icons.inventory_2_outlined,
+                          trailing: FormAddButton(
+                            label: 'Tambah',
+                            onPressed: _addItem,
+                          ),
+                          children: [
+                            if (_items.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 24),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.3),
+                                  borderRadius: AppSpacing.borderRadiusMD,
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.5),
+                                    style: BorderStyle.solid,
                                   ),
                                 ),
-                                AppSpacing.gapVerticalSM,
-                                TextFormField(
-                                  controller: _receiptNoController,
-                                  decoration: InputDecoration(
-                                    labelText: 'Nomor Resi *',
-                                    prefixIcon:
-                                        const Icon(Icons.receipt_outlined),
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(Icons.qr_code_scanner),
-                                      tooltip: 'Scan Barcode / QR',
-                                      onPressed: _scanBarcode,
-                                    ),
-                                  ),
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) {
-                                      return 'Nomor resi wajib diisi';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                AppSpacing.gapVerticalSM,
-                                // Image resi
-                                if (_imageResi != null ||
-                                    _imageResiBytes != null) ...[
-                                  Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: AppSpacing.borderRadiusMD,
-                                        child: kIsWeb
-                                            ? Image.memory(_imageResiBytes!,
-                                                height: 180,
-                                                width: double.infinity,
-                                                fit: BoxFit.cover)
-                                            : Image.file(_imageResi!,
-                                                height: 180,
-                                                width: double.infinity,
-                                                fit: BoxFit.cover),
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.shopping_bag_outlined,
+                                        size: 32,
+                                        color: colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.5)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Belum ada item produk',
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colorScheme.onSurfaceVariant,
                                       ),
-                                      Positioned(
-                                        top: 8,
-                                        right: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.success,
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.check_circle,
-                                                  color: Colors.white,
-                                                  size: 14),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Siap diunggah',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tekan tombol "Tambah" di atas untuk menambah item.',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              ..._items.asMap().entries.map((entry) {
+                                final idx = entry.key;
+                                final item = entry.value;
+                                final product =
+                                    item['product'] as SalesOrderOnlineProduct?;
+                                return FormItemCard(
+                                  index: idx,
+                                  onDelete: () => _removeItem(idx),
+                                  productField:
+                                      ModernDropdown<SalesOrderOnlineProduct>(
+                                    labelText: 'Produk',
+                                    hint: 'Pilih produk...',
+                                    value: product,
+                                    items: _products,
+                                    getLabel: (p) => p.name,
+                                    getSubtitle: _productSubtitle,
+                                    onChanged: (v) {
+                                      if (v != null) {
+                                        setState(() {
+                                          item['product'] = v;
+                                          item['product_id'] = v.id;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                  qtyField: TextFormField(
+                                    controller: item['qtyController']
+                                        as TextEditingController,
+                                    keyboardType: TextInputType.number,
+                                    onTap: () {
+                                      final ctrl = item['qtyController']
+                                          as TextEditingController;
+                                      ctrl.selection = TextSelection(
+                                        baseOffset: 0,
+                                        extentOffset: ctrl.text.length,
+                                      );
+                                    },
+                                    decoration: InputDecoration(
+                                      labelText: 'Qty',
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 9,
+                                      ),
+                                      suffixText: product?.unit,
+                                    ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                  priceField: TextFormField(
+                                    controller: item['priceController']
+                                        as TextEditingController,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: rupiahInputFormatters,
+                                    onTap: () {
+                                      final ctrl = item['priceController']
+                                          as TextEditingController;
+                                      ctrl.selection = TextSelection(
+                                        baseOffset: 0,
+                                        extentOffset: ctrl.text.length,
+                                      );
+                                    },
+                                    decoration: const InputDecoration(
+                                      labelText: 'Harga Satuan',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 9,
+                                      ),
+                                      prefixText: 'Rp ',
+                                    ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                  subtotalText:
+                                      'Rp ${_formatCurrency(_itemSubtotal(item))}',
+                                );
+                              }),
+
+                            // Total summary strip
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer
+                                    .withValues(alpha: 0.35),
+                                borderRadius: AppSpacing.borderRadiusMD,
+                                border: Border.all(
+                                  color: colorScheme.primary
+                                      .withValues(alpha: 0.2),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.payments_outlined,
+                                          size: 18, color: colorScheme.primary),
+                                      AppSpacing.gapHorizontalSM,
+                                      Text(
+                                        'Total Nilai Order',
+                                        style: textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  AppSpacing.gapVerticalSM,
-                                ],
-                                OutlinedButton.icon(
-                                  onPressed: _pickImage,
-                                  icon: Icon(
-                                    (_imageResi == null &&
-                                            _imageResiBytes == null)
-                                        ? Icons.add_a_photo
-                                        : Icons.edit,
-                                    size: 18,
-                                  ),
-                                  label: Text((_imageResi == null &&
-                                          _imageResiBytes == null)
-                                      ? 'Unggah Foto Resi (Opsional)'
-                                      : 'Ganti Foto Resi'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        AppSpacing.gapVerticalMD,
-
-                        // === Items ===
-                        Card(
-                          child: Padding(
-                            padding: AppSpacing.paddingMD,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Detail Item',
-                                        style: textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold)),
-                                    IconButton(
-                                      icon: const Icon(Icons.add_circle),
+                                  Text(
+                                    'Rp ${_formatCurrency(_totalPrice)}',
+                                    style: textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
                                       color: colorScheme.primary,
-                                      onPressed: _addItem,
-                                    ),
-                                  ],
-                                ),
-                                ..._items.asMap().entries.map((entry) {
-                                  final idx = entry.key;
-                                  final item = entry.value;
-                                  return _buildItemRow(idx, item, theme);
-                                }),
-                                if (_items.isEmpty)
-                                  Padding(
-                                    padding: AppSpacing.paddingVerticalMD,
-                                    child: Center(
-                                      child: Text(
-                                        'Belum ada item. Tap + untuk menambah.',
-                                        style: textTheme.bodyMedium?.copyWith(
-                                            color:
-                                                colorScheme.onSurfaceVariant),
-                                      ),
                                     ),
                                   ),
-                                const Divider(height: 32),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Total',
-                                        style: textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold)),
-                                    StatefulBuilder(
-                                      builder: (context, setInner) {
-                                        // Re-render total saat items berubah.
-                                        return Text(
-                                          'Rp ${_formatCurrency(_totalPrice)}',
-                                          style:
-                                              textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: colorScheme.primary,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                         AppSpacing.gapVerticalMD,
                       ],
@@ -581,104 +746,8 @@ class _CreateSalesOrderOnlinePageState
           AppSpacing.md, AppSpacing.sm + 4, AppSpacing.md, AppSpacing.lg),
       child: ModernButton(
         text: 'Simpan Sales Order',
-        onPressed: _isSubmitting ? null : _submit,
+        onPressed: _isSubmitting ? null : () => _submit(),
         isLoading: _isSubmitting,
-      ),
-    );
-  }
-
-  Widget _buildItemRow(int idx, Map<String, dynamic> item, ThemeData theme) {
-    final colorScheme = theme.colorScheme;
-    final product = item['product'] as SalesOrderOnlineProduct?;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: ModernDropdown<SalesOrderOnlineProduct>(
-                  labelText: 'Produk',
-                  hint: 'Pilih produk...',
-                  value: product,
-                  items: _products,
-                  getLabel: (p) => p.name,
-                  getSubtitle: (p) => p.unit,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() {
-                        item['product'] = v;
-                        item['product_id'] = v.id;
-                      });
-                    }
-                  },
-                ),
-              ),
-              AppSpacing.gapHorizontalSM,
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                color: colorScheme.error,
-                onPressed: () => _removeItem(idx),
-              ),
-            ],
-          ),
-          AppSpacing.gapVerticalSM,
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  controller: item['qtyController'] as TextEditingController,
-                  keyboardType: TextInputType.number,
-                  onTap: () {
-                    final ctrl = item['qtyController'] as TextEditingController;
-                    ctrl.selection = TextSelection(
-                      baseOffset: 0,
-                      extentOffset: ctrl.text.length,
-                    );
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Qty',
-                    isDense: true,
-                    suffixText: product?.unit,
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-              AppSpacing.gapHorizontalSM,
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: item['priceController'] as TextEditingController,
-                  keyboardType: TextInputType.number,
-                  onTap: () {
-                    final ctrl =
-                        item['priceController'] as TextEditingController;
-                    ctrl.selection = TextSelection(
-                      baseOffset: 0,
-                      extentOffset: ctrl.text.length,
-                    );
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Harga Satuan',
-                    isDense: true,
-                    prefixText: 'Rp ',
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-            ],
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              'Subtotal: Rp ${_formatCurrency((_itemSubtotal(item)))}',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: colorScheme.onSurfaceVariant),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -688,8 +757,7 @@ class _CreateSalesOrderOnlinePageState
         int.tryParse((item['qtyController'] as TextEditingController).text) ??
             0;
     final price =
-        int.tryParse((item['priceController'] as TextEditingController).text) ??
-            0;
+        parseAmountInt((item['priceController'] as TextEditingController).text);
     return qty * price;
   }
 }
@@ -704,7 +772,6 @@ class _BarcodeScannerPage extends StatefulWidget {
 class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
   MobileScannerController? _controller;
   bool _hasScanned = false;
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -729,7 +796,10 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
 
   Future<void> _scanFromGallery() async {
     try {
-      final photo = await _picker.pickImage(source: ImageSource.gallery);
+      // Pipeline standar untuk pilih gambar; barcode detection MLKit
+      // bekerja pada file 1024px — resolusi cukup untuk QR/resi.
+      final photo =
+          await ImageService.pickAndResizeImage(source: ImageSource.gallery);
       if (photo == null) return;
       final controller = MobileScannerController(
         detectionSpeed: DetectionSpeed.noDuplicates,
@@ -742,24 +812,20 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
       } else {
         if (mounted) {
           final cs = Theme.of(context).colorScheme;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Tidak ditemukan barcode/QR pada gambar.',
-                  style: TextStyle(color: Colors.white)),
-              backgroundColor: cs.error,
-            ),
+          showAppSnackBar(
+            context,
+            'Tidak ditemukan barcode/QR pada gambar.',
+            background: cs.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         final cs = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal memproses gambar: $e',
-                style: const TextStyle(color: Colors.white)),
-            backgroundColor: cs.error,
-          ),
+        showAppSnackBar(
+          context,
+          'Gagal memproses gambar: $e',
+          background: cs.error,
         );
       }
     }
@@ -769,24 +835,27 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: const Text('Scan Resi / Barcode / QR'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.photo_library),
-            tooltip: 'Ambil dari Galeri',
-            onPressed: _scanFromGallery,
-          ),
           ValueListenableBuilder(
             valueListenable: _controller!,
             builder: (context, state, child) {
-              return IconButton(
-                icon: Icon(
-                  state.torchState == TorchState.on
-                      ? Icons.flash_on
-                      : Icons.flash_off,
-                ),
-                onPressed: () => _controller!.toggleTorch(),
+              return BarButtonCluster(
+                actions: [
+                  BarButtonSpec(
+                    icon: Icons.photo_library,
+                    tooltip: 'Ambil dari Galeri',
+                    onTap: _scanFromGallery,
+                  ),
+                  BarButtonSpec(
+                    icon: state.torchState == TorchState.on
+                        ? Icons.flash_on
+                        : Icons.flash_off,
+                    tooltip: 'Senter',
+                    onTap: () => _controller!.toggleTorch(),
+                  ),
+                ],
               );
             },
           ),
@@ -804,7 +873,7 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
               height: 200,
               decoration: BoxDecoration(
                 border: Border.all(color: colorScheme.surface, width: 2),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppSpacing.borderRadiusLG,
               ),
             ),
           ),
@@ -815,12 +884,11 @@ class _BarcodeScannerPageState extends State<_BarcodeScannerPage> {
             child: Text(
               'Arahkan kamera ke QR code atau Barcode resi',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: colorScheme.surface.withValues(alpha: 0.8),
-                backgroundColor: Colors.black.withValues(alpha: 0.4),
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colorScheme.surface.withValues(alpha: 0.8),
+                    backgroundColor: Colors.black.withValues(alpha: 0.4),
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
         ],

@@ -5,8 +5,14 @@ import '../models/employee_consumption_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/employee_consumption_service.dart';
 import '../theme/app_spacing.dart';
+import '../utils/format_utils.dart';
+import '../widgets/app_bar_insets.dart';
 import '../widgets/app_dialogs.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/detail/detail_section_card.dart';
+import '../widgets/detail_row.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
@@ -102,203 +108,12 @@ class _EmployeeConsumptionDetailPageState
       case 2:
         return StatusType.success;
       case 3:
-        return StatusType.neutral;
+        return StatusType.warning;
       case 4:
         return StatusType.error;
       default:
         return StatusType.warning;
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detail Sisa Stok Karyawan'),
-        actions: [
-          if (_canManage && _item != null && _item!.status != 2)
-            IconButton(
-              icon: const Icon(Icons.edit_rounded),
-              onPressed: _openEdit,
-              tooltip: 'Edit',
-            ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: AppSpacing.paddingLG,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_errorMessage!,
-                            style: TextStyle(color: colorScheme.error)),
-                        AppSpacing.gapVerticalMD,
-                        ElevatedButton(
-                          onPressed: _fetchDetail,
-                          child: const Text('Coba Lagi'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : _item == null
-                  ? const SizedBox.shrink()
-                  : SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md + context.systemBottomInset,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: AppSpacing.paddingMD,
-                            decoration: BoxDecoration(
-                              color: colorScheme.surface,
-                              borderRadius: AppSpacing.borderRadiusLG,
-                              border: Border.all(
-                                color: colorScheme.outlineVariant
-                                    .withValues(alpha: 0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        _item!.storeName,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: textTheme.titleLarge?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    StatusBadge(
-                                      label: _item!.statusText,
-                                      type: _statusType(_item!.status),
-                                      size: BadgeSize.medium,
-                                    ),
-                                  ],
-                                ),
-                                AppSpacing.gapVerticalSM,
-                                _buildInfoRow(
-                                    'Tanggal', _formatDate(_item!.date), theme),
-                                AppSpacing.gapVerticalSM,
-                                _buildInfoRow('Dilaporkan oleh',
-                                    _item!.createdByName, theme),
-                                AppSpacing.gapVerticalSM,
-                                _buildInfoRow('Jumlah item',
-                                    '${_item!.details.length} jenis', theme),
-                              ],
-                            ),
-                          ),
-                          if (_isAdmin) ...[
-                            AppSpacing.gapVerticalLG,
-                            Text(
-                              'Aksi Admin:',
-                              style: textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            AppSpacing.gapVerticalSM,
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ModernButton(
-                                    text: 'Set Valid',
-                                    icon: Icons.verified_rounded,
-                                    variant: ModernButtonVariant.outlined,
-                                    onPressed: _isUpdatingStatus
-                                        ? null
-                                        : () => _updateStatus(2, 'Valid'),
-                                  ),
-                                ),
-                                AppSpacing.gapHorizontalMD,
-                                Expanded(
-                                  child: ModernButton(
-                                    text: 'Set Perbaiki',
-                                    icon: Icons.build_rounded,
-                                    variant: ModernButtonVariant.outlined,
-                                    onPressed: _isUpdatingStatus
-                                        ? null
-                                        : () => _updateStatus(3, 'Diperbaiki'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          AppSpacing.gapVerticalLG,
-                          Text(
-                            'Item Sisa Stok:',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          AppSpacing.gapVerticalSM,
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _item!.details.length,
-                            itemBuilder: (context, idx) {
-                              final item = _item!.details[idx];
-                              return Container(
-                                margin: const EdgeInsets.only(
-                                    bottom: AppSpacing.sm),
-                                padding: AppSpacing.paddingSM,
-                                decoration: BoxDecoration(
-                                  color: colorScheme.surface,
-                                  borderRadius: AppSpacing.borderRadiusMD,
-                                  border: Border.all(
-                                    color: colorScheme.outlineVariant
-                                        .withValues(alpha: 0.3),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: ListTile(
-                                  dense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(
-                                    item.productName,
-                                    style: textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  trailing: ConstrainedBox(
-                                    constraints:
-                                        const BoxConstraints(maxWidth: 130),
-                                    child: Text(
-                                      '${item.quantity.toStringAsFixed(0)} ${item.unitName}',
-                                      textAlign: TextAlign.end,
-                                      softWrap: true,
-                                      style: textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-    );
   }
 
   String _formatDate(String dateStr) {
@@ -324,31 +139,330 @@ class _EmployeeConsumptionDetailPageState
     }
   }
 
-  Widget _buildInfoRow(String label, String value, ThemeData theme) {
-    final textTheme = theme.textTheme;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            label,
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const Text(': '),
-        Expanded(
-          child: Text(
-            value,
-            style: textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
+    final textTheme = theme.textTheme;
+
+    final hasBottomBar = _item != null &&
+        (_isAdmin || (_canManage && _item!.status != 2));
+
+    return Scaffold(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        title: const Text('Detail Sisa Stok Karyawan'),
+        actions: [
+          BarButtonCluster(actions: [
+            if (_canManage && _item != null && _item!.status != 2)
+              BarButtonSpec(
+                icon: Icons.edit_rounded,
+                tooltip: 'Edit Sisa Stok',
+                onTap: _openEdit,
+              ),
+          ]),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: AppSpacing.paddingLG,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline_rounded,
+                            size: 48, color: colorScheme.error),
+                        AppSpacing.gapVerticalMD,
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: colorScheme.error),
+                        ),
+                        AppSpacing.gapVerticalMD,
+                        ElevatedButton.icon(
+                          onPressed: _fetchDetail,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _item == null
+                  ? const SizedBox.shrink()
+                  : RefreshIndicator(
+                      onRefresh: _fetchDetail,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppBarInsets.top(context),
+                          AppSpacing.md,
+                          AppSpacing.xl +
+                              (hasBottomBar ? 80 : context.systemBottomInset),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Hero Employee Card
+                            _buildHeroHeader(colorScheme, textTheme),
+                            AppSpacing.gapVerticalMD,
+
+                            // Metadata Card
+                            DetailSectionCard(
+                              icon: Icons.info_outline_rounded,
+                              title: 'Informasi Sisa Stok',
+                              children: [
+                                DetailRow(
+                                  label: 'Tanggal',
+                                  value: _formatDate(_item!.date),
+                                  isBold: true,
+                                ),
+                                DetailRow(
+                                  label: 'Dilaporkan oleh',
+                                  value: _item!.createdByName,
+                                ),
+                                DetailRow(
+                                  label: 'Total Jenis Item',
+                                  value: '${_item!.details.length} jenis',
+                                ),
+                              ],
+                            ),
+                            AppSpacing.gapVerticalLG,
+
+                            // Items Header
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Item Sisa Stok',
+                                  style: textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primaryContainer,
+                                    borderRadius: AppSpacing.borderRadiusMD,
+                                  ),
+                                  child: Text(
+                                    '${_item!.details.length} item',
+                                    style: textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            AppSpacing.gapVerticalSM,
+
+                            // Items List
+                            ..._item!.details.map(
+                              (detail) => _buildItemCard(
+                                  detail, colorScheme, textTheme),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+      bottomNavigationBar: _buildBottomBar(colorScheme),
     );
+  }
+
+  Widget _buildHeroHeader(ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: AppSpacing.paddingMD,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: AppSpacing.cardPadding,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: AppSpacing.borderRadiusMD,
+            ),
+            child: Icon(
+              Icons.badge_rounded,
+              size: 26,
+              color: colorScheme.primary,
+            ),
+          ),
+          AppSpacing.gapHorizontalMD,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _item!.storeName,
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                AppSpacing.gapVerticalXS,
+                Text(
+                  'Sisa Stok Karyawan #${_item!.id}',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          StatusBadge(
+            label: _item!.statusText,
+            type: _statusType(_item!.status),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemCard(ProductEmployeeConsumptionModel item,
+      ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppSpacing.borderRadiusMD,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: AppSpacing.paddingSM,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: AppSpacing.borderRadiusSM,
+            ),
+            child: Icon(
+              Icons.inventory_2_outlined,
+              size: 18,
+              color: colorScheme.primary,
+            ),
+          ),
+          AppSpacing.gapHorizontalMD,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.productName,
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (item.unitName.isNotEmpty) ...[
+                  AppSpacing.gapVerticalXS,
+                  Text(
+                    'Satuan: ${item.unitName}',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: AppSpacing.borderRadiusSM,
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.15),
+              ),
+            ),
+            child: Text(
+              '${FormatUtils.formatNumber(item.quantity)} ${item.unitName}',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget? _buildBottomBar(ColorScheme colorScheme) {
+    if (_item == null) return null;
+
+    if (_isAdmin) {
+      return SafeBottomBar(
+        child: Row(
+          children: [
+            Expanded(
+              child: ModernButton(
+                text: 'Set Valid',
+                icon: Icons.verified_rounded,
+                variant: _item!.status == 2
+                    ? ModernButtonVariant.outlined
+                    : ModernButtonVariant.filled,
+                onPressed: _isUpdatingStatus || _item!.status == 2
+                    ? null
+                    : () => _updateStatus(2, 'Valid'),
+                height: 48,
+              ),
+            ),
+            AppSpacing.gapHorizontalMD,
+            Expanded(
+              child: ModernButton(
+                text: 'Set Perbaiki',
+                icon: Icons.build_rounded,
+                variant: ModernButtonVariant.outlined,
+                onPressed: _isUpdatingStatus || _item!.status == 3
+                    ? null
+                    : () => _updateStatus(3, 'Diperbaiki'),
+                height: 48,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_canManage && _item!.status != 2) {
+      return SafeBottomBar(
+        child: ModernButton(
+          text: 'Edit Sisa Stok',
+          icon: Icons.edit_rounded,
+          onPressed: _openEdit,
+          height: 50,
+        ),
+      );
+    }
+
+    return null;
   }
 }

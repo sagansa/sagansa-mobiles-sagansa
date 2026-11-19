@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show CameraDevice, ImageSource;
 
+import '../services/image_service.dart';
 import '../services/readiness_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 
 class ReadinessPage extends StatefulWidget {
@@ -18,7 +20,6 @@ class ReadinessPage extends StatefulWidget {
 
 class _ReadinessPageState extends State<ReadinessPage> {
   final ReadinessService _readinessService = ReadinessService();
-  final ImagePicker _picker = ImagePicker();
 
   File? _selfieImage;
   File? _leftHandImage;
@@ -56,21 +57,19 @@ class _ReadinessPageState extends State<ReadinessPage> {
 
   Future<void> _pickImage(String type) async {
     try {
-      final XFile? image = await _picker.pickImage(
+      final photo = await ImageService.pickAndResizeImage(
         source: ImageSource.camera,
-        imageQuality: 75,
-        maxWidth: 800,
+        // Foto selfie pakai kamera depan, foto tangan kamera belakang.
+        preferredCameraDevice:
+            type == 'selfie' ? CameraDevice.front : CameraDevice.rear,
       );
 
-      if (image != null) {
-        final compressed = await ImageUtils.compressImage(image.path);
-        if (mounted) {
-          setState(() {
-            if (type == 'selfie') _selfieImage = compressed;
-            if (type == 'left_hand') _leftHandImage = compressed;
-            if (type == 'right_hand') _rightHandImage = compressed;
-          });
-        }
+      if (photo != null && mounted) {
+        setState(() {
+          if (type == 'selfie') _selfieImage = photo;
+          if (type == 'left_hand') _leftHandImage = photo;
+          if (type == 'right_hand') _rightHandImage = photo;
+        });
       }
     } catch (e) {
       if (!mounted) return;
@@ -197,7 +196,9 @@ class _ReadinessPageState extends State<ReadinessPage> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Kesiapan Diri'),
       ),
       body: _isLoading
@@ -227,7 +228,7 @@ class _ReadinessPageState extends State<ReadinessPage> {
               : SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(
                     AppSpacing.md,
-                    AppSpacing.md,
+                    AppBarInsets.top(context),
                     AppSpacing.md,
                     AppSpacing.md + context.systemBottomInset,
                   ),

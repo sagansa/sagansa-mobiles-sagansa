@@ -14,9 +14,10 @@ class DetailRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.labelWidth = 120,
-    this.valueBold = false,
+    bool valueBold = false,
+    bool? isBold,
     this.trailing,
-  });
+  }) : valueBold = isBold ?? valueBold;
 
   @override
   Widget build(BuildContext context) {

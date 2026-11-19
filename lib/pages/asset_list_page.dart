@@ -5,7 +5,9 @@ import '../models/asset_model.dart';
 import '../providers/asset_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/glass_app_bar.dart';
 import 'asset_detail_page.dart';
+
 
 /// Daftar semua aset dengan search & filter status/due.
 class AssetListPage extends StatefulWidget {
@@ -127,19 +129,23 @@ class _AssetListPageState extends State<AssetListPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_dueFilter == 'today'
             ? 'Tugas Check Hari Ini'
             : _dueFilter == 'overdue'
                 ? 'Aset Terlambat'
                 : 'Daftar Aset'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: AppSpacing.screenPadding,
-            child: Column(
-              children: [
+
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: AppSpacing.screenPadding,
+              child: Column(
+                children: [
+
                 TextField(
                   controller: _searchCtrl,
                   decoration: InputDecoration(
@@ -281,6 +287,7 @@ class _AssetListPageState extends State<AssetListPage> {
                           ),
           ),
         ],
+        ),
       ),
     );
   }

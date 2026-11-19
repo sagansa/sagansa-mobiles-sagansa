@@ -34,8 +34,4 @@ class DeliveryAddressService {
     return DeliveryAddressModel.fromJson(
         (data as Map<String, dynamic>?) ?? {});
   }
-
-  Future<void> delete(int id) async {
-    await _api.delete('delivery-addresses/$id');
-  }
 }

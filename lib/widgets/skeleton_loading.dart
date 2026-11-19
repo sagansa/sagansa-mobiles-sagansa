@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_spacing.dart';
+import 'glass_app_bar.dart';
+
 
 /// Skeleton loading widget for better UX during data loading
 class SkeletonLoading extends StatefulWidget {
@@ -306,15 +308,8 @@ class SkeletonAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppBar(
-      backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-      elevation: 0,
-      leading: hasBackButton
-          ? const Padding(
-              padding: AppSpacing.paddingMD,
-              child: SkeletonLoading(width: 24, height: 24),
-            )
-          : null,
+    return GlassAppBar(
+      automaticallyImplyLeading: hasBackButton,
       title: const SkeletonText(height: 20, width: 120),
       actions: hasActions
           ? [

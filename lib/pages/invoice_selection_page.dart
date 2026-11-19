@@ -7,6 +7,7 @@ import '../../theme/app_spacing.dart';
 import '../../utils/format_utils.dart';
 import '../../widgets/list_thumbnail.dart';
 import '../../widgets/modern_button.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 import 'create_payment_receipt_page.dart';
 
@@ -111,9 +112,11 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+          appBar: GlassAppBar(
             backgroundColor: colorScheme.onSurface.withValues(alpha: 0.87),
-            iconTheme: IconThemeData(color: colorScheme.surface),
+            foregroundColor: colorScheme.surface,
             title: Text('Bukti Invoice',
                 style: TextStyle(color: colorScheme.surface)),
           ),
@@ -147,7 +150,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
         _invoices.isNotEmpty && _selectedIds.length == _invoices.length;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: const Text('Pilih Invoice Transfer'),
         actions: [
           if (_invoices.isNotEmpty)
@@ -162,8 +165,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
               ),
               label: Text(
                 isAllSelected ? 'Batal Semua' : 'Pilih Semua',
-                style: TextStyle(
-                  fontSize: 12,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: isDark ? AppColors.gold : AppColors.primary,
                 ),
@@ -171,7 +173,10 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
             ),
         ],
       ),
-      body: _isLoading
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Center(
@@ -227,8 +232,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                             children: [
                               Text(
                                 '${_selectedIds.length} dari ${_invoices.length} invoice dipilih',
-                                style: TextStyle(
-                                  fontSize: 12,
+                                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -237,8 +241,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                 Text(
                                   FormatUtils.formatCurrency(
                                       _selectedTotalAmount),
-                                  style: TextStyle(
-                                    fontSize: 14,
+                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: isDark
                                         ? AppColors.gold
@@ -268,8 +271,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                     color: isDark
                                         ? theme.cardColor
                                         : AppColors.surface,
-                                    borderRadius: BorderRadius.circular(
-                                        AppSpacing.radiusMD),
+                                    borderRadius: AppSpacing.borderRadiusMD,
                                     border: Border.all(
                                       color: selected
                                           ? AppColors.gold
@@ -282,11 +284,9 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                   ),
                                   child: Material(
                                     color: Colors.transparent,
-                                    borderRadius: BorderRadius.circular(
-                                        AppSpacing.radiusMD),
+                                    borderRadius: AppSpacing.borderRadiusMD,
                                     child: InkWell(
-                                      borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMD),
+                                      borderRadius: AppSpacing.borderRadiusMD,
                                       onTap: () => _toggleSelection(inv.id),
                                       child: Padding(
                                         padding:
@@ -300,7 +300,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                               onChanged: (_) =>
                                                   _toggleSelection(inv.id),
                                             ),
-                                            const SizedBox(width: 4),
+                                            AppSpacing.gapHorizontalXS,
                                             ListThumbnail(
                                               imageUrl: inv.imageUrl,
                                               placeholderIcon:
@@ -318,8 +318,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                                 children: [
                                                   Text(
                                                     inv.storeName,
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
+                                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                                       fontWeight:
                                                           FontWeight.bold,
                                                     ),
@@ -327,8 +326,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                                   const SizedBox(height: 2),
                                                   Text(
                                                     '${inv.supplierName ?? "-"} • ${inv.date}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
+                                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                                       color: colorScheme
                                                           .onSurfaceVariant,
                                                     ),
@@ -339,8 +337,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                                             Text(
                                               FormatUtils.formatCurrency(
                                                   inv.totalPrice),
-                                              style: TextStyle(
-                                                fontSize: 14,
+                                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                                 fontWeight: FontWeight.bold,
                                                 color: isDark
                                                     ? AppColors.gold
@@ -374,6 +371,7 @@ class _InvoiceSelectionPageState extends State<InvoiceSelectionPage> {
                         ),
                       ],
                     ),
+      ),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -7,6 +8,7 @@ import '../../services/image_service.dart';
 import '../../services/procurement_service.dart';
 import '../../services/supplier_service.dart';
 import '../../theme/app_spacing.dart';
+import '../utils/text_formatters.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/supplier_payment_info_card.dart';
 import '../widgets/supplier_picker_modal.dart';
@@ -73,9 +75,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
       final Map<int, List<DetailRequestItem>> grouped = {};
       for (final id in ids) {
         final req = await _procurementService.getRequestDetail(id);
-        grouped[id] = req.detailRequests
-            .where((i) => i.statusEnum.isApproved)
-            .toList();
+        grouped[id] =
+            req.detailRequests.where((i) => i.statusEnum.isApproved).toList();
       }
       if (mounted) {
         _seedItems(grouped);
@@ -100,8 +101,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
           detailRequest: item,
           priceController: TextEditingController(text: '0'),
           qtyCtrl: TextEditingController(
-            text: item.quantityPlan
-                .toStringAsFixed(item.quantityPlan == item.quantityPlan.roundToDouble() ? 0 : 2),
+            text: item.quantityPlan.toStringAsFixed(
+                item.quantityPlan == item.quantityPlan.roundToDouble() ? 0 : 2),
           ),
         );
       });
@@ -123,9 +124,7 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
     int total = 0;
     for (var state in _itemStates) {
       if (state.selected) {
-        final totalPrice =
-            double.tryParse(state.priceController.text) ?? 0;
-        total += totalPrice.round();
+        total += parseAmountInt(state.priceController.text);
       }
     }
     return total + _taxes - _discounts;
@@ -136,16 +135,18 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
     List<dynamic> suppliers;
     try {
       final list = await supplierService.getSuppliers();
-      suppliers = list.map((s) => {
-            'id': s.id,
-            'name': s.name,
-            'address': s.address,
-            'no_telp': s.noTelp,
-            'bank_name': s.bankName,
-            'bank_account_name': s.bankAccountName,
-            'bank_account_no': s.bankAccountNo,
-            'qris': s.qris,
-          }).toList();
+      suppliers = list
+          .map((s) => {
+                'id': s.id,
+                'name': s.name,
+                'address': s.address,
+                'no_telp': s.noTelp,
+                'bank_name': s.bankName,
+                'bank_account_name': s.bankAccountName,
+                'bank_account_no': s.bankAccountNo,
+                'qris': s.qris,
+              })
+          .toList();
     } catch (_) {
       suppliers = [];
     }
@@ -210,7 +211,7 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
     }
 
     final items = selectedStates.map((s) {
-      final totalPrice = double.tryParse(s.priceController.text) ?? 0;
+      final totalPrice = parseAmount(s.priceController.text) ?? 0;
       final qty = double.tryParse(s.qtyCtrl.text) ?? 0;
 
       return {
@@ -290,7 +291,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                           ),
                           if (_selectedSupplier != null) ...[
                             const SizedBox(height: 4),
-                            SupplierPaymentInfoCard(selectedSupplier: _selectedSupplier),
+                            SupplierPaymentInfoCard(
+                                selectedSupplier: _selectedSupplier),
                           ],
                           AppSpacing.gapVerticalMD,
                           DropdownButtonFormField<int>(
@@ -300,11 +302,14 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                               isDense: true,
                             ),
                             items: const [
-                              DropdownMenuItem(value: 1, child: Text('Transfer')),
+                              DropdownMenuItem(
+                                  value: 1, child: Text('Transfer')),
                               DropdownMenuItem(value: 2, child: Text('Tunai')),
                             ],
                             onChanged: (val) {
-                              if (val != null) setState(() => _paymentTypeId = val);
+                              if (val != null) {
+                                setState(() => _paymentTypeId = val);
+                              }
                             },
                           ),
                           AppSpacing.gapVerticalLG,
@@ -331,14 +336,17 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                                       isDense: true,
                                     ),
                                     keyboardType: TextInputType.number,
+                                    inputFormatters: rupiahInputFormatters,
                                     onTap: () {
-                                      _taxesController.selection = TextSelection(
+                                      _taxesController.selection =
+                                          TextSelection(
                                         baseOffset: 0,
-                                        extentOffset: _taxesController.text.length,
+                                        extentOffset:
+                                            _taxesController.text.length,
                                       );
                                     },
                                     onChanged: (v) => setState(
-                                        () => _taxes = int.tryParse(v) ?? 0),
+                                        () => _taxes = parseAmountInt(v)),
                                   ),
                                   AppSpacing.gapVerticalMD,
                                   TextFormField(
@@ -349,14 +357,17 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                                       isDense: true,
                                     ),
                                     keyboardType: TextInputType.number,
+                                    inputFormatters: rupiahInputFormatters,
                                     onTap: () {
-                                      _discountsController.selection = TextSelection(
+                                      _discountsController.selection =
+                                          TextSelection(
                                         baseOffset: 0,
-                                        extentOffset: _discountsController.text.length,
+                                        extentOffset:
+                                            _discountsController.text.length,
                                       );
                                     },
                                     onChanged: (v) => setState(
-                                        () => _discounts = int.tryParse(v) ?? 0),
+                                        () => _discounts = parseAmountInt(v)),
                                   ),
                                 ],
                               ),
@@ -376,7 +387,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                             Stack(
                               children: [
                                 ClipRRect(
-                                  borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+                                  borderRadius: BorderRadius.circular(
+                                      AppSpacing.radiusMD),
                                   child: Image.file(
                                     _imageFile!,
                                     height: 180,
@@ -388,11 +400,14 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                                   top: 8,
                                   right: 8,
                                   child: CircleAvatar(
-                                    backgroundColor: Colors.black.withValues(alpha: 0.6),
+                                    backgroundColor:
+                                        Colors.black.withValues(alpha: 0.6),
                                     radius: 18,
                                     child: IconButton(
-                                      icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white),
-                                      onPressed: () => setState(() => _imageFile = null),
+                                      icon: const Icon(Icons.close_rounded,
+                                          size: 18, color: Colors.white),
+                                      onPressed: () =>
+                                          setState(() => _imageFile = null),
                                     ),
                                   ),
                                 ),
@@ -405,11 +420,15 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                             child: OutlinedButton.icon(
                               onPressed: _pickImage,
                               icon: Icon(
-                                _imageFile == null ? Icons.add_a_photo_rounded : Icons.edit_rounded,
+                                _imageFile == null
+                                    ? Icons.add_a_photo_rounded
+                                    : Icons.edit_rounded,
                                 size: 18,
                               ),
                               label: Text(
-                                _imageFile == null ? 'Unggah Foto Invoice' : 'Ganti Foto Invoice',
+                                _imageFile == null
+                                    ? 'Unggah Foto Invoice'
+                                    : 'Ganti Foto Invoice',
                               ),
                             ),
                           ),
@@ -422,7 +441,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                         color: colorScheme.surface,
                         border: Border(
                           top: BorderSide(
-                            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                            color: colorScheme.outlineVariant
+                                .withValues(alpha: 0.3),
                           ),
                         ),
                       ),
@@ -479,8 +499,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
           padding: const EdgeInsets.only(bottom: 4, top: 8),
           child: Text(
             'Request #$reqId',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary),
+            style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.bold, color: colorScheme.primary),
           ),
         ),
       );
@@ -491,7 +511,8 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
     return widgets;
   }
 
-  Widget _buildItemCard(_ItemState state, ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildItemCard(
+      _ItemState state, ThemeData theme, ColorScheme colorScheme) {
     final detailRequest = state.detailRequest;
     final priceCtrl = state.priceController;
     final qtyCtrl = state.qtyCtrl;
@@ -546,6 +567,7 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
                         isDense: true,
                       ),
                       keyboardType: TextInputType.number,
+                      inputFormatters: rupiahInputFormatters,
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
@@ -553,7 +575,7 @@ class _CreateInvoicePageState extends State<CreateInvoicePage> {
               ),
               Builder(
                 builder: (_) {
-                  final totalPrice = double.tryParse(priceCtrl.text) ?? 0;
+                  final totalPrice = parseAmount(priceCtrl.text) ?? 0;
                   final qty = double.tryParse(qtyCtrl.text) ?? 0;
                   final unitPrice = qty > 0 ? (totalPrice / qty) : 0.0;
                   if (totalPrice <= 0) return const SizedBox.shrink();

@@ -6,9 +6,11 @@ import '../../services/procurement_service.dart';
 import '../../services/store_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/filter_app_bar_action.dart';
+import '../../widgets/app_bar_insets.dart';
 import '../../widgets/filter_bottom_sheet.dart';
 import '../../widgets/modern_bottom_nav.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import 'create_invoice_form_page.dart';
 import 'invoice_detail_page.dart';
 
@@ -219,7 +221,7 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
                       children: [
                         const Icon(Icons.broken_image,
                             color: Colors.grey, size: 36),
-                        const SizedBox(height: 8),
+                        AppSpacing.gapVerticalSM,
                         Text(
                           'Gagal memuat gambar',
                           style: TextStyle(color: colorScheme.onSurface),
@@ -231,6 +233,7 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
               ),
             ),
             IconButton(
+              tooltip: 'Tutup',
               icon: const Icon(Icons.close, color: Colors.white, size: 30),
               onPressed: () => Navigator.pop(context),
             ),
@@ -246,20 +249,41 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       extendBody: true,
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: const Text('Invoice Purchase'),
         actions: [
-          if (_hasActiveFilter)
-            IconButton(
-              icon: const Icon(Icons.filter_list_off),
-              onPressed: _clearFilters,
-              tooltip: 'Hapus Filter',
+          BarButtonCluster(actions: [
+            if (_hasActiveFilter)
+              BarButtonSpec(
+                icon: Icons.filter_list_off,
+                tooltip: 'Hapus Filter',
+                onTap: _clearFilters,
+              ),
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _selectedStoreId != null ? 1 : 0,
+              onTap: _openFilterSheet,
             ),
-          FilterAppBarAction(
-            activeCount: _selectedStoreId != null ? 1 : 0,
-            onTap: _openFilterSheet,
-          ),
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Invoice',
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CreateInvoiceFormPage(),
+                  ),
+                );
+                if (result == true) {
+                  _fetchInvoices();
+                }
+              },
+            ),
+          ]),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -326,7 +350,9 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
                       onRefresh: _fetchInvoices,
                       child: ListView.builder(
                         controller: _scrollControllers[index],
-                        padding: AppSpacing.paddingMD,
+                        padding: AppSpacing.paddingMD.copyWith(
+              top: AppBarInsets.top(context),
+              bottom: ModernBottomNav.clearance(context)),
                         itemCount: invoices.length + (_loadingMore ? 1 : 0),
                         itemBuilder: (context, idx) {
                           if (idx == invoices.length) {
@@ -435,13 +461,13 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
                                         ),
                                         if (invoice.imageUrl != null &&
                                             invoice.imageUrl!.isNotEmpty) ...[
-                                          const SizedBox(width: 16),
+                                          AppSpacing.gapHorizontalMD,
                                           GestureDetector(
                                             onTap: () => _showInvoiceImage(
                                                 context, invoice.imageUrl!),
                                             child: ClipRRect(
                                               borderRadius:
-                                                  BorderRadius.circular(8),
+                                                  AppSpacing.borderRadiusSM,
                                               child: Stack(
                                                 alignment: Alignment.center,
                                                 children: [
@@ -564,20 +590,6 @@ class _InvoiceDashboardPageState extends State<InvoiceDashboardPage>
                     );
                   }),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CreateInvoiceFormPage(),
-            ),
-          );
-          if (result == true) {
-            _fetchInvoices();
-          }
-        },
-        child: const Icon(Icons.add),
-      ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 3,
         onTap: (index) {

@@ -4,6 +4,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:sagansa/pages/documents/document_list_page.dart';
 import 'package:sagansa/services/document/document_models.dart';
 import 'package:sagansa/services/document/document_service.dart';
+import 'package:sagansa/services/document/incoming_models.dart';
+import 'package:sagansa/services/document/incoming_service.dart';
 import 'package:sagansa/widgets/status_badge.dart';
 
 /// Kontrak UI `DocumentListPage` (Arsip Surat Perusahaan):
@@ -109,6 +111,15 @@ DocumentModel _doc(
 /// 800x600 terlalu pendek: snackbar mengambang tidak muat di atas FAB +
 /// bottom nav, dan kartu ke-4/5 tidak terbangun (ListView lazy) sehingga
 /// badge-nya tidak pernah dirender. [tall] untuk banyak kartu.
+/// Fake IncomingService — detail yang dibuka dari arsip memuat runutan
+/// secara eager; tanpa fake ini test memakai service asli (HTTP nyata)
+/// dan spinner tak pernah selesai (pumpAndSettle timeout).
+class _FakeIncomingService extends IncomingService {
+  @override
+  Future<ThreadModel> getThread(String rootType, String rootId) async =>
+      ThreadModel(rootType: rootType, rootId: rootId);
+}
+
 Future<void> _pumpListPage(WidgetTester tester, _FakeDocumentService service,
     {bool tall = false}) async {
   await initializeDateFormatting('id_ID');
@@ -117,7 +128,12 @@ Future<void> _pumpListPage(WidgetTester tester, _FakeDocumentService service,
   tester.view.devicePixelRatio = 3.0;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
-    MaterialApp(home: DocumentListPage(service: service)),
+    MaterialApp(
+      home: DocumentListPage(
+        service: service,
+        incomingService: _FakeIncomingService(),
+      ),
+    ),
   );
   await tester.pumpAndSettle();
 }

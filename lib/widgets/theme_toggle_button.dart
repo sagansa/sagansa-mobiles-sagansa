@@ -8,6 +8,7 @@ class ThemeToggleButton extends StatelessWidget {
   final IconData? lightIcon;
   final IconData? darkIcon;
   final IconData? systemIcon;
+  final bool isIosStyle;
 
   const ThemeToggleButton({
     super.key,
@@ -15,6 +16,7 @@ class ThemeToggleButton extends StatelessWidget {
     this.lightIcon = Icons.light_mode,
     this.darkIcon = Icons.dark_mode,
     this.systemIcon = Icons.brightness_auto,
+    this.isIosStyle = false,
   });
 
   @override
@@ -25,12 +27,14 @@ class ThemeToggleButton extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        return PopupMenuButton<ThemeMode>(
+        final popup = PopupMenuButton<ThemeMode>(
+          padding: isIosStyle ? EdgeInsets.zero : const EdgeInsets.all(8),
           icon: Icon(
             _getIconForTheme(themeProvider.themeMode),
-            color: Theme.of(context).iconTheme.color,
+            size: isIosStyle ? 20 : null,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
-          tooltip: 'Change Theme',
+          tooltip: 'Ganti Tema',
           onSelected: (ThemeMode mode) {
             themeProvider.setThemeMode(mode);
           },
@@ -119,6 +123,25 @@ class ThemeToggleButton extends StatelessWidget {
             ];
           },
         );
+
+        if (isIosStyle) {
+          final colorScheme = Theme.of(context).colorScheme;
+          return Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.65),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                width: 0.8,
+              ),
+            ),
+            child: Center(child: popup),
+          );
+        }
+
+        return popup;
       },
     );
   }

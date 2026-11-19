@@ -241,6 +241,12 @@ class DocumentService {
         .then((_) {});
   }
 
+  /// `DELETE /documents/{id}` — hapus permanen draf (backend menolak
+  /// selain status draft dengan 409; lampiran + runutan ikut bersih).
+  Future<void> deleteDraft(String documentId) {
+    return _api.delete('documents/$documentId').then((_) {});
+  }
+
   // ——— penerbitan ———
 
   /// `POST /documents/{id}/pre-final` — mode `a` render isi, mode `b`
@@ -355,6 +361,26 @@ class DocumentService {
   Future<List<LetterTypeModel>> getLetterTypes() async {
     final data = await _api.get('letter-types');
     return _mapList<LetterTypeModel>(data, LetterTypeModel.fromJson);
+  }
+
+  /// `POST /letter-types` — tambah jenis surat manual saat daftar belum
+  /// memuat jenis yang dibutuhkan (mis. Surat Tanggapan untuk SP2DK).
+  /// [code] opsional; backend menurunkan kode dari nama bila kosong.
+  Future<LetterTypeModel> createLetterType({
+    required String name,
+    String? code,
+    List<LetterSpecificField>? specificFields,
+  }) async {
+    final data = await _api.post('letter-types', body: <String, dynamic>{
+      'name': name,
+      if (code != null && code.isNotEmpty) 'code': code,
+      if (specificFields != null && specificFields.isNotEmpty)
+        'specific_fields': [
+          for (final field in specificFields)
+            {'key': field.key, 'label': field.label},
+        ],
+    });
+    return LetterTypeModel.fromJson(_asMap(data));
   }
 
   /// `GET /templates?letter_type_code=` — template aktif per jenis,

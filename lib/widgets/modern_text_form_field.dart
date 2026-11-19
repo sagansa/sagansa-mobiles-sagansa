@@ -12,11 +12,18 @@ class ModernTextFormField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final Widget? prefixIcon;
   final Widget? suffixIcon;
+  final String? prefixText;
+  final String? suffixText;
   final String? hintText;
   final int? maxLines;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
   final bool? enabled;
+  final bool isDense;
+  final EdgeInsetsGeometry? contentPadding;
+  final VoidCallback? onTap;
+  final bool readOnly;
+  final bool isRequired;
 
   const ModernTextFormField({
     super.key,
@@ -30,26 +37,41 @@ class ModernTextFormField extends StatelessWidget {
     this.inputFormatters,
     this.prefixIcon,
     this.suffixIcon,
+    this.prefixText,
+    this.suffixText,
     this.hintText,
     this.maxLines = 1,
     this.validator,
     this.onChanged,
     this.enabled,
+    this.isDense = true,
+    this.contentPadding,
+    this.onTap,
+    this.readOnly = false,
+    this.isRequired = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Mengandalkan InputDecorationTheme dari ThemeProvider agar input
-    // selalu mengikuti tema aktif (light/dark) secara konsisten.
+    final effectiveLabel = isRequired ? '$labelText *' : labelText;
     return TextFormField(
       controller: controller,
       enabled: enabled,
+      readOnly: readOnly,
+      onTap: onTap,
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
-        labelText: labelText,
+        isDense: isDense,
+        contentPadding: contentPadding ??
+            (isDense
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 11)
+                : null),
+        labelText: effectiveLabel,
         hintText: hintText,
         prefixIcon: prefixIcon,
         suffixIcon: suffixIcon,
+        prefixText: prefixText,
+        suffixText: suffixText,
       ),
       keyboardType: keyboardType,
       obscureText: obscureText,

@@ -280,15 +280,29 @@ void main() {
                 totalQtyPrev: 40,
                 prevLabel: 'Lusa',
               ));
+      when(() => mockSales.getSummary(SalesPeriode.today))
+          .thenAnswer((_) async => const SalesSummary(
+                periodeLabel: 'Hari Ini',
+                omzet: 2000000,
+                orderCount: 12,
+                totalQty: 60,
+                omzetPrev: 1500000,
+                orderCountPrev: 10,
+                totalQtyPrev: 50,
+                prevLabel: 'Kemarin',
+              ));
 
       await provider.loadSales();
 
       expect(provider.sales.yesterdayOmzet, 1500000);
+      expect(provider.sales.todayOmzet, 2000000);
       expect(provider.sales.isLoading, false);
     });
 
     test('swallows error, omzet becomes null', () async {
       when(() => mockSales.getSummary(SalesPeriode.yesterday))
+          .thenThrow(Exception());
+      when(() => mockSales.getSummary(any()))
           .thenThrow(Exception());
 
       await provider.loadSales();

@@ -12,6 +12,49 @@ class ProcurementService {
     return productsJson.map((e) => ProcurementProduct.fromJson(e)).toList();
   }
 
+  /// Info beli bahan baku untuk admin: tanggal beli terakhir (per store /
+  /// semua toko), harga satuan terakhir, dan qty dalam invoice belum lunas.
+  Future<Map<String, dynamic>> getProductPurchaseInfo({
+    int? storeId,
+    String? query,
+    int page = 1,
+    int perPage = 30,
+  }) async {
+    final body =
+        await _api.getRaw('procurement/product-purchase-info', queryParams: {
+      'page': page.toString(),
+      'per_page': perPage.toString(),
+      if (storeId != null) 'store_id': storeId.toString(),
+      if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+    });
+    if (body['success'] != true) {
+      throw Exception(
+          body['message'] ?? 'Failed to load product purchase info');
+    }
+    final List<dynamic> data = body['data'] ?? [];
+    final meta = body['pagination'] ?? {};
+    final hasMore = (meta['current_page'] ?? 1) < (meta['last_page'] ?? 1);
+    return {
+      'data': data.map((e) => ProductPurchaseInfo.fromJson(e)).toList(),
+      'has_more': hasMore,
+    };
+  }
+
+  /// Detail riwayat + statistik pembelian satu bahan baku (admin).
+  /// [year] memfilter riwayat/statistik per tahun (null = semua tahun).
+  Future<ProductPurchaseDetail> getProductPurchaseDetail(int productId,
+      {int? storeId, int? year}) async {
+    final body = await _api.getRaw('procurement/product-purchase-info/$productId',
+        queryParams: {
+          if (storeId != null) 'store_id': storeId.toString(),
+          if (year != null) 'year': year.toString(),
+        });
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Failed to load purchase history');
+    }
+    return ProductPurchaseDetail.fromJson(Map<String, dynamic>.from(body['data']));
+  }
+
   Future<List<RequestPurchase>> getRequests({
     int page = 1,
     int perPage = 1000,
@@ -579,6 +622,19 @@ class ProcurementService {
     final body = await _api.getRaw('procurement/invoices/$invoiceId/qris');
     if (body['success'] != true) {
       throw Exception(body['message'] ?? 'Gagal memuat QRIS invoice.');
+    }
+    return body['data'] as Map<String, dynamic>;
+  }
+
+  /// QRIS dinamis supplier berdasarkan supplier id + amount.
+  /// Digunakan oleh bottom sheet fuel & service sebelum receipt dibuat.
+  Future<Map<String, dynamic>> getSupplierQrisDynamic(int supplierId, int amount) async {
+    final body = await _api.postRaw(
+      'suppliers/$supplierId/qris-dynamic',
+      body: {'amount': amount},
+    );
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal memuat QRIS supplier.');
     }
     return body['data'] as Map<String, dynamic>;
   }

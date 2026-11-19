@@ -6,10 +6,13 @@ import '../services/employee_consumption_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
 import '../widgets/app_snackbar.dart';
-import '../widgets/glass_container.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
+import '../widgets/safe_bottom_bar.dart';
 
 class CreateEmployeeConsumptionPage extends StatefulWidget {
   final EmployeeConsumptionModel? consumption;
@@ -218,7 +221,10 @@ class _CreateEmployeeConsumptionPageState
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(
             isEditing ? 'Edit Sisa Stok Karyawan' : 'Sisa Stok Karyawan Baru'),
       ),
@@ -243,127 +249,166 @@ class _CreateEmployeeConsumptionPageState
                     ),
                   ),
                 )
-              : Stack(
+              : ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppBarInsets.top(context) + AppSpacing.md,
+                    AppSpacing.md,
+                    AppSpacing.xl * 2,
+                  ),
                   children: [
-                    Column(
-                      children: [
-                        if (_isLocked)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            color: AppColors.warning.withValues(alpha: 0.15),
-                            child: Row(
-                              children: [
-                                Icon(Icons.lock_outline,
-                                    size: 18, color: AppColors.warning),
-                                const SizedBox(width: AppSpacing.sm),
-                                Expanded(
-                                  child: Text(
-                                    'Data berstatus Valid dan tidak dapat diubah.',
-                                    style: textTheme.bodySmall?.copyWith(
-                                      color: AppColors.warning,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: ListView(
-                            padding: AppSpacing.paddingMD,
-                            children: [
-                              ModernDropdown<StoreModel>(
-                                labelText: 'Pilih Toko',
-                                hint: 'Pilih toko...',
-                                prefixIcon:
-                                    const Icon(Icons.storefront, size: 20),
-                                value: _selectedStore,
-                                items: _stores,
-                                enabled: !_isLocked,
-                                getLabel: (s) => s.nickname,
-                                getSubtitle: (s) => '',
-                                onChanged: (val) {
-                                  setState(() {
-                                    _selectedStore = val;
-                                  });
-                                },
-                              ),
-                              AppSpacing.gapVerticalMD,
-                              _buildDateField(colorScheme),
-                              AppSpacing.gapVerticalMD,
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                  vertical: AppSpacing.sm,
-                                ),
-                                width: double.infinity,
-                                color: colorScheme.surfaceContainerHighest
-                                    .withValues(alpha: 0.3),
-                                child: Text(
-                                  'Isi sisa stok yang belum terjual',
-                                  style: textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              AppSpacing.gapVerticalSM,
-                              ..._items.map((item) {
-                                return Padding(
-                                  padding:
-                                      EdgeInsets.only(bottom: AppSpacing.md),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          item['productName'],
-                                          style: textTheme.bodyMedium?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      AppSpacing.gapHorizontalSM,
-                                      Expanded(
-                                        flex: 1,
-                                        child: TextFormField(
-                                          controller: item['controller'],
-                                          keyboardType: TextInputType.number,
-                                          enabled: !_isLocked,
-                                          decoration: InputDecoration(
-                                            isDense: true,
-                                            suffixText: item['unitName'],
-                                          ),
-                                          onTap: () {
-                                            final ctrl = item['controller']
-                                                as TextEditingController;
-                                            ctrl.selection = TextSelection(
-                                                baseOffset: 0,
-                                                extentOffset: ctrl.text.length);
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                            ],
+                    if (_isLocked) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.12),
+                          borderRadius: AppSpacing.borderRadiusMD,
+                          border: Border.all(
+                            color: AppColors.warning.withValues(alpha: 0.3),
                           ),
                         ),
-                      ],
-                    ),
-                    if (_isSubmitting)
-                      Container(
-                        color: colorScheme.scrim.withValues(alpha: 0.3),
-                        child: const Center(child: CircularProgressIndicator()),
+                        child: Row(
+                          children: [
+                            Icon(Icons.lock_outline_rounded,
+                                size: 20, color: AppColors.warning),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                'Data berstatus Valid dan tidak dapat diubah.',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: AppColors.warning,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      AppSpacing.gapVerticalMD,
+                    ],
+
+                    // Section 1: Lokasi & Tanggal Toko
+                    FormSectionCard(
+                      title: 'Lokasi & Tanggal Toko',
+                      subtitle: 'Pilih cabang dan tanggal pencatatan sisa stok',
+                      icon: Icons.storefront_rounded,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ModernDropdown<StoreModel>(
+                            labelText: 'Pilih Toko',
+                            hint: 'Pilih toko...',
+                            prefixIcon: const Icon(Icons.storefront, size: 20),
+                            value: _selectedStore,
+                            items: _stores,
+                            enabled: !_isLocked,
+                            getLabel: (s) => s.nickname,
+                            getSubtitle: (s) => '',
+                            onChanged: (val) {
+                              setState(() {
+                                _selectedStore = val;
+                              });
+                            },
+                          ),
+                          AppSpacing.gapVerticalMD,
+                          _buildDateField(colorScheme),
+                        ],
+                      ),
+                    ),
+                    AppSpacing.gapVerticalMD,
+
+                    // Section 2: Sisa Stok
+                    FormSectionCard(
+                      title: 'Sisa Stok Karyawan',
+                      subtitle: 'Catat sisa stok yang belum terjual oleh karyawan',
+                      icon: Icons.person_outline_rounded,
+                      child: Column(
+                        children: [
+                          for (int i = 0; i < _items.length; i++) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
+                                vertical: AppSpacing.sm + 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerLowest,
+                                borderRadius: AppSpacing.borderRadiusSM,
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant
+                                      .withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _items[i]['productName'] ?? '',
+                                          style: textTheme.bodyMedium?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (_items[i]['unitName'] != null)
+                                          Text(
+                                            'Satuan: ${_items[i]['unitName']}',
+                                            style: textTheme.bodySmall?.copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  AppSpacing.gapHorizontalMD,
+                                  SizedBox(
+                                    width: 110,
+                                    child: TextFormField(
+                                      controller: _items[i]['controller'],
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      textAlign: TextAlign.end,
+                                      enabled: !_isLocked,
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: AppSpacing.sm,
+                                          vertical: AppSpacing.sm,
+                                        ),
+                                        suffixText: _items[i]['unitName'],
+                                        suffixStyle:
+                                            textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        final ctrl = _items[i]['controller']
+                                            as TextEditingController;
+                                        ctrl.selection = TextSelection(
+                                          baseOffset: 0,
+                                          extentOffset: ctrl.text.length,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (i < _items.length - 1) AppSpacing.gapVerticalSM,
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
       bottomNavigationBar: _isLocked
           ? null
-          : GlassContainer.bottomBar(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.md,
-                  AppSpacing.sm + 4, AppSpacing.md, AppSpacing.lg),
+          : SafeBottomBar(
               child: ModernButton(
                 text: isEditing ? 'Simpan Perubahan' : 'Simpan Sisa Stok',
                 icon: isEditing ? Icons.save_rounded : Icons.add_circle_rounded,

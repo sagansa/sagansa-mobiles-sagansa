@@ -47,4 +47,18 @@ class DeliveryStatusRepository {
         roles.contains('super_admin') ||
         roles.contains('storage-staff');
   }
+
+  /// Boleh mengganti foto bukti pengiriman (icon edit di kartu foto detail
+  /// penjualan direct): admin/super_admin SAJA — tanpa supervisor dan tanpa
+  /// storage-staff, mengikuti guard backend POST /sales-orders/{id}/
+  /// delivery-photos. Tanpa syarat status order. Sengaja TERPISAH dari
+  /// loadAdminRole() (yang juga menghitung supervisor).
+  Future<bool> loadDeliveryPhotoEditRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userString = prefs.getString('user');
+    if (userString == null) return false;
+    final userData = json.decode(userString);
+    final roles = List<String>.from(userData['roles'] ?? []);
+    return roles.contains('admin') || roles.contains('super_admin');
+  }
 }

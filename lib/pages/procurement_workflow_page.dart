@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import '../models/procurement_model.dart';
+import '../providers/auth_provider.dart';
 import '../services/procurement_service.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/image_preview_dialog.dart';
+import '../widgets/ios_segmented_control.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/procurement_batch_bottom_bar.dart';
 import '../widgets/procurement_entity_card.dart';
 import '../widgets/procurement_graph_view.dart';
-import '../widgets/procurement_stage_tabs.dart';
-import '../widgets/search_app_bar_action.dart';
+import 'create_invoice_form_page.dart';
 import 'create_invoice_page.dart';
 import 'create_payment_receipt_page.dart';
 import 'create_procurement_page.dart';
 import 'invoice_detail_page.dart';
 import 'payment_receipt_detail_page.dart';
 import 'procurement_detail_page.dart';
+import 'procurement_product_info_page.dart';
 
 class ProcurementWorkflowPage extends StatefulWidget {
   const ProcurementWorkflowPage({super.key});
@@ -29,16 +34,18 @@ class ProcurementWorkflowPage extends StatefulWidget {
 class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
   final ProcurementService _service = ProcurementService();
   final ScrollController _scrollController = ScrollController();
-  final TextEditingController _searchController = TextEditingController();
 
-  // Stage & sub-filter
+  // Stage & sub-filter — tiap tab punya filter sendiri-sendiri.
   int _activeStage = 0; // 0=Request, 1=Invoice, 2=Payment
+  // Request: status keterkaitan invoice + toko.
   int _subFilterRequest = 0; // 0=Semua, 1=SiapInvoice, 2=SudahJadiInvoice
+  int? _storeRequestId; // null=Semua toko
+  // Invoice: status bayar + status terima + supplier.
   int _subFilterInvoice = 0; // 0=Semua, 1=SiapDibayar, 2=Lunas
-
-  // Search
-  bool _searchExpanded = false;
-  String _searchQuery = '';
+  int _subFilterOrder = 0; // 0=Semua, 1=BelumDiterima, 2=SudahDiterima, 3=Dikembalikan
+  int? _supplierInvoiceId; // null=Semua supplier
+  // Payment: supplier.
+  int? _supplierPaymentId; // null=Semua supplier
 
   // Batch
   bool _batchMode = false;
@@ -70,7 +77,6 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -188,19 +194,12 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
     }
   }
 
-  // ============ Helpers (computed) ============
-
-  /// Jumlah request yang masih punya item pending admin approval.
   // ============ Filtering ============
 
   List<RequestPurchase> get _filteredRequests {
     var list = _requests.where((r) => r.detailRequests.isNotEmpty).toList();
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      list = list.where((r) =>
-          r.id.toString().contains(q) ||
-          r.storeName.toLowerCase().contains(q) ||
-          r.userName.toLowerCase().contains(q)).toList();
+    if (_storeRequestId != null) {
+      list = list.where((r) => r.storeId == _storeRequestId).toList();
     }
     switch (_subFilterRequest) {
       case 1:
@@ -214,34 +213,31 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
 
   List<InvoicePurchase> get _filteredInvoices {
     var list = _allInvoices;
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      list = list.where((i) =>
-          i.id.toString().contains(q) ||
-          i.storeName.toLowerCase().contains(q) ||
-          (i.supplierName ?? '').toLowerCase().contains(q)).toList();
-    }
-    // Sub-filter invoice: 0=Semua, 1=Siap Dibayar, 2=Lunas
+    // Status bayar: 0=Semua, 1=Siap Dibayar (payment_status 1 saja —
+    // status 3/Tidak Valid tidak ikut), 2=Lunas.
     switch (_subFilterInvoice) {
       case 1:
-        return list.where((i) => i.paymentStatus != '2').toList();
+        list = list.where((i) => i.paymentStatus == '1').toList();
       case 2:
-        return list.where((i) => i.paymentStatus == '2').toList();
-      default:
-        return list;
+        list = list.where((i) => i.paymentStatus == '2').toList();
     }
+    // Status terima: 0=Semua, 1/2/3 = order_status.
+    if (_subFilterOrder > 0) {
+      list = list
+          .where((i) => i.orderStatus == _subFilterOrder.toString())
+          .toList();
+    }
+    if (_supplierInvoiceId != null) {
+      list = list.where((i) => i.supplierId == _supplierInvoiceId).toList();
+    }
+    return list;
   }
 
   List<PaymentReceipt> get _filteredReceipts {
     var list = _allReceipts;
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      list = list.where((r) =>
-          r.id.toString().contains(q) ||
-          (r.supplierName ?? '').toLowerCase().contains(q)).toList();
+    if (_supplierPaymentId != null) {
+      list = list.where((r) => r.supplierId == _supplierPaymentId).toList();
     }
-    // Semua payment receipt adalah transfer (tunai langsung ke closing store).
-    // Tidak ada sub-filter untuk tab Payment.
     return list;
   }
 
@@ -265,12 +261,33 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
 
   // ============ Filter methods ============
 
+  /// Badge filter hanya menghitung filter milik tab aktif.
   int get _activeFilterCount {
     int count = 0;
-    if (_searchQuery.isNotEmpty) count++;
-    if (_subFilterRequest > 0) count++;
-    if (_subFilterInvoice > 0) count++;
+    if (_activeStage == 0) {
+      if (_subFilterRequest > 0) count++;
+      if (_storeRequestId != null) count++;
+    } else if (_activeStage == 1) {
+      if (_subFilterInvoice > 0) count++;
+      if (_subFilterOrder > 0) count++;
+      if (_supplierInvoiceId != null) count++;
+    } else {
+      if (_supplierPaymentId != null) count++;
+    }
     return count;
+  }
+
+  /// Opsi dropdown (id, nama) yang unik & terurut dari data yang dimuat.
+  List<(int, String)> _distinctOptions(Iterable<(int?, String?)> entries) {
+    final map = <int, String>{};
+    for (final e in entries) {
+      final id = e.$1;
+      final name = (e.$2 ?? '').trim();
+      if (id != null && name.isNotEmpty) map.putIfAbsent(id, () => name);
+    }
+    final list = map.entries.map((e) => (e.key, e.value)).toList();
+    list.sort((a, b) => a.$2.compareTo(b.$2));
+    return list;
   }
 
   List<DropdownFilterField> _buildFilterFields() {
@@ -285,11 +302,17 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
             (2, 'Sudah Jadi Invoice'),
           ],
         ),
+        DropdownFilterField<int>(
+          label: 'Toko',
+          value: _storeRequestId,
+          options: _distinctOptions(
+              _requests.map((r) => (r.storeId, r.storeName))),
+        ),
       ];
     } else if (_activeStage == 1) {
       return [
         DropdownFilterField<int>(
-          label: 'Status Invoice',
+          label: 'Status Bayar',
           value: _subFilterInvoice,
           options: const [
             (0, 'Semua'),
@@ -297,9 +320,32 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
             (2, 'Lunas'),
           ],
         ),
+        DropdownFilterField<int>(
+          label: 'Status Terima',
+          value: _subFilterOrder,
+          options: const [
+            (0, 'Semua'),
+            (1, 'Belum Diterima'),
+            (2, 'Sudah Diterima'),
+            (3, 'Dikembalikan'),
+          ],
+        ),
+        DropdownFilterField<int>(
+          label: 'Supplier',
+          value: _supplierInvoiceId,
+          options: _distinctOptions(
+              _allInvoices.map((i) => (i.supplierId, i.supplierName))),
+        ),
       ];
     }
-    return [];
+    return [
+      DropdownFilterField<int>(
+        label: 'Supplier',
+        value: _supplierPaymentId,
+        options: _distinctOptions(
+            _allReceipts.map((r) => (r.supplierId, r.supplierName))),
+      ),
+    ];
   }
 
   void _openFilterSheet() {
@@ -313,82 +359,151 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
         setState(() {
           if (_activeStage == 0) {
             _subFilterRequest = values['Status Request'] as int? ?? 0;
+            _storeRequestId = values['Toko'] as int?;
           } else if (_activeStage == 1) {
-            _subFilterInvoice = values['Status Invoice'] as int? ?? 0;
+            _subFilterInvoice = values['Status Bayar'] as int? ?? 0;
+            _subFilterOrder = values['Status Terima'] as int? ?? 0;
+            _supplierInvoiceId = values['Supplier'] as int?;
+          } else {
+            _supplierPaymentId = values['Supplier'] as int?;
           }
         });
       },
       onReset: () {
         setState(() {
-          if (_activeStage == 0) _subFilterRequest = 0;
-          if (_activeStage == 1) _subFilterInvoice = 0;
+          if (_activeStage == 0) {
+            _subFilterRequest = 0;
+            _storeRequestId = null;
+          } else if (_activeStage == 1) {
+            _subFilterInvoice = 0;
+            _subFilterOrder = 0;
+            _supplierInvoiceId = null;
+          } else {
+            _supplierPaymentId = null;
+          }
         });
       },
     );
+  }
+
+  Future<void> _openCreateForCurrentStage() async {
+    if (_activeStage == 0) {
+      final created = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const CreateProcurementPage()),
+      );
+      if (created == true) _fetchData();
+    } else if (_activeStage == 1) {
+      final created = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const CreateInvoiceFormPage()),
+      );
+      if (created == true) _fetchData();
+    } else {
+      final created = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const CreatePaymentReceiptPage()),
+      );
+      if (created == true) _fetchData();
+    }
   }
 
   // ============ Build ============
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = context.watch<AuthProvider>().isAdmin;
+    final segments = {
+      0: 'Request (${_requests.length})',
+      1: 'Invoice (${_allInvoices.length})',
+      2: 'Payment (${_allReceipts.length})',
+    };
+
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Procurement'),
+        centerTitle: true,
         actions: [
-          SearchAppBarAction(
-            isSearchActive: _searchExpanded,
-            onTap: () => setState(() => _searchExpanded = !_searchExpanded),
-          ),
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
-            onTap: _openFilterSheet,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (val) async {
-              if (val == 'graph') {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => _GraphPage(
-                      requests: _requests,
-                      invoices: _allInvoices,
-                      receipts: _allReceipts,
-                      requestToInvoices: _requestToInvoices,
-                      invoiceToReceipt: _invoiceToReceipt,
+          BarButtonCluster(actions: [
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _activeFilterCount,
+              onTap: _openFilterSheet,
+            ),
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: _activeStage == 0
+                  ? 'Tambah Request'
+                  : _activeStage == 1
+                      ? 'Tambah Invoice'
+                      : 'Tambah Payment',
+              onTap: _openCreateForCurrentStage,
+            ),
+            BarButtonSpec(
+              icon: Icons.more_vert,
+              tooltip: 'Opsi lainnya',
+              popupItems: [
+                if (isAdmin)
+                  const PopupMenuItem(
+                      value: 'purchase_info',
+                      child: Text('📊 Info Beli Bahan Baku')),
+                const PopupMenuItem(
+                    value: 'graph',
+                    child: Text('🌳 Grafik Many-to-Many')),
+                const PopupMenuItem(
+                    value: 'refresh', child: Text('🔄 Refresh')),
+                PopupMenuItem(
+                  value: 'batch',
+                  child: Text(
+                      _batchMode ? '☑️ Exit Mode Batch' : '☑️ Mode Batch'),
+                ),
+              ],
+              onPopupSelected: (val) async {
+                if (val == 'purchase_info') {
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ProcurementProductInfoPage()),
+                  );
+                } else if (val == 'graph') {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => _GraphPage(
+                        requests: _requests,
+                        invoices: _allInvoices,
+                        receipts: _allReceipts,
+                        requestToInvoices: _requestToInvoices,
+                        invoiceToReceipt: _invoiceToReceipt,
+                      ),
                     ),
-                  ),
-                );
-                _fetchData();
-              } else if (val == 'refresh') {
-                _fetchData();
-              } else if (val == 'batch') {
-                setState(() {
-                  _batchMode = !_batchMode;
-                  _selectedRequestIds.clear();
-                  _selectedInvoiceIds.clear();
-                });
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'graph', child: Text('🌳 Grafik Many-to-Many')),
-              const PopupMenuItem(value: 'refresh', child: Text('🔄 Refresh')),
-              PopupMenuItem(
-                value: 'batch',
-                child: Text(_batchMode ? '☑️ Exit Mode Batch' : '☑️ Mode Batch'),
-              ),
-            ],
-          ),
+                  );
+                  _fetchData();
+                } else if (val == 'refresh') {
+                  _fetchData();
+                } else if (val == 'batch') {
+                  setState(() {
+                    _batchMode = !_batchMode;
+                    _selectedRequestIds.clear();
+                    _selectedInvoiceIds.clear();
+                  });
+                }
+              },
+            ),
+          ]),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: ProcurementStageTabs(
-            activeStage: _activeStage,
-            requestCount: _filteredRequests.length,
-            invoiceCount: _filteredInvoices.length,
-            paymentCount: _filteredReceipts.length,
-            onTabTap: (i) => setState(() {
-              _activeStage = i;
+          preferredSize: const Size.fromHeight(52),
+          child: IosSegmentedControl<int>(
+            segments: segments,
+            groupValue: _activeStage,
+            onValueChanged: (v) => setState(() {
+              _activeStage = v;
               _selectedRequestIds.clear();
               _selectedInvoiceIds.clear();
             }),
@@ -404,7 +519,8 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
                     children: [
                       Text(
                         _errorMessage!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error),
                       ),
                       AppSpacing.gapVerticalMD,
                       ElevatedButton(
@@ -416,34 +532,23 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
                 )
               : RefreshIndicator(
                   onRefresh: _fetchData,
-                  child: Column(
+                  child: Stack(
                     children: [
-                      if (_searchExpanded)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                          child: TextField(
-                            controller: _searchController,
-                            autofocus: true,
-                            onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                            decoration: InputDecoration(
-                              hintText: 'Cari No Request/Invoice/Toko...',
-                              prefixIcon: const Icon(Icons.search, size: 18),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.clear, size: 16),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() => _searchQuery = '');
-                                },
-                              ),
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                          ),
+                      IndexedStack(
+                        index: _activeStage,
+                        children: [
+                          _buildRequestList(),
+                          _buildInvoiceList(),
+                          _buildReceiptList(),
+                        ],
+                      ),
+                      if (_buildBottomBar() != null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: ModernBottomNav.clearance(context),
+                          child: _buildBottomBar()!,
                         ),
-                      Expanded(child: _buildActiveList()),
-                      if (_buildBottomBar() != null) _buildBottomBar()!,
                     ],
                   ),
                 ),
@@ -455,31 +560,21 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
           }
         },
       ),
-      floatingActionButton: AddFab(
-        onPressed: () async {
-          final created = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const CreateProcurementPage()),
-          );
-          if (created == true) _fetchData();
-        },
-      ),
     );
-  }
-
-  Widget _buildActiveList() {
-    if (_activeStage == 0) return _buildRequestList();
-    if (_activeStage == 1) return _buildInvoiceList();
-    return _buildReceiptList();
   }
 
   Widget _buildRequestList() {
     final list = _filteredRequests;
     if (list.isEmpty) return _buildEmpty('Tidak ada request', Icons.shopping_bag_outlined);
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: AppSpacing.paddingMD,
+      padding: AppSpacing.paddingMD.copyWith(
+        top: topPadding,
+        bottom: bottomPadding,
+      ),
       itemCount: list.length + (_isLoadingMore ? 1 : 0),
       itemBuilder: (_, i) {
         if (i == list.length) {
@@ -539,9 +634,14 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
   Widget _buildInvoiceList() {
     final list = _filteredInvoices;
     if (list.isEmpty) return _buildEmpty('Tidak ada invoice', Icons.receipt_long_outlined);
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: AppSpacing.paddingMD,
+      padding: AppSpacing.paddingMD.copyWith(
+        top: topPadding,
+        bottom: bottomPadding,
+      ),
       itemCount: list.length,
       itemBuilder: (_, i) {
         final inv = list[i];
@@ -623,9 +723,14 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
   Widget _buildReceiptList() {
     final list = _filteredReceipts;
     if (list.isEmpty) return _buildEmpty('Tidak ada payment receipt', Icons.payment_outlined);
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: AppSpacing.paddingMD,
+      padding: AppSpacing.paddingMD.copyWith(
+        top: topPadding,
+        bottom: bottomPadding,
+      ),
       itemCount: list.length,
       itemBuilder: (_, i) {
         final rec = list[i];
@@ -655,8 +760,11 @@ class _ProcurementWorkflowPageState extends State<ProcurementWorkflowPage> {
   }
 
   Widget _buildEmpty(String text, IconData icon) {
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
       children: [
         SizedBox(
           height: MediaQuery.of(context).size.height * 0.4,
@@ -759,7 +867,7 @@ class _GraphPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Grafik Many-to-Many')),
+      appBar: GlassAppBar(title: const Text('Grafik Many-to-Many')),
       body: ProcurementGraphView(
         requests: requests,
         invoices: invoices,

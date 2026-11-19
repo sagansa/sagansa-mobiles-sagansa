@@ -134,10 +134,11 @@ class SupplierService {
     return (data as List).map((e) => BankModel.fromJson(e)).toList();
   }
 
-  /// Validate and parse a QRIS payload for a supplier.
-  Future<Map<String, dynamic>> validateQris(int supplierId, String qrisPayload) async {
+  /// Validate and parse a QRIS payload (tanpa supplier id — jalan di
+  /// mode create maupun edit).
+  Future<Map<String, dynamic>> validateQris(String qrisPayload) async {
     final data = await _apiClient.post(
-      'suppliers/$supplierId/validate-qris',
+      'suppliers/validate-qris',
       body: {'qris': qrisPayload},
     );
     return data as Map<String, dynamic>;

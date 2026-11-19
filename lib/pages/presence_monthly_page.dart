@@ -8,8 +8,9 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_dialogs.dart';
 import '../widgets/app_snackbar.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import 'presence_manual_form_page.dart';
 
 /// Rekap presensi untuk satu periode cut-off gaji bulanan (mis. "Juni 2026"
@@ -300,48 +301,54 @@ class _PresenceMonthlyPageState extends State<PresenceMonthlyPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Rekap Presensi'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Muat Ulang',
-          ),
-          if (_isAdmin)
-            FilterAppBarAction(
-              activeCount: _activeFilterCount,
-              onTap: _openFilterSheet,
-            ),
+          BarButtonCluster(actions: [
+            if (_isAdmin)
+              BarButtonSpec(
+                icon: Icons.tune,
+                tooltip: 'Filter',
+                badgeCount: _activeFilterCount,
+                onTap: _openFilterSheet,
+              ),
+            if (_isAdmin)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Presensi',
+                onTap: _openCreateForm,
+              ),
+          ]),
         ],
       ),
-      floatingActionButton: _isAdmin
-          ? FloatingActionButton(
-              onPressed: _openCreateForm,
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: Column(
-          children: [
-            if (!_isAdmin)
-              Container(
-                padding: AppSpacing.paddingMD,
-                color: AppColors.primary.withValues(alpha: 0.1),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, color: AppColors.info),
-                    AppSpacing.gapHorizontalSM,
-                    const Expanded(
-                      child: Text(
-                          'Periode cut-off gaji bulanan (26 bln lalu – 25 bln periode).'),
-                    ),
-                  ],
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          child: Column(
+            children: [
+              if (!_isAdmin)
+                Container(
+                  padding: AppSpacing.paddingMD,
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: AppColors.info),
+                      AppSpacing.gapHorizontalSM,
+                      const Expanded(
+                        child: Text(
+                            'Periode cut-off gaji bulanan (26 bln lalu – 25 bln periode).'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            Expanded(child: _buildBody()),
-          ],
+              Expanded(child: _buildBody()),
+            ],
+          ),
         ),
       ),
     );
@@ -563,17 +570,22 @@ class _PresenceMonthlyPageState extends State<PresenceMonthlyPage> {
                   onPressed: () => _openEditForm(m),
                 ),
                 AppSpacing.gapHorizontalSM,
-                FilledButton.tonalIcon(
+                OutlinedButton.icon(
                   icon: _isDeleting
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: cs.error,
+                          ),
                         )
-                      : const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Hapus'),
-                  style: FilledButton.styleFrom(
-                    foregroundColor: AppColors.error,
+                      : Icon(Icons.delete_outline_rounded, size: 18, color: cs.error),
+                  label: Text('Hapus', style: TextStyle(color: cs.error)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: cs.error,
+                    backgroundColor: cs.error.withValues(alpha: 0.08),
+                    side: BorderSide(color: cs.error.withValues(alpha: 0.4)),
                   ),
                   onPressed: _isDeleting ? null : () => _confirmDelete(m),
                 ),
@@ -627,7 +639,7 @@ class _PresenceMonthlyPageState extends State<PresenceMonthlyPage> {
   void _showFullScreenImage(String url) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => Scaffold(
-        appBar: AppBar(),
+        appBar: GlassAppBar(),
         body: Center(child: Image.network(url)),
       ),
     ));

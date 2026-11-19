@@ -53,4 +53,15 @@ class NotificationService {
   Future<void> markAllRead() async {
     await _api.post('notifications/read-all');
   }
+
+  /// Hapus satu notifikasi (dari swipe-to-delete).
+  Future<void> deleteNotification(int id) async {
+    await _api.delete('notifications/$id');
+  }
+
+  /// Hapus semua notifikasi milik user. Mengembalikan jumlah terhapus.
+  Future<int> clearAll() async {
+    final data = await _api.delete('notifications/clear');
+    return data is Map ? (data['deleted'] as int? ?? 0) : 0;
+  }
 }

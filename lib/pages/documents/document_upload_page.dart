@@ -939,9 +939,12 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     return AppPageScaffold(
       titleText: _isReissue ? 'Terbitkan Ulang' : 'Unggah Dokumen',
       bodyPadding: EdgeInsets.zero,
+      bottomAction: _buildBottomBar(context),
       body: SafeArea(
         top: true,
-        bottom: false,
+        // bottom: true — konten tahap berhenti di atas bar aksi bawah
+        // (bottomAction) & home indicator, bukan di belakangnya.
+        bottom: true,
         child: Column(
           children: [
             // Subjudul nomor (Fix C1) — tampil begitu nomor dipesan.
@@ -970,7 +973,6 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                 ),
               ),
             Expanded(child: _buildStage(context)),
-            _buildBottomBar(context),
           ],
         ),
       ),
@@ -1166,64 +1168,57 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
     );
   }
 
-  Widget _buildBottomBar(BuildContext context) {
+  /// Bar aksi bawah via `AppPageScaffold.bottomAction` — inset sistem
+  /// bawah (home indicator) ditangani `SafeBottomBar` scaffold, pola
+  /// halaman create lainnya. Null = tahap tanpa aksi bawah (tanpa bar).
+  Widget? _buildBottomBar(BuildContext context) {
     if (_isReissue) {
       switch (_method) {
         case 'b':
-          return Padding(
-            padding: AppSpacing.paddingMD,
-            child: FilledButton.icon(
-              onPressed: _pdf == null || _submitting ? null : _submitReissueB,
-              style: AppButtonStyle.filled(),
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.publish_rounded),
-              label: const Text('Terbitkan ulang'),
-            ),
+          return FilledButton.icon(
+            onPressed: _pdf == null || _submitting ? null : _submitReissueB,
+            style: AppButtonStyle.filled(),
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.publish_rounded),
+            label: const Text('Terbitkan ulang'),
           );
         case 'd':
-          return Padding(
-            padding: AppSpacing.paddingMD,
-            child: FilledButton.icon(
-              onPressed:
-                  _photos.isEmpty || _submitting ? null : _submitReissueD,
-              style: AppButtonStyle.filled(),
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.publish_rounded),
-              label: const Text('Terbitkan ulang'),
-            ),
+          return FilledButton.icon(
+            onPressed: _photos.isEmpty || _submitting ? null : _submitReissueD,
+            style: AppButtonStyle.filled(),
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.publish_rounded),
+            label: const Text('Terbitkan ulang'),
           );
         default: // c — pick stage langsung submit; tanpa bottom bar.
-          return const SizedBox.shrink();
+          return null;
       }
     }
     if (_stage == _stagePlace) {
-      return Padding(
-        padding: AppSpacing.paddingMD,
-        child: FilledButton.icon(
-          onPressed: _pdf == null || _submitting ? null : _submitPreFinal,
-          style: AppButtonStyle.filled(),
-          icon: _submitting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.picture_as_pdf_rounded),
-          label: const Text('Buat pra-final'),
-        ),
+      return FilledButton.icon(
+        onPressed: _pdf == null || _submitting ? null : _submitPreFinal,
+        style: AppButtonStyle.filled(),
+        icon: _submitting
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.picture_as_pdf_rounded),
+        label: const Text('Buat pra-final'),
       );
     }
-    return const SizedBox.shrink();
+    return null;
   }
 }
 
@@ -1247,7 +1242,7 @@ class _InfoCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       elevation: 0,
       color: colorScheme.secondaryContainer.withValues(alpha: 0.35),
-      shape: RoundedRectangleBorder(borderRadius: AppSpacing.borderRadiusMD),
+      shape: RoundedRectangleBorder(borderRadius: AppSpacing.borderRadiusLG),
       child: Padding(
         padding: AppSpacing.paddingMD,
         child: Row(
@@ -1295,14 +1290,14 @@ class _MethodCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      color: colorScheme.surfaceContainerLow,
+      color: colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: InkWell(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         onTap: onTap,
         child: Padding(
           padding: AppSpacing.paddingSM,

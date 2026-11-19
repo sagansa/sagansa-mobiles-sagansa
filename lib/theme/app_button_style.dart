@@ -73,9 +73,34 @@ class AppButtonStyle {
     );
   }
 
-  /// Utility membuat `ButtonStyle` untuk `OutlinedButton`.
-  static ButtonStyle outlined({
+  /// Utility membuat `ButtonStyle` untuk `TextButton` (aksi teks padat).
+  ///
+  /// Semua parameter opsional dipetakan 1:1 ke `TextButton.styleFrom` agar
+  /// konversi dari gaya mentah tidak mengubah tampilan/density.
+  ///
+  /// `foregroundColor` null (default) TIDAK menimpa warna tema — tombol
+  /// memakai `textButtonTheme` per-mode (light: AppColors.primary,
+  /// dark: AppColors.darkPrimary). Hardcode default light-mode pernah
+  /// membuat teks "Tambah" tak terlihat di dark mode.
+  static ButtonStyle text({
     Color? foregroundColor,
+    EdgeInsetsGeometry? padding,
+    Size? minimumSize,
+    VisualDensity? visualDensity,
+    MaterialTapTargetSize? tapTargetSize,
+  }) {
+    return TextButton.styleFrom(
+      foregroundColor: foregroundColor,
+      padding: padding,
+      minimumSize: minimumSize,
+      visualDensity: visualDensity,
+      tapTargetSize: tapTargetSize,
+      textStyle: AppTypography.buttonMedium,
+    );
+  }
+
+  /// Utility membuat `ButtonStyle` untuk `OutlinedButton`.
+  static ButtonStyle outlined({    Color? foregroundColor,
     Color? borderColor,
     EdgeInsetsGeometry? padding,
     BorderRadiusGeometry? borderRadius,

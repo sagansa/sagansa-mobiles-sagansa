@@ -8,8 +8,9 @@ import '../services/utility_usage_service.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_dialogs.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
 import 'utility_usage_form_page.dart';
 
@@ -112,6 +113,27 @@ class _UtilityUsageDetailPageState extends State<UtilityUsageDetailPage>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        title: _item != null ? Text(_item!.utilityDisplayName) : const Text('Detail Pemakaian'),
+        actions: _item != null
+            ? [
+                BarButtonCluster(actions: [
+                  if (_isClockedIn)
+                    BarButtonSpec(
+                      icon: Icons.edit_rounded,
+                      tooltip: 'Edit',
+                      onTap: _openEdit,
+                    ),
+                  BarButtonSpec(
+                    icon: Icons.delete_outline,
+                    tooltip: 'Hapus',
+                    onTap: _delete,
+                  ),
+                ]),
+              ]
+            : null,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -123,162 +145,112 @@ class _UtilityUsageDetailPageState extends State<UtilityUsageDetailPage>
   Widget _buildContent(ColorScheme colorScheme, ThemeData theme) {
     final item = _item!;
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          expandedHeight: 120,
-          pinned: true,
-          actions: [
-            if (_isClockedIn)
-              IconButton(
-                icon: const Icon(Icons.edit_rounded),
-                onPressed: _openEdit,
-                tooltip: 'Edit',
-              ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _delete,
-              tooltip: 'Hapus',
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + kToolbarHeight + 8, 16,
+            ModernBottomNav.clearance(context)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                StatusBadge(
+                  label: item.statusText,
+                  type: _statusType(item.status),
+                  size: BadgeSize.medium,
+                ),
+              ],
+            ),
+            AppSpacing.gapVerticalLG,
+            _buildSectionTitle('Detail Pemakaian', theme),
+            _buildInfoCard(
+              colorScheme: colorScheme,
+              theme: theme,
+              children: [
+                _buildDetailRow(
+                  icon: Icons.electrical_services_rounded,
+                  label: 'Utility',
+                  value: item.utilityDisplayName,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                if (item.utilityNumber != null)
+                  _buildDetailRow(
+                    icon: Icons.numbers_rounded,
+                    label: 'Nomor Utility',
+                    value: item.utilityNumber!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                _buildDetailRow(
+                  icon: Icons.speed_rounded,
+                  label: 'Hasil',
+                  value: '${item.formattedResult} ${item.unitName ?? ''}',
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  onTap: () => _copyToClipboard(item.result),
+                ),
+                _buildDetailRow(
+                  icon: Icons.straighten_rounded,
+                  label: 'Satuan',
+                  value: item.unitName ?? '-',
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                _buildDetailRow(
+                  icon: Icons.notes_rounded,
+                  label: 'Catatan',
+                  value: item.cleanNotes.isEmpty ? '-' : item.cleanNotes,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  isLast: true,
+                ),
+              ],
+            ),
+            AppSpacing.gapVerticalMD,
+            _buildSectionTitle('Informasi', theme),
+            _buildInfoCard(
+              colorScheme: colorScheme,
+              theme: theme,
+              children: [
+                if (item.createdByName != null)
+                  _buildDetailRow(
+                    icon: Icons.person_pin_rounded,
+                    label: 'Dibuat oleh',
+                    value: item.createdByName!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                if (item.approvedByName != null)
+                  _buildDetailRow(
+                    icon: Icons.verified_rounded,
+                    label: 'Disetujui oleh',
+                    value: item.approvedByName!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                if (item.createdAt != null)
+                  _buildDetailRow(
+                    icon: Icons.calendar_today_rounded,
+                    label: 'Tanggal',
+                    value: _formatDate(item.createdAt!),
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                _buildDetailRow(
+                  icon: Icons.tag_rounded,
+                  label: 'ID',
+                  value: '#${item.id}',
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  isLast: true,
+                ),
+              ],
             ),
           ],
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(
-              item.utilityDisplayName,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primaryContainer,
-                    colorScheme.surfaceContainerHighest,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.electrical_services_rounded,
-                  size: 48,
-                  color: colorScheme.primary.withValues(alpha: 0.4),
-                ),
-              ),
-            ),
-          ),
         ),
-        SliverToBoxAdapter(
-          child: FadeTransition(
-            opacity: _fadeAnim,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16,
-                  ModernBottomNav.height + context.systemBottomInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      StatusBadge(
-                        label: item.statusText,
-                        type: _statusType(item.status),
-                        size: BadgeSize.medium,
-                      ),
-                    ],
-                  ),
-                  AppSpacing.gapVerticalLG,
-                  _buildSectionTitle('Detail Pemakaian', theme),
-                  _buildInfoCard(
-                    colorScheme: colorScheme,
-                    theme: theme,
-                    children: [
-                      _buildDetailRow(
-                        icon: Icons.electrical_services_rounded,
-                        label: 'Utility',
-                        value: item.utilityDisplayName,
-                        colorScheme: colorScheme,
-                        theme: theme,
-                      ),
-                      if (item.utilityNumber != null)
-                        _buildDetailRow(
-                          icon: Icons.numbers_rounded,
-                          label: 'Nomor Utility',
-                          value: item.utilityNumber!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      _buildDetailRow(
-                        icon: Icons.speed_rounded,
-                        label: 'Hasil',
-                        value: '${item.formattedResult} ${item.unitName ?? ''}',
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        onTap: () => _copyToClipboard(item.result),
-                      ),
-                      _buildDetailRow(
-                        icon: Icons.straighten_rounded,
-                        label: 'Satuan',
-                        value: item.unitName ?? '-',
-                        colorScheme: colorScheme,
-                        theme: theme,
-                      ),
-                      _buildDetailRow(
-                        icon: Icons.notes_rounded,
-                        label: 'Catatan',
-                        value: item.cleanNotes.isEmpty ? '-' : item.cleanNotes,
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                  AppSpacing.gapVerticalMD,
-                  _buildSectionTitle('Informasi', theme),
-                  _buildInfoCard(
-                    colorScheme: colorScheme,
-                    theme: theme,
-                    children: [
-                      if (item.createdByName != null)
-                        _buildDetailRow(
-                          icon: Icons.person_pin_rounded,
-                          label: 'Dibuat oleh',
-                          value: item.createdByName!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      if (item.approvedByName != null)
-                        _buildDetailRow(
-                          icon: Icons.verified_rounded,
-                          label: 'Disetujui oleh',
-                          value: item.approvedByName!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      if (item.createdAt != null)
-                        _buildDetailRow(
-                          icon: Icons.calendar_today_rounded,
-                          label: 'Tanggal',
-                          value: _formatDate(item.createdAt!),
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      _buildDetailRow(
-                        icon: Icons.tag_rounded,
-                        label: 'ID',
-                        value: '#${item.id}',
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -362,7 +334,6 @@ class _UtilityUsageDetailPageState extends State<UtilityUsageDetailPage>
                         label,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
-                          fontSize: 10,
                         ),
                       ),
                       AppSpacing.gapVerticalXS,

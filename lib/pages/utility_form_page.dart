@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/utility_model.dart';
 import '../services/utility_service.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/glass_container.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/modern_text_form_field.dart';
+import '../widgets/safe_bottom_bar.dart';
 import '../widgets/section_card.dart';
 
 /// Form create/edit Utility (khusus admin/super_admin).
@@ -39,8 +42,8 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
   Map<String, dynamic>? _store;
   Map<String, dynamic>? _unit;
   Map<String, dynamic>? _provider;
-  int? _prePost;
-  int? _category;
+  int? _prePost = 1; // Default to Prabayar
+  int? _category = 1; // Default to Listrik
   int _status = 1;
 
   bool get _isEditing => widget.utility != null;
@@ -108,11 +111,15 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_store == null || _unit == null || _provider == null ||
-        _prePost == null || _category == null) {
+    if (_category == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Lengkapi semua field yang wajib diisi.')),
+        const SnackBar(content: Text('Pilih jenis utility.')),
+      );
+      return;
+    }
+    if (_store == null || _unit == null || _provider == null || _prePost == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi semua field yang wajib diisi.')),
       );
       return;
     }
@@ -147,10 +154,109 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
     }
   }
 
+  Widget _buildCategorySelector(ColorScheme colorScheme, TextTheme textTheme) {
+    final categories = [
+      (id: 1, label: 'Listrik', icon: Icons.bolt_rounded, color: AppColors.warning),
+      (id: 2, label: 'Air', icon: Icons.water_drop_rounded, color: AppColors.info),
+      (id: 3, label: 'Internet', icon: Icons.wifi_rounded, color: Colors.indigo),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 6),
+          child: Text(
+            'Jenis Utility',
+            style: textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ),
+        Row(
+          children: categories.map((cat) {
+            final isSelected = _category == cat.id;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Material(
+                  color: isSelected
+                      ? cat.color.withValues(alpha: 0.14)
+                      : colorScheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: AppSpacing.borderRadiusMD,
+                    side: BorderSide(
+                      color: isSelected
+                          ? cat.color
+                          : colorScheme.outlineVariant.withValues(alpha: 0.4),
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: InkWell(
+                    onTap: () => setState(() => _category = cat.id),
+                    borderRadius: AppSpacing.borderRadiusMD,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            cat.icon,
+                            color: isSelected
+                                ? cat.color
+                                : colorScheme.onSurfaceVariant,
+                            size: 20,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            cat.label,
+                            style: textTheme.labelSmall?.copyWith(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? cat.color
+                                  : colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFieldLabel(String label, BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isEditing ? 'Edit Utility' : 'Tambah Utility'),
       ),
       body: _isLoadingLookups
@@ -184,37 +290,46 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
               : Form(
                   key: _formKey,
                   child: ListView(
-                    padding: AppSpacing.paddingMD,
+                    padding: AppSpacing.paddingMD.copyWith(
+                      top: AppBarInsets.top(context) + AppSpacing.xs,
+                      bottom: 76 + context.systemBottomInset,
+                    ),
                     children: [
+                      _buildCategorySelector(colorScheme, textTheme),
+                      const SizedBox(height: 10),
                       SectionCard(
-                        title: 'Informasi Utility',
-                        icon: Icons.electrical_services_rounded,
+                        title: 'Informasi Akun',
+                        icon: Icons.tag_rounded,
+                        padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
                             ModernTextFormField(
                               labelText: 'Nomor Utility (Wajib)',
+                              hintText: 'Contoh: 53123456789',
                               controller: _numberController,
                               prefixIcon:
-                                  const Icon(Icons.numbers_rounded, size: 20),
+                                  const Icon(Icons.numbers_rounded, size: 18),
                               validator: (v) =>
                                   (v == null || v.trim().isEmpty)
                                       ? 'Nomor wajib diisi'
                                       : null,
                             ),
-                            AppSpacing.gapVerticalSM,
+                            const SizedBox(height: 8),
                             ModernTextFormField(
-                              labelText: 'Nama (opsional)',
+                              labelText: 'Nama Rekening / Catatan (opsional)',
+                              hintText: 'Contoh: PLN Gudang Utama',
                               controller: _nameController,
                               prefixIcon:
-                                  const Icon(Icons.label_outline_rounded, size: 20),
+                                  const Icon(Icons.badge_outlined, size: 18),
                             ),
                           ],
                         ),
                       ),
-                      AppSpacing.gapVerticalMD,
+                      const SizedBox(height: 10),
                       SectionCard(
-                        title: 'Relasi',
-                        icon: Icons.link_rounded,
+                        title: 'Relasi & Lokasi',
+                        icon: Icons.hub_outlined,
+                        padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
                             ModernDropdown<Map<String, dynamic>>(
@@ -222,7 +337,7 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
                               hint: 'Pilih toko...',
                               isRequired: true,
                               prefixIcon: const Icon(Icons.storefront_rounded,
-                                  size: 20),
+                                  size: 18),
                               value: _store,
                               items: _stores,
                               getLabel: (s) =>
@@ -230,26 +345,26 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
                                   'Toko #${s['id']}',
                               onChanged: (v) => setState(() => _store = v),
                             ),
-                            AppSpacing.gapVerticalSM,
+                            const SizedBox(height: 8),
                             ModernDropdown<Map<String, dynamic>>(
                               labelText: 'Provider',
                               hint: 'Pilih provider...',
                               isRequired: true,
                               prefixIcon:
-                                  const Icon(Icons.cable_rounded, size: 20),
+                                  const Icon(Icons.cable_rounded, size: 18),
                               value: _provider,
                               items: _providers,
                               getLabel: (p) =>
                                   p['name']?.toString() ?? 'Provider #${p['id']}',
                               onChanged: (v) => setState(() => _provider = v),
                             ),
-                            AppSpacing.gapVerticalSM,
+                            const SizedBox(height: 8),
                             ModernDropdown<Map<String, dynamic>>(
                               labelText: 'Satuan',
                               hint: 'Pilih satuan...',
                               isRequired: true,
                               prefixIcon: const Icon(Icons.straighten_rounded,
-                                  size: 20),
+                                  size: 18),
                               value: _unit,
                               items: _units,
                               getLabel: (n) =>
@@ -259,61 +374,72 @@ class _UtilityFormPageState extends State<UtilityFormPage> {
                           ],
                         ),
                       ),
-                      AppSpacing.gapVerticalMD,
+                      const SizedBox(height: 10),
                       SectionCard(
-                        title: 'Klasifikasi',
-                        icon: Icons.category_rounded,
+                        title: 'Metode & Status',
+                        icon: Icons.tune_rounded,
+                        padding: const EdgeInsets.all(12),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ModernDropdown<int>(
-                              labelText: 'Jenis',
-                              hint: 'Listrik / Air / Internet',
-                              isRequired: true,
-                              prefixIcon: const Icon(Icons.bolt_rounded,
-                                  size: 20),
-                              value: _category,
-                              items: const [1, 2, 3],
-                              getLabel: (c) => c == 1
-                                  ? 'Listrik'
-                                  : c == 2
-                                      ? 'Air'
-                                      : 'Internet',
-                              onChanged: (v) => setState(() => _category = v),
+                            _buildFieldLabel('Sistem Pembayaran', context),
+                            SizedBox(
+                              width: double.infinity,
+                              child: SegmentedButton<int>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: 1,
+                                    label: Text('Prabayar'),
+                                    icon: Icon(Icons.flash_on_rounded, size: 16),
+                                  ),
+                                  ButtonSegment(
+                                    value: 2,
+                                    label: Text('Pascabayar'),
+                                    icon: Icon(Icons.receipt_long_rounded, size: 16),
+                                  ),
+                                ],
+                                selected: _prePost == null ? {1} : {_prePost!},
+                                showSelectedIcon: false,
+                                onSelectionChanged: (set) {
+                                  if (set.isNotEmpty) {
+                                    setState(() => _prePost = set.first);
+                                  }
+                                },
+                              ),
                             ),
-                            AppSpacing.gapVerticalSM,
-                            ModernDropdown<int>(
-                              labelText: 'Pembayaran',
-                              hint: 'Prabayar / Pascabayar',
-                              isRequired: true,
-                              prefixIcon: const Icon(Icons.payments_rounded,
-                                  size: 20),
-                              value: _prePost,
-                              items: const [1, 2],
-                              getLabel: (p) => p == 1 ? 'Prabayar' : 'Pascabayar',
-                              onChanged: (v) => setState(() => _prePost = v),
-                            ),
-                            AppSpacing.gapVerticalSM,
-                            ModernDropdown<int>(
-                              labelText: 'Status',
-                              hint: 'Aktif / Nonaktif',
-                              isRequired: true,
-                              prefixIcon: const Icon(Icons.toggle_on_rounded,
-                                  size: 20),
-                              value: _status,
-                              items: const [1, 2],
-                              getLabel: (s) => s == 1 ? 'Aktif' : 'Nonaktif',
-                              onChanged: (v) =>
-                                  setState(() => _status = v ?? 1),
+                            const SizedBox(height: 8),
+                            _buildFieldLabel('Status', context),
+                            SizedBox(
+                              width: double.infinity,
+                              child: SegmentedButton<int>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: 1,
+                                    label: Text('Aktif'),
+                                    icon: Icon(Icons.check_circle_outline_rounded, size: 16),
+                                  ),
+                                  ButtonSegment(
+                                    value: 2,
+                                    label: Text('Nonaktif'),
+                                    icon: Icon(Icons.pause_circle_outline_rounded, size: 16),
+                                  ),
+                                ],
+                                selected: {_status},
+                                showSelectedIcon: false,
+                                onSelectionChanged: (set) {
+                                  if (set.isNotEmpty) {
+                                    setState(() => _status = set.first);
+                                  }
+                                },
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      AppSpacing.gapVerticalXL,
                     ],
                   ),
                 ),
-      bottomSheet: GlassContainer.bottomBar(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      bottomNavigationBar: SafeBottomBar(
         child: ModernButton(
           text: _isEditing ? 'Simpan Perubahan' : 'Buat Utility',
           onPressed: _isSaving ? null : _submit,

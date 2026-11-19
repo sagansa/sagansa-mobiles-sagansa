@@ -246,19 +246,43 @@ class PresenceService {
   }
 
   /// Ganti seluruh item order (khusus admin). Items berupa list
-  /// {product_id, quantity, unit_price}; server menghitung ulang subtotal
-  /// dan total_price, lalu mengembalikan order terbaru.
+  /// {product_id, quantity, unit_price}; [shippingCost] opsional — bila
+  /// dikirim, ongkos kirim ikut diubah dan total_price dihitung ulang
+  /// (items + ongkos kirim); bila null, nilai lama dipertahankan. Server
+  /// mengembalikan order terbaru.
   Future<Map<String, dynamic>> updateSalesOrderItems({
     required int orderId,
     required List<Map<String, dynamic>> items,
+    int? shippingCost,
   }) async {
     try {
       return await _api.postRaw(
         'sales-orders/$orderId/items',
-        body: {'items': items},
+        body: {
+          'items': items,
+          if (shippingCost != null) 'shipping_cost': shippingCost,
+        },
       );
     } catch (e) {
       throw Exception('Error saat memperbarui rincian produk: $e');
+    }
+  }
+
+  /// Ganti seluruh daftar foto bukti pengiriman order direct (khusus
+  /// admin/super_admin, tanpa batasan status). Paths berupa daftar LENGKAP
+  /// hasil edit (path lama yang dipertahankan + path baru); server menghapus
+  /// file lama yang dibuang dan mengembalikan order terbaru.
+  Future<Map<String, dynamic>> updateDeliveryPhotos({
+    required int orderId,
+    required List<String> paths,
+  }) async {
+    try {
+      return await _api.postRaw(
+        'sales-orders/$orderId/delivery-photos',
+        body: {'image_delivery': paths},
+      );
+    } catch (e) {
+      throw Exception('Error saat memperbarui foto pengiriman: $e');
     }
   }
 

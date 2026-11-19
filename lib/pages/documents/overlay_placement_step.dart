@@ -405,9 +405,9 @@ class _StepOverlayPlacementState extends State<StepOverlayPlacement> {
   Widget _buildCanvas(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final page = widget.pagesInfo.pageAt(widget.activePage);
-    final pageOverlays =
-        widget.overlays.where((item) => item.page == widget.activePage)
-            .toList();
+    final pageOverlays = widget.overlays
+        .where((item) => item.page == widget.activePage)
+        .toList();
 
     return InteractiveViewer(
       constrained: false,
@@ -583,9 +583,8 @@ class _PageSelector extends StatelessWidget {
         IconButton(
           visualDensity: VisualDensity.compact,
           tooltip: 'Halaman berikutnya',
-          onPressed: activePage < pageCount
-              ? () => onChanged(activePage + 1)
-              : null,
+          onPressed:
+              activePage < pageCount ? () => onChanged(activePage + 1) : null,
           icon: const Icon(Icons.chevron_right_rounded),
         ),
       ],
@@ -718,9 +717,7 @@ class _OverlayCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Slider(
-                    value: item.widthMm
-                        .clamp(10, 80)
-                        .toDouble(),
+                    value: item.widthMm.clamp(10, 80).toDouble(),
                     min: 10,
                     max: 80,
                     divisions: 70,
@@ -829,8 +826,8 @@ class _CanvasOverlayState extends State<_CanvasOverlay> {
     _downLocal = null;
     widget.onDragEnd();
     // Tanpa pergerakan berarti tap → pilih overlay (slider lebar panel).
-    final moved = down != null &&
-        (event.localPosition - down).distance > kTouchSlop;
+    final moved =
+        down != null && (event.localPosition - down).distance > kTouchSlop;
     if (!moved) widget.onTap();
   }
 
@@ -888,9 +885,8 @@ class _CanvasOverlayState extends State<_CanvasOverlay> {
                   // Gambar tak terdekode → kotak abu; kanvas & math tetap
                   // jalan (posisi mm sumber kebenaran, bukan render).
                   errorBuilder: (context, error, stackTrace) => ColoredBox(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
                 ),
               ),

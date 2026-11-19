@@ -1,11 +1,11 @@
 buildscript {
-    ext.kotlin_version = '2.2.20'
+    ext.kotlin_version = '2.4.0'
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.11.1'
+        classpath 'com.android.tools.build:gradle:9.1.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -17,9 +17,12 @@ allprojects {
     }
 }
 
-rootProject.buildDir = "../build"
+// Gradle 9 menghapus property Project.buildDir; ganti dengan
+// layout.buildDirectory. Path efektif tetap sama (../build/<module>).
+def rootBuildDirectory = file("../build")
+rootProject.layout.buildDirectory = rootBuildDirectory
 subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.layout.buildDirectory = new File(rootBuildDirectory, project.name)
 }
 subprojects {
     project.evaluationDependsOn(":app")
@@ -48,8 +51,11 @@ def configureForJava17 = { project ->
             targetCompatibility = JavaVersion.VERSION_17
         }
     }
+    // KGP 2.x: kotlinOptions sudah deprecated, pakai compilerOptions.
     project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions { jvmTarget = "17" }
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
 }
 subprojects {

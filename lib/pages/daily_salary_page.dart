@@ -1,18 +1,22 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
 import '../models/procurement_model.dart';
 import '../services/closing_store_service.dart';
 import '../services/procurement_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/status_mappers.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
+import '../widgets/ios_segmented_control.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/payment_receipt_card.dart';
 import 'create_payment_receipt_page.dart';
@@ -27,9 +31,8 @@ class DailySalaryPage extends StatefulWidget {
   State<DailySalaryPage> createState() => _DailySalaryPageState();
 }
 
-class _DailySalaryPageState extends State<DailySalaryPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _DailySalaryPageState extends State<DailySalaryPage> {
+  int _activeTab = 0;
   final ClosingStoreService _service = ClosingStoreService();
   final ScrollController _scrollController = ScrollController();
   final currencyFormatter = NumberFormat.currency(
@@ -88,10 +91,6 @@ class _DailySalaryPageState extends State<DailySalaryPage>
   void initState() {
     super.initState();
     _loadAdmin();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) setState(() {});
-    });
     _scrollController.addListener(_onScroll);
     _receiptScrollController.addListener(_onReceiptScroll);
     _loadData();
@@ -99,7 +98,6 @@ class _DailySalaryPageState extends State<DailySalaryPage>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _receiptScrollController.removeListener(_onReceiptScroll);
@@ -531,7 +529,7 @@ class _DailySalaryPageState extends State<DailySalaryPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.lock_outline, size: 64, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
+          AppSpacing.gapVerticalMD,
           Text('Hanya dapat diakses oleh admin.'),
         ],
       ),
@@ -554,7 +552,7 @@ class _DailySalaryPageState extends State<DailySalaryPage>
             child: const Text('Batal'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
+            style: AppButtonStyle.filled(
                 backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Hapus'),
@@ -567,12 +565,10 @@ class _DailySalaryPageState extends State<DailySalaryPage>
     try {
       await _procurementService.deletePaymentReceipt(receipt.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Payment receipt dihapus. Status gaji dikembalikan.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Payment receipt dihapus. Status gaji dikembalikan.',
+        background: AppColors.success,
       );
       _fetchReceipts();
       _loadData();
@@ -588,15 +584,27 @@ class _DailySalaryPageState extends State<DailySalaryPage>
     if (_isLoadingReceipts) {
       return const Center(child: CircularProgressIndicator());
     }
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     if (_receipts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _fetchReceipts,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
           children: [
-            Icon(Icons.receipt_long_outlined, size: 64,
-                color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text('Belum ada pembayaran gaji harian.'),
+            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 64,
+                      color: Theme.of(context).colorScheme.outline),
+                  AppSpacing.gapVerticalMD,
+                  const Text('Belum ada pembayaran gaji harian.'),
+                ],
+              ),
+            ),
           ],
         ),
       );
@@ -605,13 +613,15 @@ class _DailySalaryPageState extends State<DailySalaryPage>
       onRefresh: _fetchReceipts,
       child: ListView.builder(
         controller: _receiptScrollController,
-        // Padding lebih rapat (8px) agar list receipt terlihat lebih padat.
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: AppSpacing.paddingMD.copyWith(
+          top: topPadding,
+          bottom: bottomPadding,
+        ),
         itemCount: _receipts.length + (_hasMoreReceipts ? 1 : 0),
         itemBuilder: (context, idx) {
           if (idx == _receipts.length) {
             return const Padding(
-              padding: EdgeInsets.all(16),
+              padding: AppSpacing.paddingMD,
               child: Center(child: CircularProgressIndicator()),
             );
           }
@@ -652,93 +662,82 @@ class _DailySalaryPageState extends State<DailySalaryPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: _isSelectionMode
             ? Text('${_selectedIds.length} dipilih')
             : const Text('Daily Salary'),
         leading: _isSelectionMode
             ? IconButton(
+                tooltip: 'Tutup',
                 icon: const Icon(Icons.close),
                 onPressed: _toggleSelectionMode,
               )
             : null,
         actions: [
-          if (_isAdmin) ...[
-            if (_isSelectionMode) ...[
-              IconButton(
-                icon: Icon(
-                  _selectedIds.length == _payableCount
+          BarButtonCluster(actions: [
+            if (_isAdmin) ...[
+              if (_isSelectionMode) ...[
+                BarButtonSpec(
+                  icon: _selectedIds.length == _payableCount
                       ? Icons.deselect
                       : Icons.select_all,
+                  tooltip: _selectedIds.length == _payableCount
+                      ? 'Batalkan Semua'
+                      : 'Pilih Semua',
+                  onTap: _selectAll,
                 ),
-                onPressed: _selectAll,
-                tooltip: _selectedIds.length == _payableCount
-                    ? 'Batalkan Semua'
-                    : 'Pilih Semua',
+                BarButtonSpec(
+                  icon: Icons.payment,
+                  tooltip: 'Buat Payment Receipt',
+                  onTap: _navigateToPaymentReceipt,
+                ),
+              ] else if (_activeTab == 0)
+                BarButtonSpec(
+                  icon: Icons.checklist,
+                  tooltip: 'Pilih Data',
+                  onTap: _toggleSelectionMode,
+                ),
+            ],
+            if (_isAdmin && !_isSelectionMode && _activeTab == 0)
+              BarButtonSpec(
+                icon: Icons.tune,
+                tooltip: 'Filter',
+                badgeCount: _activeFilterCount,
+                onTap: _openFilterSheet,
               ),
-              IconButton(
-                icon: const Icon(Icons.payment),
-                onPressed: _navigateToPaymentReceipt,
-                tooltip: 'Buat Payment Receipt',
+            if (_activeTab == 0 && !_isSelectionMode)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Gaji Harian',
+                onTap: () => _openDailySalaryForm(),
               ),
-            ] else
-              IconButton(
-                icon: const Icon(Icons.checklist),
-                onPressed: _toggleSelectionMode,
-                tooltip: 'Pilih Data',
-              ),
-          ],
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
-          if (_isAdmin && !_isSelectionMode && _tabController.index == 0)
-            FilterAppBarAction(
-              activeCount: _activeFilterCount,
-              onTap: _openFilterSheet,
-            ),
+          ]),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: TabBar(
-            controller: _tabController,
-            indicatorColor: Theme.of(context).colorScheme.primary,
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-            tabs: const [
-              Tab(text: 'Gaji Harian'),
-              Tab(text: 'Pembayaran'),
-            ],
+          preferredSize: const Size.fromHeight(52),
+          child: IosSegmentedControl<int>(
+            segments: const {
+              0: 'Gaji Harian',
+              1: 'Pembayaran',
+            },
+            groupValue: _activeTab,
+            onValueChanged: (v) => setState(() {
+              _activeTab = v;
+              if (_isSelectionMode) _toggleSelectionMode();
+            }),
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: IndexedStack(
+        index: _activeTab,
         children: [
-          // Tab 1: Daily salary list
-          Column(
-            children: [
-              // Total hanya relevan saat ada filter aktif (permintaan user);
-              // tanpa filter angka ini hanya "semua data" dan berisiko salah baca.
-              if (_activeFilterCount > 0) _buildSummaryBar(),
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _errorMessage != null
-                        ? _buildErrorWidget()
-                        : _dailySalaries.isEmpty
-                            ? _buildEmptyWidget()
-                            : _buildListWidget(_dailySalaries),
-              ),
-            ],
-          ),
-          // Tab 2: Payment receipts (admin only)
+          _buildDailySalaryTab(),
           _isAdmin ? _buildPaymentReceiptTab() : _buildAdminOnlyWidget(),
         ],
       ),
-      floatingActionButton: (_tabController.index == 0 && !_isSelectionMode)
-          ? AddFab(onPressed: () => _openDailySalaryForm())
-          : null,
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 1,
         onTap: (index) {
@@ -747,6 +746,51 @@ class _DailySalaryPageState extends State<DailySalaryPage>
           }
         },
       ),
+    );
+  }
+
+  Widget _buildDailySalaryTab() {
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
+
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_errorMessage != null) {
+      return RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+          children: [_buildErrorWidget()],
+        ),
+      );
+    }
+    if (_dailySalaries.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+            _buildEmptyWidget(),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        _buildListWidget(_dailySalaries, topPadding, bottomPadding),
+        if (_activeFilterCount > 0)
+          Positioned(
+            top: AppBarInsets.top(context, bottom: 52),
+            left: 0,
+            right: 0,
+            child: _buildSummaryBar(),
+          ),
+      ],
     );
   }
 
@@ -827,15 +871,17 @@ class _DailySalaryPageState extends State<DailySalaryPage>
     );
   }
 
-  Widget _buildListWidget(List<dynamic> displayList) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final textTheme = theme.textTheme;
-
-    return ListView.builder(
-      controller: _scrollController,
-      itemCount: displayList.length + (_hasMore ? 1 : 0),
-      padding: AppSpacing.paddingMD,
+  Widget _buildListWidget(List<dynamic> displayList, double topPadding, double bottomPadding) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: displayList.length + (_hasMore ? 1 : 0),
+        padding: AppSpacing.paddingMD.copyWith(
+          top: topPadding + (_activeFilterCount > 0 ? 44 : 0),
+          bottom: bottomPadding,
+        ),
       itemBuilder: (context, index) {
         if (index == displayList.length) {
           return const Padding(
@@ -843,6 +889,9 @@ class _DailySalaryPageState extends State<DailySalaryPage>
             child: Center(child: CircularProgressIndicator()),
           );
         }
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        final textTheme = theme.textTheme;
         final salary = displayList[index];
         final salaryId = salary['id'] as int;
         final employeeName = salary['created_by']?['name'] ?? 'Staff';
@@ -1018,6 +1067,7 @@ class _DailySalaryPageState extends State<DailySalaryPage>
           ),
         );
       },
+    ),
     );
   }
 }

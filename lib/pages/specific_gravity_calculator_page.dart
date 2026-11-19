@@ -6,6 +6,8 @@ import '../models/specific_gravity_record.dart';
 import '../services/specific_gravity/specific_gravity_database.dart';
 import '../theme/app_spacing.dart';
 import '../utils/specific_gravity_calc.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/modern_button.dart';
 
@@ -105,11 +107,16 @@ class _SpecificGravityCalculatorPageState
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Kalkulator Berat Jenis'),
       ),
       body: SingleChildScrollView(
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD.copyWith(
+          top: AppBarInsets.top(context),
+        ),
         child: Form(
           key: _formKey,
           child: Column(
@@ -144,6 +151,15 @@ class _SpecificGravityCalculatorPageState
               if (_result != null) ...[
                 AppSpacing.gapVerticalMD,
                 Card(
+                  elevation: 0,
+                  color: colorScheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: AppSpacing.borderRadiusLG,
+                    side: BorderSide(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      width: 1,
+                    ),
+                  ),
                   child: Padding(
                     padding: AppSpacing.paddingMD,
                     child: Column(
@@ -218,6 +234,15 @@ class _SpecificGravityCalculatorPageState
       itemBuilder: (context, index) {
         final record = _records[index];
         return Card(
+          elevation: 0,
+          color: colorScheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppSpacing.borderRadiusLG,
+            side: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+              width: 1,
+            ),
+          ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.sm,
@@ -238,6 +263,7 @@ class _SpecificGravityCalculatorPageState
               ),
             ),
             trailing: IconButton(
+              tooltip: 'Hapus',
               icon: Icon(Icons.delete_outline, color: colorScheme.error),
               onPressed: () => _deleteRecord(record.id),
             ),

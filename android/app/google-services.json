@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "559544736795",
+    "project_id": "sagansa-app",
+    "storage_bucket": "sagansa-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:559544736795:android:cff15d58b28768f13cecbe",
+        "android_client_info": {
+          "package_name": "id.sagansa.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmSxv1rysILsaso2xmFH-2WXebeHD8yR8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

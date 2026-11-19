@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/document/document_models.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/safe_bottom_bar.dart';
 
 /// Mode masa berlaku surat kuasa (KUA).
 enum ValidityMode {
@@ -38,11 +39,16 @@ class StepForm extends StatelessWidget {
   // Penerima.
   final TextEditingController recipientNameController;
   final TextEditingController recipientIdentityController;
+  final TextEditingController recipientTitleController;
   final TextEditingController recipientAddressController;
   final Future<PaginatedResult<PartyModel>> Function(String query)?
       searchParties;
   final bool savingParty;
   final VoidCallback? onSaveParty; // null = tak perlu tawarkan simpan.
+
+  // Klasifikasi surat — 'umum' | 'rahasia' (kosong = umum).
+  final String classification;
+  final ValueChanged<String> onClassificationChanged;
 
   // Field khusus jenis (key → controller).
   final List<LetterSpecificField> specificFields;
@@ -66,10 +72,13 @@ class StepForm extends StatelessWidget {
     required this.subjectMissing,
     required this.recipientNameController,
     required this.recipientIdentityController,
+    required this.recipientTitleController,
     required this.recipientAddressController,
     this.searchParties,
     required this.savingParty,
     this.onSaveParty,
+    required this.classification,
+    required this.onClassificationChanged,
     required this.specificFields,
     required this.specificControllers,
     required this.validityRelevant,
@@ -106,6 +115,8 @@ class StepForm extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _dateField(context),
+        const SizedBox(height: AppSpacing.md),
+        _classificationSection(context),
         const SizedBox(height: AppSpacing.lg),
         _recipientSection(context),
         if (specificFields.isNotEmpty) ...[
@@ -147,6 +158,91 @@ class StepForm extends StatelessWidget {
     );
   }
 
+  /// Pilihan klasifikasi surat — Umum (default) / Rahasia. Surat rahasia
+  /// dicap "RAHASIA" di PDF; surat pribadi/korporat boleh dibiarkan Umum
+  /// (pilihan opsional, bukan wajib).
+  Widget _classificationSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Sifat surat'),
+        Row(
+          children: [
+            Expanded(
+              child: _classificationChip(
+                context,
+                value: 'umum',
+                label: 'Umum',
+                icon: Icons.work_outline_rounded,
+                selectedColor: colorScheme.primaryContainer,
+                onSelectedColor: colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _classificationChip(
+                context,
+                value: 'rahasia',
+                label: 'Rahasia',
+                icon: Icons.lock_outline_rounded,
+                selectedColor: colorScheme.errorContainer,
+                onSelectedColor: colorScheme.onErrorContainer,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _classificationChip(
+    BuildContext context, {
+    required String value,
+    required String label,
+    required IconData icon,
+    required Color selectedColor,
+    required Color onSelectedColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = classification == value;
+    return InkWell(
+      onTap: () => onClassificationChanged(value),
+      borderRadius: AppSpacing.borderRadiusMD,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? selectedColor : colorScheme.surfaceContainerHighest,
+          borderRadius: AppSpacing.borderRadiusMD,
+          border: selected
+              ? Border.all(color: colorScheme.primary, width: 1.5)
+              : Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected
+                  ? onSelectedColor
+                  : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                color: selected ? onSelectedColor : colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _recipientSection(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,6 +275,16 @@ class StepForm extends StatelessWidget {
             isDense: true,
           ),
           keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextField(
+          controller: recipientTitleController,
+          decoration: const InputDecoration(
+            labelText: 'Jabatan / instansi (opsional)',
+            helperText: 'Dicetak di blok "Yth." pada surat.',
+            isDense: true,
+          ),
+          textCapitalization: TextCapitalization.sentences,
         ),
         const SizedBox(height: AppSpacing.md),
         TextField(
@@ -259,8 +365,7 @@ class StepForm extends StatelessWidget {
               child: Text(
                 validityDate == null
                     ? 'Pilih tanggal'
-                    : DateFormat('d MMMM yyyy', 'id_ID')
-                        .format(validityDate!),
+                    : DateFormat('d MMMM yyyy', 'id_ID').format(validityDate!),
                 style: validityDate == null
                     ? TextStyle(color: colorScheme.error)
                     : null,
@@ -371,7 +476,10 @@ class _PartySheetState extends State<_PartySheet> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      // Keyboard + inset sistem bawah (home indicator / gesture bar).
+      padding: EdgeInsets.only(
+        bottom: mediaQuery.viewInsets.bottom + context.systemBottomInset,
+      ),
       child: SizedBox(
         height: mediaQuery.size.height * _sheetHeightFactor,
         child: Column(
@@ -408,8 +516,7 @@ class _PartySheetState extends State<_PartySheet> {
                                   subtitle: party.identityNo != null
                                       ? Text('NIK ${party.identityNo}')
                                       : null,
-                                  onTap: () =>
-                                      Navigator.of(context).pop(party),
+                                  onTap: () => Navigator.of(context).pop(party),
                                 );
                               },
                             ),

@@ -109,8 +109,9 @@ class SalesOrderEmployeeService {
   }
 
   /// Set payment_status (role admin).
+  /// Endpoint backend terdaftar sebagai PATCH (bukan POST).
   Future<SalesOrderEmployeeModel> updatePaymentStatus(int id, int status) async {
-    final data = await _api.post(
+    final data = await _api.patch(
       'sales-orders/employee/$id/payment',
       body: {'payment_status': status},
     );

@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import '../models/presence_model.dart';
 import '../models/sales_dashboard_model.dart';
 import '../services/asset_service.dart';
+import '../services/closing_store_service.dart';
 import '../services/inventory_anomaly_service.dart';
 import '../services/leave_service.dart';
 import '../services/presence_service.dart';
 import '../services/procurement_service.dart';
+import '../services/readiness_service.dart';
 import '../services/salary_service.dart';
 import '../services/sales_dashboard_service.dart';
 import '../services/storage_stock_service.dart';
@@ -86,11 +88,47 @@ class HomeAssetState {
 @immutable
 class HomeSalesState {
   final int? yesterdayOmzet;
+  final int? todayOmzet;
   final bool isLoading;
-  const HomeSalesState({this.yesterdayOmzet, this.isLoading = false});
-  HomeSalesState copyWith({int? yesterdayOmzet, bool? isLoading}) =>
+  const HomeSalesState({
+    this.yesterdayOmzet,
+    this.todayOmzet,
+    this.isLoading = false,
+  });
+  HomeSalesState copyWith({
+    int? yesterdayOmzet,
+    int? todayOmzet,
+    bool? isLoading,
+  }) =>
       HomeSalesState(
         yesterdayOmzet: yesterdayOmzet ?? this.yesterdayOmzet,
+        todayOmzet: todayOmzet ?? this.todayOmzet,
+        isLoading: isLoading ?? this.isLoading,
+      );
+}
+
+@immutable
+class HomeStaffChecklistState {
+  final bool hasSubmittedReadiness;
+  final bool hasActiveClosingDraft;
+  final bool isLoading;
+
+  const HomeStaffChecklistState({
+    this.hasSubmittedReadiness = false,
+    this.hasActiveClosingDraft = false,
+    this.isLoading = false,
+  });
+
+  HomeStaffChecklistState copyWith({
+    bool? hasSubmittedReadiness,
+    bool? hasActiveClosingDraft,
+    bool? isLoading,
+  }) =>
+      HomeStaffChecklistState(
+        hasSubmittedReadiness:
+            hasSubmittedReadiness ?? this.hasSubmittedReadiness,
+        hasActiveClosingDraft:
+            hasActiveClosingDraft ?? this.hasActiveClosingDraft,
         isLoading: isLoading ?? this.isLoading,
       );
 }
@@ -289,6 +327,8 @@ class HomeDashboardProvider extends ChangeNotifier {
   final UserService _userService;
   final LeaveService _leaveService;
   final SalaryService _salaryService;
+  final ReadinessService _readinessService;
+  final ClosingStoreService _closingStoreService;
 
   HomeProcurementState _procurement = const HomeProcurementState();
   HomeAssetState _asset = const HomeAssetState();
@@ -300,6 +340,7 @@ class HomeDashboardProvider extends ChangeNotifier {
   HomeOrdersState _orders = const HomeOrdersState();
   HomeAdminStockState _adminStock = const HomeAdminStockState();
   HomePresenceState _presence = const HomePresenceState();
+  HomeStaffChecklistState _staffChecklist = const HomeStaffChecklistState();
 
   bool _isLoading = false;
   String? _error;
@@ -315,6 +356,8 @@ class HomeDashboardProvider extends ChangeNotifier {
     required UserService userService,
     required LeaveService leaveService,
     required SalaryService salaryService,
+    ReadinessService? readinessService,
+    ClosingStoreService? closingStoreService,
   })  : _procurementService = procurementService,
         _assetService = assetService,
         _salesDashboardService = salesDashboardService,
@@ -323,7 +366,9 @@ class HomeDashboardProvider extends ChangeNotifier {
         _presenceService = presenceService,
         _userService = userService,
         _leaveService = leaveService,
-        _salaryService = salaryService;
+        _salaryService = salaryService,
+        _readinessService = readinessService ?? ReadinessService(),
+        _closingStoreService = closingStoreService ?? ClosingStoreService();
 
   // Getters
   HomeProcurementState get procurement => _procurement;
@@ -336,6 +381,7 @@ class HomeDashboardProvider extends ChangeNotifier {
   HomeOrdersState get orders => _orders;
   HomeAdminStockState get adminStock => _adminStock;
   HomePresenceState get presence => _presence;
+  HomeStaffChecklistState get staffChecklist => _staffChecklist;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -462,19 +508,57 @@ class HomeDashboardProvider extends ChangeNotifier {
     }
   }
 
-  /// Load sales summary.
+  /// Load sales summary (kemarin dan live hari ini).
   Future<void> loadSales() async {
     _sales = _sales.copyWith(isLoading: true);
     notifyListeners();
     try {
-      final summary =
-          await _salesDashboardService.getSummary(SalesPeriode.yesterday);
+      final results = await Future.wait([
+        _salesDashboardService.getSummary(SalesPeriode.yesterday),
+        _salesDashboardService.getSummary(SalesPeriode.today),
+      ]);
+      final yesterdaySummary = results[0];
+      final todaySummary = results[1];
       _sales = _sales.copyWith(
-        yesterdayOmzet: summary.omzet,
+        yesterdayOmzet: yesterdaySummary.omzet,
+        todayOmzet: todaySummary.omzet,
         isLoading: false,
       );
     } catch (_) {
-      _sales = _sales.copyWith(yesterdayOmzet: null, isLoading: false);
+      _sales = _sales.copyWith(
+        yesterdayOmzet: null,
+        todayOmzet: null,
+        isLoading: false,
+      );
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  /// Load status checklist operasional staff harian (kesiapan & draft closing).
+  Future<void> loadStaffChecklist() async {
+    _staffChecklist = _staffChecklist.copyWith(isLoading: true);
+    notifyListeners();
+    try {
+      final results = await Future.wait([
+        _readinessService.checkStatus().catchError((_) => <String, dynamic>{}),
+        _closingStoreService.getActiveDraft().catchError((_) => <String, dynamic>{}),
+      ]);
+      final readinessData = results[0];
+      final closingData = results[1];
+
+      final hasReadiness =
+          readinessData['data']?['has_submitted_today'] == true;
+      final hasClosingDraft =
+          closingData.isNotEmpty && closingData['id'] != null;
+
+      _staffChecklist = _staffChecklist.copyWith(
+        hasSubmittedReadiness: hasReadiness,
+        hasActiveClosingDraft: hasClosingDraft,
+        isLoading: false,
+      );
+    } catch (_) {
+      _staffChecklist = _staffChecklist.copyWith(isLoading: false);
     } finally {
       notifyListeners();
     }

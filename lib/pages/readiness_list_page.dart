@@ -5,11 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/readiness_model.dart';
 import '../services/readiness_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_page_scaffold.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
 import 'home_page.dart';
 import 'hrd_dashboard_page.dart';
@@ -227,18 +229,35 @@ class _ReadinessListPageState extends State<ReadinessListPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Kesiapan Diri'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetch,
-            tooltip: 'Segarkan',
-          ),
-        ],
+    return AppPageScaffold(
+      titleText: 'Kesiapan Diri',
+      actions: [
+        BarButtonCluster(
+          actions: [
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Kesiapan Diri',
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ReadinessPage()),
+                );
+                _fetch();
+              },
+            ),
+          ],
+        ),
+      ],
+      bottomNavigationBar: ModernBottomNav(
+        currentIndex: 4,
+        onTap: (index) => _handleNavigation(context, index),
       ),
-      body: Column(
+      bodyPadding: EdgeInsets.zero,
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
         children: [
           if (_isAdmin) _buildFilterRow(textTheme, colorScheme),
           Expanded(
@@ -251,6 +270,7 @@ class _ReadinessListPageState extends State<ReadinessListPage> {
                         subtitle: 'Terjadi kesalahan saat memuat data',
                         action: ElevatedButton.icon(
                           onPressed: _fetch,
+                          style: AppButtonStyle.elevated(),
                           icon: const Icon(Icons.refresh_rounded),
                           label: const Text('Coba Lagi'),
                         ),
@@ -265,20 +285,7 @@ class _ReadinessListPageState extends State<ReadinessListPage> {
                             : _buildList(colorScheme, textTheme),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ReadinessPage()),
-          );
-          _fetch();
-        },
-        child: const Icon(Icons.add),
-      ),
-      bottomNavigationBar: ModernBottomNav(
-        currentIndex: 4,
-        onTap: (index) => _handleNavigation(context, index),
+        ),
       ),
     );
   }
@@ -329,8 +336,14 @@ class _ReadinessListPageState extends State<ReadinessListPage> {
       onRefresh: _fetch,
       child: ListView.builder(
         controller: _scrollController,
+        // SafeArea(top) di body sudah menghitung status bar + appbar;
+        // padding atas cukup kecil agar tidak terjadi inset ganda.
         padding: EdgeInsets.fromLTRB(
-            16, 12, 16, ModernBottomNav.height + context.systemBottomInset),
+          AppSpacing.md,
+          AppSpacing.sm + AppSpacing.xs,
+          AppSpacing.md,
+          ModernBottomNav.clearance(context),
+        ),
         itemCount: _items.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, idx) {
           if (idx == _items.length) {

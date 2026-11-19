@@ -4,10 +4,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'app_drawer.dart';
+import 'glass_app_bar.dart';
+import 'ios_bar_button.dart';
 import 'modern_bottom_nav.dart';
-import 'theme_toggle_button.dart';
 
-/// Scaffold dashboard reusable: AppBar (logo + nama user + toggle tema),
+/// Scaffold dashboard reusable: AppBar (logo + nama user),
 /// Drawer seragam (Beranda/Printer/Bantuan/Logout), body berisi header
 /// + daftar [DashboardMenuItem], dan [ModernBottomNav].
 ///
@@ -22,14 +23,16 @@ class DashboardScaffold extends StatelessWidget {
   final String? subtitle;
   final List<DashboardMenuItem> menuItems;
   final Widget? bottomAction;
+  final Widget? customBody;
 
   const DashboardScaffold({
     super.key,
     required this.currentIndex,
     required this.title,
     this.subtitle,
-    required this.menuItems,
+    this.menuItems = const [],
     this.bottomAction,
+    this.customBody,
   });
 
   @override
@@ -48,6 +51,8 @@ class DashboardScaffold extends StatelessWidget {
   Widget _buildScaffold(
       BuildContext context, String userName, String companyName, bool isAdmin) {
     return Scaffold(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       appBar: _buildAppBar(context, userName, companyName),
       drawer: AppDrawer(
         userName: userName,
@@ -68,38 +73,30 @@ class DashboardScaffold extends StatelessWidget {
 
   PreferredSizeWidget _buildAppBar(
       BuildContext context, String userName, String companyName) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return AppBar(
+    return GlassAppBar(
+      centerTitle: false,
+      showBottomBorder: false,
       leading: Builder(
-        builder: (context) => InkWell(
-          onTap: () => Scaffold.of(context).openDrawer(),
-          child: Padding(
-            padding: AppSpacing.cardPadding,
-            child: SvgPicture.asset(
-              'assets/images/logo.svg',
-              width: 36,
-              fit: BoxFit.contain,
-              height: 36,
+        builder: (context) => Padding(
+          padding: const EdgeInsets.only(left: 14),
+          child: Center(
+            child: IosBarButton(
+              onTap: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Menu Navigasi',
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: SvgPicture.asset(
+                  'assets/images/logo.svg',
+                  fit: BoxFit.contain,
+                ),
+              ),
             ),
           ),
         ),
       ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(userName, style: theme.textTheme.titleSmall),
-          Text(
-            companyName,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+      title: null,
       actions: const [
-        ThemeToggleButton(),
-        SizedBox(width: AppSpacing.sm),
+        SizedBox(width: AppSpacing.md),
       ],
     );
   }
@@ -107,9 +104,15 @@ class DashboardScaffold extends StatelessWidget {
   Widget _buildBody(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final topPadding = MediaQuery.of(context).padding.top + kToolbarHeight;
     final visibleItems = menuItems.where((m) => m.visible).toList();
     return SingleChildScrollView(
-      padding: AppSpacing.paddingMD,
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        topPadding + 4,
+        AppSpacing.md,
+        ModernBottomNav.clearance(context) + AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -128,17 +131,15 @@ class DashboardScaffold extends StatelessWidget {
               ),
             ),
           ],
-          AppSpacing.gapVerticalLG,
-          ListView(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: visibleItems
-                .map((item) => _DashboardMenuCard(item: item))
-                .toList(),
-          ),
-          if (bottomAction != null) ...[
-            AppSpacing.gapVerticalLG,
-            bottomAction!,
+          const SizedBox(height: 16),
+          if (customBody != null)
+            customBody!
+          else ...[
+            ...visibleItems.map((item) => _DashboardMenuCard(item: item)),
+            if (bottomAction != null) ...[
+              const SizedBox(height: 8),
+              bottomAction!,
+            ],
           ],
         ],
       ),
@@ -178,7 +179,7 @@ class _DashboardMenuCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final color = colorScheme.primary;
     return Card(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sectionGap),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: InkWell(
         onTap: item.onTap,
         borderRadius: AppSpacing.borderRadiusLG,

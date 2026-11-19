@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../services/salary_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 
 class LoanPage extends StatefulWidget {
   const LoanPage({super.key});
@@ -77,7 +79,9 @@ class _LoanPageState extends State<LoanPage> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Pinjaman Kasbon'),
       ),
       body: _isLoading
@@ -120,7 +124,8 @@ class _LoanPageState extends State<LoanPage> {
                       ),
                     )
                   : ListView.builder(
-                      padding: AppSpacing.paddingMD,
+                      padding: AppSpacing.paddingMD
+                          .copyWith(top: AppBarInsets.top(context)),
                       itemCount: _loans.length,
                       itemBuilder: (context, index) {
                         final loan = _loans[index];

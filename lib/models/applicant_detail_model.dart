@@ -1,3 +1,5 @@
+import '../services/image_service.dart';
+
 class ApplicantDetail {
   final int? id;
   final int? userId;
@@ -70,19 +72,19 @@ class ApplicantDetail {
         ? rawExp
         : (rawExp is int ? rawExp == 1 : null);
     return ApplicantDetail(
-      id: json['id'] as int?,
-      userId: json['user_id'] as int?,
+      id: _asInt(json['id']),
+      userId: _asInt(json['user_id']),
       nickname: json['nickname'] as String?,
       isExperienced: isExp,
       phone: json['phone'] as String?,
       address: json['address'] as String?,
       birthPlace: json['birth_place'] as String?,
-      birthDate: json['birth_date'] as String?,
+      birthDate: _asDateString(json['birth_date']),
       gender: json['gender'] as String?,
       nik: json['nik'] as String?,
       religion: json['religion'] as String?,
       maritalStatus: json['marital_status'] as String?,
-      childrenCount: json['children_count'] as int?,
+      childrenCount: _asInt(json['children_count']),
       educationLevel: json['education_level'] as String?,
       educationMajor: json['education_major'] as String?,
       fatherName: json['father_name'] as String?,
@@ -95,11 +97,34 @@ class ApplicantDetail {
       bankAccountNumber: json['bank_account_number'] as String?,
       bankName: json['bank_name'] as String?,
       status: json['status'] as String?,
-      joinDate: json['join_date'] as String?,
+      joinDate: _asDateString(json['join_date']),
       position: json['position'] as String?,
-      ktpHtmlUrl: json['ktp_image_url'] as String?,
-      selfieHtmlUrl: json['selfie_image_url'] as String?,
+      ktpHtmlUrl: (json['ktp_image_url'] ?? json['ktp_image']) as String?,
+      selfieHtmlUrl:
+          (json['selfie_image_url'] ?? json['selfie_image']) as String?,
     );
+  }
+
+  static int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String && v.trim().isNotEmpty) return int.tryParse(v.trim());
+    return null;
+  }
+
+  static String? _asDateString(dynamic v) {
+    if (v == null) return null;
+    if (v is String) {
+      final t = v.trim();
+      if (t.isEmpty) return null;
+      // Backend bisa kirim datetime "2020-01-01T00:00:00.000Z" — ambil tanggalnya.
+      if (t.length >= 10 && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(t)) {
+        return t.substring(0, 10);
+      }
+      return t;
+    }
+    return v.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -129,10 +154,66 @@ class ApplicantDetail {
     };
   }
 
+  /// Payload untuk POST /profile (backend recruitment).
+  ///
+  /// - String kosong / whitespace-only TIDAK dikirim (Laravel `date`
+  ///   menolak `birth_date: ''` dengan 422; `'' != null` juga memicu
+  ///   false-positive "Profile is locked" di backend).
+  /// - [bankOnly] = true → hanya 3 field rekening yang dikirim, agar
+  ///   profil terkunci tetap bisa simpan rekening tanpa 403.
+  Map<String, dynamic> toProfilePayload({bool bankOnly = false}) {
+    void putIfNotBlank(Map<String, dynamic> m, String key, String? value) {
+      final v = value?.trim() ?? '';
+      if (v.isNotEmpty) m[key] = v;
+    }
+
+    final payload = <String, dynamic>{};
+    if (bankOnly) {
+      putIfNotBlank(payload, 'bank_name', bankName);
+      putIfNotBlank(payload, 'bank_account_name', bankAccountName);
+      putIfNotBlank(payload, 'bank_account_number', bankAccountNumber);
+      return payload;
+    }
+    putIfNotBlank(payload, 'nickname', nickname);
+    putIfNotBlank(payload, 'phone', phone);
+    putIfNotBlank(payload, 'address', address);
+    putIfNotBlank(payload, 'birth_place', birthPlace);
+    putIfNotBlank(payload, 'birth_date', birthDate);
+    putIfNotBlank(payload, 'nik', nik);
+    putIfNotBlank(payload, 'religion', religion);
+    putIfNotBlank(payload, 'marital_status', maritalStatus);
+    putIfNotBlank(payload, 'education_level', educationLevel);
+    putIfNotBlank(payload, 'emergency_phone', emergencyPhone);
+    putIfNotBlank(payload, 'emergency_name', emergencyName);
+    putIfNotBlank(payload, 'bank_name', bankName);
+    putIfNotBlank(payload, 'bank_account_name', bankAccountName);
+    putIfNotBlank(payload, 'bank_account_number', bankAccountNumber);
+    if (isExperienced != null) payload['is_experienced'] = isExperienced;
+    if (childrenCount != null) payload['children_count'] = childrenCount;
+    if (gender != null && gender!.trim().isNotEmpty) {
+      payload['gender'] = gender!.trim();
+    }
+    return payload;
+  }
+
   /// True bila field non-rekening terkunci (hanya rekening yg bisa diubah).
   bool get isLocked =>
       status != null &&
       ['submitted', 'accepted', 'reviewed', 'rejected'].contains(status) &&
       joinDate != null &&
       joinDate!.isNotEmpty;
+
+  /// URL publik foto KTP / selfie (dari `ktp_image_url` /
+  /// `selfie_image_url` atau `ktp_image` backend). Null bila belum ada.
+  String? get ktpImageUrl {
+    final raw = ktpHtmlUrl?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    return ImageService.buildUrl(raw);
+  }
+
+  String? get selfieImageUrl {
+    final raw = selfieHtmlUrl?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    return ImageService.buildUrl(raw);
+  }
 }

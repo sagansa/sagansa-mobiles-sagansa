@@ -15,6 +15,7 @@ class ModernTextField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final Widget? suffixIcon;
   final Iterable<String>? autofillHints;
+  final ValueChanged<String>? onChanged;
 
   const ModernTextField({
     super.key,
@@ -29,6 +30,7 @@ class ModernTextField extends StatelessWidget {
     this.inputFormatters,
     this.suffixIcon,
     this.autofillHints,
+    this.onChanged,
   });
 
   @override
@@ -53,6 +55,13 @@ class ModernTextField extends StatelessWidget {
       enableSuggestions: enableSuggestions,
       inputFormatters: inputFormatters,
       autofillHints: autofillHints,
+      // Tombol "selesai" keyboard menutupnya — tanpa ini pengguna form
+      // panjang terjebak: keyboard menutupi tombol simpan dan sulit
+      // ditutup (pola sama dengan AmountField).
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => FocusScope.of(context).unfocus(),
+      onTapOutside: (_) => FocusScope.of(context).unfocus(),
+      onChanged: onChanged,
     );
   }
 }

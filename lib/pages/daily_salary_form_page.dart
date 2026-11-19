@@ -6,6 +6,8 @@ import '../models/store_model.dart';
 import '../services/closing_store_service.dart';
 import '../services/presence_service.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 
@@ -175,7 +177,10 @@ class _DailySalaryFormPageState extends State<DailySalaryFormPage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isEditMode ? 'Edit Gaji Harian' : 'Buat Gaji Harian'),
       ),
       // Tombol submit dipatok di bawah (tidak ikut scroll) — pola standar
@@ -213,7 +218,8 @@ class _DailySalaryFormPageState extends State<DailySalaryFormPage> {
               : Form(
                   key: _formKey,
                   child: ListView(
-                    padding: AppSpacing.paddingMD,
+                    padding: AppSpacing.paddingMD
+                        .copyWith(top: AppBarInsets.top(context)),
                     children: [
                       DropdownButtonFormField<int>(
                         initialValue: _selectedStoreId,

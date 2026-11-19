@@ -3,6 +3,8 @@ import '../models/asset_check_model.dart';
 import '../services/asset_check_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_sheet.dart';
 
 /// Riwayat semua pemeriksaan (cross-aset). Tap baris → bottom sheet detail.
@@ -188,7 +190,9 @@ class _AssetCheckListPageState extends State<AssetCheckListPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Riwayat Pemeriksaan'),
       ),
       body: _isLoading
@@ -224,7 +228,9 @@ class _AssetCheckListPageState extends State<AssetCheckListPage> {
                       onRefresh: _fetch,
                       child: ListView.builder(
                         controller: _scrollController,
-                        padding: AppSpacing.screenPadding,
+                        padding: AppSpacing.screenPadding.copyWith(
+                          top: AppBarInsets.top(context),
+                        ),
                         itemCount: _checks.length + (_hasMore ? 1 : 0),
                         itemBuilder: (context, idx) {
                           if (idx == _checks.length) {

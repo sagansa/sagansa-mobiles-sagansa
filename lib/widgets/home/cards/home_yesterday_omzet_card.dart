@@ -20,10 +20,15 @@ class HomeYesterdayOmzetCard extends StatelessWidget {
         ? '-'
         : FormatUtils.formatCurrencyCompact(sales.yesterdayOmzet!);
 
+    final todayValue = sales.todayOmzet != null
+        ? 'Hari ini: ${FormatUtils.formatCurrencyCompact(sales.todayOmzet!)}'
+        : null;
+
     return HomeCompactCard(
       icon: Icons.bar_chart,
       iconColor: AppColors.primary,
       value: displayValue,
+      subValue: todayValue,
       label: 'Omzet Kemarin',
       isLoading: sales.isLoading,
       onTap: () => Navigator.push(

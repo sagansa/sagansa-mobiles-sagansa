@@ -14,10 +14,12 @@ import '../../theme/app_button_style.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/constants.dart';
 import '../../utils/error_utils.dart';
+import '../../widgets/app_dialogs.dart';
 import '../../widgets/app_page_scaffold.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/documents/document_status_badge.dart';
 import '../../widgets/documents/issuance_timeline.dart';
+import '../../widgets/documents/letter_action_sheet.dart';
 import '../../widgets/documents/letter_thread_timeline.dart';
 import '../../widgets/empty_state.dart';
 import 'document_create_wizard.dart';
@@ -85,12 +87,12 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
   late final Future<bool> Function(Uri url) _launchUrl =
       widget.launchUrlImpl ?? _launchUrlDefault;
 
-  /// Index tab Runutan (paling belakang — Info, Terbitan, PDF, Verifikasi,
-  /// Runutan).
-  static const int _runutanTabIndex = 4;
+  /// Index tab Runutan (paling belakang — Info, PDF, Verifikasi, Runutan;
+  /// riwayat penerbitan kini seksi di tab Info).
+  static const int _runutanTabIndex = 3;
 
   late final TabController _tabController = TabController(
-    length: 5,
+    length: 4,
     vsync: this,
   );
   static final DateFormat _dateFormatter = DateFormat('d MMM yyyy', 'id_ID');
@@ -153,18 +155,13 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
         _pdfBytes = null; // berkas mungkin berubah (reissue/void) — muat ulang.
         _pdfError = null;
       });
-      // Runutan bisa bertambah (balasan baru didaftarkan dari detail ini
-      // maupun dari surat lain) — muat ulang thread yang sudah pernah
-      // termuat; bila tab Runutan sedang terbuka, segera.
-      if (_threadLoaded) {
-        _threadLoaded = false;
-        if (_tabController.index == _runutanTabIndex) _loadThread();
-      }
+      // Muat runutan surat otomatis saat detail dibuka agar timeline langsung siap
+      _loadThread(force: true);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = ErrorUtils.sanitize(e,
-            fallback: 'Gagal memuat detail surat.');
+        _errorMessage =
+            ErrorUtils.sanitize(e, fallback: 'Gagal memuat detail surat.');
         _isLoading = false;
       });
     }
@@ -178,8 +175,16 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
     if (_tabController.index == _runutanTabIndex) _loadThread();
   }
 
-  Future<void> _loadThread() async {
-    if (_threadLoading || _threadLoaded) return;
+  /// Buka tab Runutan dari header/Info — jalan pintas agar timeline
+  /// balasan tidak "tersembunyi" di tab terakhir.
+  void _openThreadTab() {
+    _tabController.animateTo(_runutanTabIndex);
+    _loadThread();
+  }
+
+  Future<void> _loadThread({bool force = false}) async {
+    if (_threadLoading) return;
+    if (_threadLoaded && !force) return;
     setState(() {
       _threadLoading = true;
       _threadError = null;
@@ -196,8 +201,8 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _threadError = ErrorUtils.sanitize(e,
-            fallback: 'Gagal memuat runutan surat.');
+        _threadError =
+            ErrorUtils.sanitize(e, fallback: 'Gagal memuat runutan surat.');
         _threadLoading = false;
       });
     }
@@ -281,9 +286,8 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
     final doc = _doc;
     if (doc == null || _acting) return;
     final recipient = doc.metadata?['recipient'];
-    final partyName = recipient is Map
-        ? (recipient['name']?.toString() ?? '')
-        : '';
+    final partyName =
+        recipient is Map ? (recipient['name']?.toString() ?? '') : '';
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -306,7 +310,8 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
 
   bool get _isTerbit => _doc?.status == 'terbit';
   bool get _isEditable =>
-      _doc != null && (_doc!.status == 'draft' || _doc!.status == 'menunggu_ttd');
+      _doc != null &&
+      (_doc!.status == 'draft' || _doc!.status == 'menunggu_ttd');
   bool get _isKua => _doc?.letterType?.code == 'KUA';
 
   /// URL halaman verifikasi publik — UUID surat, tanpa auth.
@@ -338,12 +343,18 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
     final doc = _doc;
     if (doc == null) return;
     const methodTitles = {
-      'b': ('Unggah PDF — tempel QR verifikasi',
-          'PDF baru ditempel QR pada posisi pilihan Anda.'),
-      'c': ('Unggah PDF ber-e-materai / TTE resmi',
-          'PDF final dari platform resmi, dipakai apa adanya.'),
-      'd': ('Pindai hasil tanda tangan basah',
-          'Foto/scan tiap halaman hasil ttd basah + meterai tempel.'),
+      'b': (
+        'Unggah PDF — tempel QR verifikasi',
+        'PDF baru ditempel QR pada posisi pilihan Anda.'
+      ),
+      'c': (
+        'Unggah PDF ber-e-materai / TTE resmi',
+        'PDF final dari platform resmi, dipakai apa adanya.'
+      ),
+      'd': (
+        'Pindai hasil tanda tangan basah',
+        'Foto/scan tiap halaman hasil ttd basah + meterai tempel.'
+      ),
     };
     final method = await showModalBottomSheet<String>(
       context: context,
@@ -394,6 +405,36 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
       ),
     );
     if (mounted) _loadDetail();
+  }
+
+  /// Hapus draf permanen — hanya status draft (menu disembunyikan untuk
+  /// status lain; backend tetap menjaga 409). Draf + lampiran + runutan
+  /// bersih; berbeda dari "Batalkan surat" yang hanya menandai void.
+  Future<void> _deleteDraft() async {
+    final doc = _doc;
+    if (doc == null || _acting || doc.status != 'draft') return;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Hapus draf',
+      content: 'Draf "${doc.subject}" dihapus permanen beserta lampirannya '
+          'dan tidak bisa dikembalikan. Lanjutkan?',
+      confirmText: 'Hapus',
+      isDestructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _acting = true);
+    try {
+      await _service.deleteDraft(doc.id);
+      if (!mounted) return;
+      showSuccessSnackBar(context, 'Draf surat dihapus.');
+      Navigator.of(context).pop(true); // kembali ke arsip (list refresh).
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackBar(context, e);
+        setState(() => _acting = false);
+      }
+    }
   }
 
   /// Batalkan surat (semua jenis; draft|menunggu_ttd|terbit) — alasan wajib.
@@ -498,36 +539,18 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
       titleText: 'Detail Surat',
       bodyPadding: EdgeInsets.zero,
       actions: [
-        if (doc != null && _menuItems(doc).isNotEmpty)
-          PopupMenuButton<String>(
+        // Menu aksi sebagai tombol ⋮ (tooltip "Aksi Surat") yang membuka
+        // bottom sheet berikon — aksi destruktif terpisah & berkonfirmasi.
+        if (doc != null && !_acting)
+          LetterActionMenuButton(
             tooltip: 'Aksi Surat',
-            enabled: !_acting,
-            onSelected: (value) {
-              switch (value) {
-                case 'edit':
-                  _editDraft();
-                case 'reissue':
-                  _reissue();
-                case 'revoke':
-                  _revoke();
-                case 'void':
-                  _voidDocument();
-                case 'register_reply':
-                  _registerExternalReply();
-              }
-            },
-            itemBuilder: (context) => [
-              for (final item in _menuItems(doc))
-                PopupMenuItem(
-                  value: item.$1,
-                  child: Text(item.$2),
-                ),
-            ],
+            onTap: () => _openActions(doc),
           ),
       ],
       body: SafeArea(
         top: true,
-        bottom: false,
+        // bottom: true — konten tab tidak tertutup home indicator.
+        bottom: true,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
@@ -547,15 +570,22 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                     : Column(
                         children: [
                           _buildHeader(context, doc),
+                          // 4 tab — label seluruhnya utuh di lebar ponsel
+                          // tanpa scroll. Riwayat penerbitan pindah ke
+                          // seksi tab Info.
                           TabBar(
                             controller: _tabController,
                             isScrollable: false,
-                            tabs: const [
-                              Tab(text: 'Info'),
-                              Tab(text: 'Terbitan'),
-                              Tab(text: 'PDF'),
-                              Tab(text: 'Verifikasi'),
-                              Tab(text: 'Runutan'),
+                            tabs: [
+                              const Tab(text: 'Info'),
+                              const Tab(text: 'PDF'),
+                              const Tab(text: 'Verifikasi'),
+                              Tab(
+                                text:
+                                    _thread != null && _thread!.nodes.length > 1
+                                        ? 'Runutan (${_thread!.nodes.length})'
+                                        : 'Runutan',
+                              ),
                             ],
                           ),
                           Expanded(
@@ -566,8 +596,14 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                                   document: doc,
                                   dateFormatter: _dateFormatter,
                                   onOpenAttachment: _openAttachment,
+                                  thread: _thread,
+                                  threadLoading: _threadLoading,
+                                  threadError: _threadError,
+                                  onLoadThread: _loadThread,
+                                  onOpenThreadTab: _openThreadTab,
+                                  onNodeTap: _onThreadNodeTap,
+                                  onRegisterReply: _registerExternalReply,
                                 ),
-                                _IssuancesTab(document: doc),
                                 _PdfTab(
                                   document: doc,
                                   bytes: _pdfBytes,
@@ -578,8 +614,7 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
                                 ),
                                 _VerifyTab(
                                   verifyUrl: _verifyUrl,
-                                  hasActiveIssuance:
-                                      doc.activeIssuance != null,
+                                  hasActiveIssuance: doc.activeIssuance != null,
                                   onCopyUrl: _copyVerifyUrl,
                                   onOpenUrl: () => _openUrl(_verifyUrl),
                                 ),
@@ -600,55 +635,266 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
     );
   }
 
-  List<(String, String)> _menuItems(DocumentModel doc) {
+  List<LetterAction> _letterActions(DocumentModel doc) {
+    final isDraft = doc.status == 'draft';
     return [
-      if (_isEditable) ('edit', 'Edit'),
-      if (_isTerbit) ('register_reply', 'Daftarkan surat masuk (balasan pihak luar)'),
-      if (_isTerbit) ('reissue', 'Terbitkan ulang…'),
-      if (_isTerbit && _isKua) ('revoke', 'Cabut kuasa'),
-      // Void: draft|menunggu_ttd|terbit (guard backend); dicabut/dibatalkan
-      // tidak menawarkan apa pun.
-      if (_isTerbit || _isEditable) ('void', 'Batalkan surat'),
+      if (_isEditable)
+        const LetterAction(
+          value: 'edit',
+          label: 'Edit',
+          description: 'Lanjutkan mengisi draf di wizard.',
+          icon: Icons.edit_note_rounded,
+        ),
+      // Hapus permanen hanya untuk draft (belum diajukan/ternomor).
+      if (isDraft)
+        const LetterAction(
+          value: 'delete',
+          label: 'Hapus draf…',
+          description: 'Draf dihapus permanen beserta lampirannya.',
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+        ),
+      if (_isTerbit)
+        const LetterAction(
+          value: 'register_reply',
+          label: 'Daftarkan surat masuk (balasan pihak luar)',
+          description: 'Catat surat dari pihak luar sebagai balasan surat ini.',
+          icon: Icons.move_to_inbox_rounded,
+        ),
+      if (_isTerbit)
+        const LetterAction(
+          value: 'reissue',
+          label: 'Terbitkan ulang…',
+          description: 'Terbitkan ulang dengan PDF/QR atau hasil pindai baru.',
+          icon: Icons.publish_rounded,
+        ),
+      if (_isTerbit && _isKua)
+        const LetterAction(
+          value: 'revoke',
+          label: 'Cabut kuasa',
+          description: 'Tandai surat kuasa tidak berlaku lagi.',
+          icon: Icons.gavel_rounded,
+        ),
+      // Void HANYA untuk surat yang sudah diajukan/terbit — draf cukup
+      // dihapus (koreksi review: draft tanpa "Batalkan"); dicabut/
+      // dibatalkan tidak menawarkan apa pun.
+      if (_isTerbit || doc.status == 'menunggu_ttd')
+        const LetterAction(
+          value: 'void',
+          label: 'Batalkan surat',
+          description: 'Surat ditandai batal dan tidak bisa dipakai lagi.',
+          icon: Icons.cancel_outlined,
+          destructive: true,
+        ),
     ];
+  }
+
+  /// Bottom sheet aksi surat (ikon + keterangan + area ketuk besar) —
+  /// pengganti popup menu teks polos agar aksi destruktif tidak mudah
+  /// salah ketuk.
+  Future<void> _openActions(DocumentModel doc) async {
+    final value = await showLetterActionSheet(
+      context,
+      title: doc.subject,
+      subtitle: [doc.number, doc.statusLabel].whereType<String>().join(' • '),
+      actions: _letterActions(doc),
+    );
+    if (!mounted || value == null) return;
+    switch (value) {
+      case 'edit':
+        await _editDraft();
+      case 'delete':
+        await _deleteDraft();
+      case 'reissue':
+        await _reissue();
+      case 'revoke':
+        await _revoke();
+      case 'void':
+        await _voidDocument();
+      case 'register_reply':
+        await _registerExternalReply();
+    }
   }
 
   Widget _buildHeader(BuildContext context, DocumentModel doc) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final type = doc.letterType;
+    final hasThread = (_thread?.nodes.length ?? 0) > 1;
+
     return Container(
       width: double.infinity,
-      color: colorScheme.surface,
+      margin: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
       padding: AppSpacing.paddingMD,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            doc.number ?? 'Belum bernomor',
-            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: AppSpacing.xs),
           Row(
             children: [
+              if (type != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.6),
+                    borderRadius: AppSpacing.borderRadiusSM,
+                  ),
+                  child: Text(
+                    type.code,
+                    style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
               Expanded(
                 child: Text(
-                  [
-                    if (doc.letterType != null) doc.letterType!.name,
-                    if (doc.date != null)
-                      _dateFormatter.format(doc.date!)
-                    else
-                      'Tanpa tanggal',
-                  ].join(' • '),
-                  style: textTheme.bodyMedium
-                      ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  type?.name ?? 'Surat Perusahaan',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              const SizedBox(width: AppSpacing.sm),
               DocumentStatusBadge(document: doc),
             ],
           ),
-          if (doc.inReplyTo != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            _InReplyToChip(ref: doc.inReplyTo!, onTap: _openInReplyTo),
-          ],
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            doc.subject,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs + 2),
+          Row(
+            children: [
+              Icon(Icons.tag_rounded,
+                  size: 14, color: colorScheme.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Flexible(
+                child: InkWell(
+                  onTap: doc.number != null
+                      ? () {
+                          Clipboard.setData(ClipboardData(text: doc.number!));
+                          showInfoSnackBar(context, 'Nomor surat disalin');
+                        }
+                      : null,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          doc.number ?? 'Belum bernomor',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (doc.number != null) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.copy_rounded,
+                            size: 12, color: colorScheme.onSurfaceVariant),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              if (doc.date != null) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  '• ${_dateFormatter.format(doc.date!)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (doc.inReplyTo != null)
+                _InReplyToChip(ref: doc.inReplyTo!, onTap: _openInReplyTo),
+              ActionChip(
+                avatar: Icon(
+                  Icons.alt_route_rounded,
+                  size: 16,
+                  color: hasThread
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
+                backgroundColor: hasThread
+                    ? colorScheme.primaryContainer.withValues(alpha: 0.45)
+                    : null,
+                side: hasThread
+                    ? BorderSide(
+                        color: colorScheme.primary.withValues(alpha: 0.3))
+                    : null,
+                label: Text(
+                  hasThread
+                      ? '${_thread!.nodes.length} Surat dalam runutan'
+                      : 'Lihat runutan',
+                  style: TextStyle(
+                    fontWeight: hasThread ? FontWeight.bold : FontWeight.normal,
+                    color: hasThread ? colorScheme.primary : null,
+                  ),
+                ),
+                onPressed: _openThreadTab,
+                visualDensity: VisualDensity.compact,
+              ),
+              if (doc.status == 'terbit')
+                ActionChip(
+                  avatar: Icon(
+                    Icons.move_to_inbox_rounded,
+                    size: 16,
+                    color: colorScheme.primary,
+                  ),
+                  label: const Text('Catat balasan masuk'),
+                  onPressed: _registerExternalReply,
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -658,8 +904,7 @@ class _DocumentDetailPageState extends State<DocumentDetailPage>
 
   Future<void> _openAttachment(AttachmentModel attachment) async {
     // Endpoint publik stream lampiran — hanya tersedia untuk surat terbit.
-    await _openUrl(
-        '$_verifyUrl/attachments/${attachment.id}');
+    await _openUrl('$_verifyUrl/attachments/${attachment.id}');
   }
 
   Future<void> _openUrl(String url) async {
@@ -685,11 +930,25 @@ class _InfoTab extends StatelessWidget {
   final DocumentModel document;
   final DateFormat dateFormatter;
   final void Function(AttachmentModel attachment) onOpenAttachment;
+  final ThreadModel? thread;
+  final bool threadLoading;
+  final String? threadError;
+  final VoidCallback onLoadThread;
+  final VoidCallback onOpenThreadTab;
+  final ValueChanged<ThreadNodeModel> onNodeTap;
+  final VoidCallback? onRegisterReply;
 
   const _InfoTab({
     required this.document,
     required this.dateFormatter,
     required this.onOpenAttachment,
+    required this.thread,
+    required this.threadLoading,
+    required this.threadError,
+    required this.onLoadThread,
+    required this.onOpenThreadTab,
+    required this.onNodeTap,
+    this.onRegisterReply,
   });
 
   @override
@@ -697,16 +956,15 @@ class _InfoTab extends StatelessWidget {
     return ListView(
       padding: AppSpacing.paddingMD,
       children: [
-        _section(context, 'Perihal', [
-          Text(document.subject, style: Theme.of(context).textTheme.bodyLarge),
-        ]),
+        _runutanSection(context),
         _section(context, 'Ringkas', [
           _row(context, 'Jenis', document.letterType?.name),
           _row(context, 'Klasifikasi', document.classificationLabel),
           _row(context, 'Unit', document.unit),
           _row(
               context,
-              'Tanggal', document.date != null
+              'Tanggal',
+              document.date != null
                   ? dateFormatter.format(document.date!)
                   : null),
           if (document.createdBy != null)
@@ -715,10 +973,124 @@ class _InfoTab extends StatelessWidget {
         ..._metadataSections(context),
         _signersSection(context),
         _attachmentsSection(context),
+        // Riwayat penerbitan (eks-tab Terbitan): sekadar riwayat — cukup
+        // sebagai seksi di Info agar tab utama tetap 4 dan label utuh.
+        if (document.issuances.isNotEmpty) ...[
+          _section(context, 'Riwayat penerbitan', [
+            IssuanceTimeline(issuances: document.issuances),
+          ]),
+        ],
         ..._bodySection(context),
         const SizedBox(height: AppSpacing.lg),
       ],
     );
+  }
+
+  /// Ringkasan runutan di tab Info — timeline balasan tidak lagi hanya
+  /// tersembunyi di tab terakhir. Dimuat atas permintaan (lazy) agar detail
+  /// surat berdiri sendiri tidak menambah request.
+  Widget _runutanSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final nodes = thread?.nodes ?? const <ThreadNodeModel>[];
+    final hasThread = nodes.length > 1;
+
+    return _section(context, 'Runutan surat', [
+      if (threadLoading)
+        Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Memuat runutan surat…', style: textTheme.bodySmall),
+          ],
+        )
+      else if (threadError != null) ...[
+        Text(
+          threadError!,
+          style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: onLoadThread,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Coba lagi'),
+          ),
+        ),
+      ] else if (thread == null) ...[
+        Text(
+          'Surat ini bisa jadi bagian dari rangkaian balasan. Tampilkan '
+          'runutan untuk melihat surat yang dibalas dan balasan '
+          'berikutnya dalam satu garis waktu.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            onPressed: onLoadThread,
+            icon: const Icon(Icons.alt_route_rounded, size: 18),
+            label: const Text('Tampilkan runutan'),
+          ),
+        ),
+      ] else if (!hasThread) ...[
+        Text(
+          'Surat ini berdiri sendiri — belum ada surat balasan atau tindak lanjut yang tertaut.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            if (document.status == 'terbit' && onRegisterReply != null)
+              FilledButton.tonalIcon(
+                onPressed: onRegisterReply,
+                icon: const Icon(Icons.move_to_inbox_rounded, size: 18),
+                label: const Text('Catat balasan pihak luar'),
+              ),
+            TextButton.icon(
+              onPressed: onOpenThreadTab,
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('Buka tab Runutan'),
+            ),
+          ],
+        ),
+      ] else ...[
+        Text(
+          '${nodes.length} surat dalam satu runutan. Ketuk surat untuk '
+          'membuka detailnya.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        LetterThreadTimeline(
+          thread: thread!,
+          currentNodeType: 'document',
+          currentNodeId: document.id,
+          onNodeTap: onNodeTap,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: onOpenThreadTab,
+            icon: const Icon(Icons.open_in_new_rounded, size: 18),
+            label: const Text('Buka tab Runutan'),
+          ),
+        ),
+      ],
+    ]);
   }
 
   /// Render map metadata backend (`recipient` / `specific` / `validity` +
@@ -733,6 +1105,7 @@ class _InfoTab extends StatelessWidget {
     if (recipient is Map) {
       widgets.add(_section(context, 'Penerima', [
         _row(context, 'Nama', recipient['name']?.toString()),
+        _row(context, 'Jabatan/instansi', recipient['title']?.toString()),
         _row(context, 'No. identitas', recipient['identity_no']?.toString()),
         _row(context, 'Alamat', recipient['address']?.toString()),
       ]));
@@ -754,7 +1127,8 @@ class _InfoTab extends StatelessWidget {
       final label = mode == 'until_date' && parsed != null
           ? 'Sampai ${parsed.day}/${parsed.month}/${parsed.year}'
           : 'Tanpa batas';
-      widgets.add(_section(context, 'Masa berlaku', [_row(context, 'Berlaku', label)]));
+      widgets.add(
+          _section(context, 'Masa berlaku', [_row(context, 'Berlaku', label)]));
     }
 
     // Key tak dikenal ditampilkan apa adanya (tidak menyembunyikan data).
@@ -874,9 +1248,9 @@ class _InfoTab extends StatelessWidget {
     );
   }
 
-  static String _humanizeKey(String key) =>
-      key.isEmpty ? key : '${key[0].toUpperCase()}${key.substring(1)}'
-          .replaceAll('_', ' ');
+  static String _humanizeKey(String key) => key.isEmpty
+      ? key
+      : '${key[0].toUpperCase()}${key.substring(1)}'.replaceAll('_', ' ');
 }
 
 class _SignerRow extends StatelessWidget {
@@ -987,8 +1361,7 @@ class _AttachmentRow extends StatelessWidget {
               tooltip: 'Buka lampiran',
               iconSize: 20,
               onPressed: onOpen,
-              icon: Icon(Icons.open_in_new_rounded,
-                  color: colorScheme.primary),
+              icon: Icon(Icons.open_in_new_rounded, color: colorScheme.primary),
             ),
         ],
       ),
@@ -996,31 +1369,8 @@ class _AttachmentRow extends StatelessWidget {
   }
 }
 
-// ——— tab Terbitan ———
-
-class _IssuancesTab extends StatelessWidget {
-  final DocumentModel document;
-
-  const _IssuancesTab({required this.document});
-
-  @override
-  Widget build(BuildContext context) {
-    if (document.issuances.isEmpty) {
-      return const EmptyState(
-        icon: Icons.history_rounded,
-        title: 'Belum pernah diterbitkan.',
-        subtitle: 'Riwayat penerbitan muncul setelah surat diterbitkan.',
-      );
-    }
-    return ListView(
-      padding: AppSpacing.paddingMD,
-      children: [
-        IssuanceTimeline(issuances: document.issuances),
-        const SizedBox(height: AppSpacing.lg),
-      ],
-    );
-  }
-}
+// Riwayat penerbitan kini seksi di tab Info (eks-tab Terbitan) —
+// _IssuancesTab dihapus.
 
 // ——— tab PDF ———
 
@@ -1287,8 +1637,8 @@ class _ThreadTab extends StatelessWidget {
       padding: AppSpacing.paddingMD,
       children: [
         LetterThreadTimeline(
-          thread: thread ??
-              const ThreadModel(rootType: '', rootId: '', nodes: []),
+          thread:
+              thread ?? const ThreadModel(rootType: '', rootId: '', nodes: []),
           currentNodeType: 'document',
           currentNodeId: documentId,
           onNodeTap: onNodeTap,
@@ -1414,8 +1764,7 @@ class _RevokeDialogState extends State<_RevokeDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-              'Kuasa yang dicabut tidak berlaku lagi; tanggal & alasan '
+          const Text('Kuasa yang dicabut tidak berlaku lagi; tanggal & alasan '
               'tercatat di halaman verifikasi publik.'),
           const SizedBox(height: AppSpacing.md),
           InkWell(
@@ -1471,10 +1820,8 @@ String letterHtmlToPlainText(String html) {
   var text = html
       .replaceAll(RegExp(r'<(br|BR)\s*/?>'), '\n')
       .replaceAllMapped(
-          RegExp(r'</(p|div|h[1-6]|li|tr)>', caseSensitive: false),
-          (_) => '\n')
-      .replaceAllMapped(
-          RegExp(r'<li[^>]*>', caseSensitive: false), (_) => '• ')
+          RegExp(r'</(p|div|h[1-6]|li|tr)>', caseSensitive: false), (_) => '\n')
+      .replaceAllMapped(RegExp(r'<li[^>]*>', caseSensitive: false), (_) => '• ')
       .replaceAll(RegExp(r'<[^>]+>'), '')
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&amp;', '&')

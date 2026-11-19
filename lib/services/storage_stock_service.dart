@@ -44,6 +44,12 @@ class StorageStockService {
     });
   }
 
+  Future<void> updateStorageStock(int id, List<Map<String, dynamic>> items) async {
+    await _api.put('storage-stocks/$id', body: {
+      'items': items,
+    });
+  }
+
   Future<Map<String, int>> checkTodayStatus() async {
     final data = await _api.get('storage-stocks/today-status');
     if (data is! Map || data['success'] != true) {

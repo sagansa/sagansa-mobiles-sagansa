@@ -3,6 +3,10 @@ import 'package:intl/intl.dart';
 
 import '../services/salary_service.dart';
 import '../theme/app_spacing.dart';
+import '../utils/format_utils.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 
 class SalaryPayPage extends StatefulWidget {
@@ -39,8 +43,8 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
         _info = info;
         _isLoading = false;
         final defaults = info['defaults'] ?? {};
-        _paidAmountCtrl.text =
-            _parseInt(defaults['suggested_paid_amount']).toString();
+        _paidAmountCtrl.text = FormatUtils.formatAmount(
+            _parseInt(defaults['suggested_paid_amount']));
         _dateCtrl.text = defaults['today'] ??
             DateTime.now().toIso8601String().substring(0, 10);
       });
@@ -54,7 +58,7 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
   }
 
   Future<void> _submit() async {
-    final amount = double.tryParse(_paidAmountCtrl.text);
+    final amount = parseAmount(_paidAmountCtrl.text);
     if (amount == null || amount <= 0 || _dateCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Isi nominal (> 0) & tanggal.')));
@@ -84,7 +88,9 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Bayar Gaji')),
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(title: const Text('Bayar Gaji')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -100,7 +106,7 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
                   : SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
                         AppSpacing.md,
-                        AppSpacing.md,
+                        AppBarInsets.top(context),
                         AppSpacing.md,
                         AppSpacing.md + context.systemBottomInset,
                       ),
@@ -114,6 +120,7 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
                           TextField(
                             controller: _paidAmountCtrl,
                             keyboardType: TextInputType.number,
+                            inputFormatters: rupiahInputFormatters,
                             decoration: InputDecoration(
                               labelText: 'Nominal Dibayarkan',
                               prefixText: 'Rp ',
@@ -168,7 +175,7 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
     final total = _parseInt(breakdown['total_salary']);
     final daily = _parseInt(breakdown['daily_salary_total']);
     final expected = total - daily;
-    final input = double.tryParse(_paidAmountCtrl.text);
+    final input = parseAmount(_paidAmountCtrl.text);
     if (input == null) return null;
     final selisih = expected - input;
     if (selisih > 0) {
@@ -183,6 +190,18 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
   Widget _buildBankCard(ThemeData theme) {
     final bank = _info?['bank'] ?? {};
     return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMD,
         child: Column(
@@ -207,6 +226,18 @@ class _SalaryPayPageState extends State<SalaryPayPage> {
   Widget _buildBreakdownCard(ThemeData theme) {
     final b = _info?['breakdown'] ?? {};
     return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMD,
         child: Column(

@@ -48,6 +48,8 @@ class TokenStore {
     await _storage.delete(key: _keyTokenType);
   }
 
+  static const _keyMigrated = 'token_migrated_v1';
+
   /// One-shot migration: pindahkan token dari SharedPreferences (versi lama)
   /// ke secure storage, lalu hapus dari prefs. Idempoten.
   ///
@@ -57,6 +59,10 @@ class TokenStore {
   Future<void> migrateFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_keyMigrated) == true) {
+        return;
+      }
+
       final legacyToken = prefs.getString('token');
       final legacyType = prefs.getString('token_type');
 
@@ -73,6 +79,7 @@ class TokenStore {
       // prefs tidak lagi menyimpan token setelah migration pertama.
       await prefs.remove('token');
       await prefs.remove('token_type');
+      await prefs.setBool(_keyMigrated, true);
     } catch (e) {
       // Migration gagal (mis. secure storage tidak support / key corrupt).
       // Jangan crash — biarkan code path normal berjalan; user akan diminta

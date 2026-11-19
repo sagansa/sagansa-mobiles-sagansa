@@ -3,6 +3,7 @@ import '../models/procurement_model.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
+import 'safe_bottom_bar.dart';
 
 class ProcurementPipelineCard extends StatelessWidget {
   final RequestPurchase request;
@@ -293,7 +294,13 @@ class ProcurementPipelineCard extends StatelessWidget {
       ),
       builder: (ctx) {
         return Padding(
-          padding: const EdgeInsets.all(20),
+          // + inset sistem bawah (home indicator / gesture bar).
+          padding: EdgeInsets.only(
+            left: 20,
+            top: 20,
+            right: 20,
+            bottom: 20 + ctx.systemBottomInset,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

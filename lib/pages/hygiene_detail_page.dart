@@ -6,6 +6,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
 import '../utils/snackbar_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 
 /// Detail dari sebuah laporan kebersihan: info toko/tanggal/status +
 /// daftar tiap ruangan beserta foto, kondisi, dan catatan.
@@ -104,14 +106,26 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
         Navigator.pop(context, _dirty);
       },
       child: Scaffold(
-      appBar: AppBar(title: const Text('Detail Kebersihan')),
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(title: const Text('Detail Kebersihan')),
       body: SingleChildScrollView(
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD
+            .copyWith(top: AppBarInsets.top(context)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Info Card
             Card(
+              elevation: 0,
+              color: colorScheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppSpacing.borderRadiusLG,
+                side: BorderSide(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  width: 1,
+                ),
+              ),
               child: Padding(
                 padding: AppSpacing.paddingMD,
                 child: Column(
@@ -163,6 +177,15 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
             if (_hygiene.notes != null && _hygiene.notes!.isNotEmpty) ...[
               AppSpacing.gapVerticalMD,
               Card(
+                elevation: 0,
+                color: colorScheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppSpacing.borderRadiusLG,
+                  side: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                ),
                 child: Padding(
                   padding: AppSpacing.paddingMD,
                   child: Column(
@@ -286,10 +309,12 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
                             ),
                             child: Text(
                               room.roomName ?? 'Ruangan',
-                              style: const TextStyle(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
                                 shadows: [
                                   Shadow(blurRadius: 2, color: Colors.black54)
                                 ],
@@ -317,13 +342,15 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
                                 children: [
                                   const Icon(Icons.notes,
                                       size: 12, color: Colors.amberAccent),
-                                  const SizedBox(width: 4),
+                                  AppSpacing.gapHorizontalXS,
                                   Expanded(
                                     child: Text(
                                       room.notes!,
-                                      style: const TextStyle(
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
                                         color: Colors.white,
-                                        fontSize: 10,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -362,7 +389,7 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
                                   saving: _isSaving,
                                   theme: theme,
                                 ),
-                                const SizedBox(width: 4),
+                                AppSpacing.gapHorizontalXS,
                                 _conditionButton(
                                   context: context,
                                   label: 'Kotor',
@@ -372,7 +399,7 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
                                   saving: _isSaving,
                                   theme: theme,
                                 ),
-                                const SizedBox(width: 4),
+                                AppSpacing.gapHorizontalXS,
                                 _conditionButton(
                                   context: context,
                                   label: 'Tdk Sesuai',
@@ -427,8 +454,7 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
           child: Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 10,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               fontWeight: active ? FontWeight.bold : FontWeight.w500,
               color: Colors.white,
             ),
@@ -468,9 +494,9 @@ class _HygieneDetailPageState extends State<HygieneDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
+          appBar: GlassAppBar(
             backgroundColor: colorScheme.onSurface.withValues(alpha: 0.87),
-            iconTheme: IconThemeData(color: colorScheme.surface),
+            foregroundColor: colorScheme.surface,
             title: Text('Foto Ruangan',
                 style: TextStyle(color: colorScheme.surface)),
           ),

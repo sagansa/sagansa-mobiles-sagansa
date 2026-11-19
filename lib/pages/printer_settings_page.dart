@@ -3,9 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../providers/printer_provider.dart';
 import '../services/thermal_printer_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/constants.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 
 /// Halaman pengaturan printer thermal untuk cetak stiker.
 ///
@@ -192,11 +196,10 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? AppColors.error : AppColors.success,
-      ),
+    showAppSnackBar(
+      context,
+      message,
+      background: isError ? AppColors.error : AppColors.success,
     );
   }
 
@@ -206,12 +209,17 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('PENGATURAN PRINTER STIKER')),
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(title: const Text('PENGATURAN PRINTER STIKER')),
       body: SafeArea(
+        top: false,
+        bottom: true,
         child: Consumer<PrinterProvider>(
           builder: (context, provider, _) {
             return ListView(
-              padding: AppSpacing.paddingMD,
+              padding: AppSpacing.paddingMD.copyWith(
+                  top: AppBarInsets.top(context)),
               children: [
                 _buildEnableSection(provider, colorScheme, textTheme),
                 AppSpacing.gapVerticalMD,
@@ -359,10 +367,7 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
                           )
                         : const Icon(Icons.wifi_find, size: 18),
                     label: const Text('Tes Koneksi'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colorScheme.primary,
-                      side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
-                    ),
+                    style: AppButtonStyle.outlined(),
                   ),
                 ),
                 AppSpacing.gapHorizontalSM,
@@ -457,10 +462,7 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
                 onPressed: _saveDimensions,
                 icon: const Icon(Icons.save_outlined, size: 18),
                 label: const Text('Simpan Ukuran'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colorScheme.primary,
-                  side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
-                ),
+                style: AppButtonStyle.outlined(),
               ),
             ),
           ],
@@ -522,6 +524,7 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
               ),
             ),
             IconButton(
+              tooltip: 'Kurangi',
               icon: Icon(Icons.remove_circle_outline, color: AppColors.info),
               onPressed: provider.copies <= PrinterConstants.minCopies
                   ? null
@@ -532,6 +535,7 @@ class _PrinterSettingsPageState extends State<PrinterSettingsPage> {
               style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             IconButton(
+              tooltip: 'Tambah',
               icon: Icon(Icons.add_circle_outline, color: AppColors.info),
               onPressed: provider.copies >= PrinterConstants.maxCopies
                   ? null

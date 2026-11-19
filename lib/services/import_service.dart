@@ -17,6 +17,76 @@ class ImportBlockedException implements Exception {
   String toString() => message;
 }
 
+/// Satu kurs resolved untuk satu tanggal — hasil backend terpusat
+/// (`GET /currency-rates`). [source]: `manual` (input admin, menimpa),
+/// `public` (referensi publik; [sourceDate] ≠ tanggal diminta berarti
+/// kurs tanggal terdekat), `latest` (jatuh ke kurs terkini).
+class CurrencyRateEntry {
+  final double rate;
+  final String source;
+  final String sourceDate;
+
+  const CurrencyRateEntry({
+    required this.rate,
+    required this.source,
+    required this.sourceDate,
+  });
+
+  factory CurrencyRateEntry.fromJson(Map<String, dynamic> json) {
+    return CurrencyRateEntry(
+      rate: (json['rate'] as num).toDouble(),
+      source: (json['source'] ?? 'public').toString(),
+      sourceDate: (json['source_date'] ?? '').toString(),
+    );
+  }
+}
+
+/// Kurs pasangan USD → VND per tanggal + kurs terkini (tersimpan terpusat
+/// di server; server pula yang mengambil/meng-cache referensi publik).
+class CurrencyRatesResult {
+  final double? latestRate;
+  final String? latestDate;
+  final Map<String, CurrencyRateEntry> rates;
+
+  const CurrencyRatesResult({
+    this.latestRate,
+    this.latestDate,
+    this.rates = const {},
+  });
+
+  factory CurrencyRatesResult.fromJson(Map<String, dynamic> json) {
+    final raw = json['rates'];
+    return CurrencyRatesResult(
+      latestRate: json['latest'] == null
+          ? null
+          : ((json['latest'] as Map<String, dynamic>)['rate'] as num?)
+              ?.toDouble(),
+      latestDate: json['latest'] == null
+          ? null
+          : ((json['latest'] as Map<String, dynamic>)['date'] ?? '')
+              .toString(),
+      rates: raw is Map<String, dynamic>
+          ? raw.map((k, v) => MapEntry(
+              k, CurrencyRateEntry.fromJson(v as Map<String, dynamic>)))
+          : const {},
+    );
+  }
+
+  CurrencyRatesResult withEntry(String dayKey, CurrencyRateEntry? entry) {
+    final next = Map<String, CurrencyRateEntry>.from(rates);
+    if (entry == null) {
+      next.remove(dayKey);
+    } else {
+      next[dayKey] = entry;
+    }
+    return CurrencyRatesResult(
+      latestRate: latestRate,
+      latestDate: latestDate,
+      rates: next,
+    );
+  }
+}
+
 /// Service modul impor barang (tahapan + dokumen + HPP per produk).
 ///
 /// Endpoint: /import-purchases — tulis di-guard admin/super_admin di
@@ -24,6 +94,53 @@ class ImportBlockedException implements Exception {
 /// dilempar sebagai [ImportBlockedException] berisi blocker spesifik.
 class ImportService {
   final ApiClient _api = ApiClient();
+
+  /* ------------------------------------------------------ KURS USD→VND */
+
+  /// Kurs USD → VND resolved per tanggal + terkini (terpusat). [dates]
+  /// = tanggal pembelian (yyyy-MM-dd) yang dibutuhkan analisa.
+  Future<CurrencyRatesResult> getUsdVndRates([Set<String> dates = const {}]) async {
+    final body = await _api.getRaw('currency-rates', queryParams: {
+      'base': 'USD',
+      'quote': 'VND',
+      if (dates.isNotEmpty) 'dates': dates.toList().join(','),
+    });
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal memuat kurs USD → VND.');
+    }
+    return CurrencyRatesResult.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  /// Simpan kurs manual satu tanggal (menimpa referensi publik).
+  Future<CurrencyRateEntry> saveUsdVndRate(String date, double rate) async {
+    final body = await _api.postRaw('currency-rates', body: {
+      'base': 'USD',
+      'quote': 'VND',
+      'rate_date': date,
+      'rate': rate,
+    });
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal menyimpan kurs manual.');
+    }
+    return CurrencyRateEntry.fromJson(body['data'] as Map<String, dynamic>);
+  }
+
+  /// Hapus kurs manual satu tanggal — kembali ke referensi publik.
+  /// Return resolved entry setelah hapus (bisa null bila tak tersedia).
+  Future<CurrencyRateEntry?> deleteUsdVndRate(String date) async {
+    final body = await _api.delete('currency-rates', queryParams: {
+      'base': 'USD',
+      'quote': 'VND',
+      'date': date,
+    }) as Map<String, dynamic>;
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal menghapus kurs manual.');
+    }
+    final data = body['data'];
+    return data is Map<String, dynamic>
+        ? CurrencyRateEntry.fromJson(data)
+        : null;
+  }
 
   /// List + filter tahap. Return data, has_more, stage_counts.
   Future<Map<String, dynamic>> getImports({
@@ -50,14 +167,44 @@ class ImportService {
         ? rawCounts.map((k, v) => MapEntry(k, (v is num ? v.toInt() : 0)))
         : <String, int>{};
     final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
-    final hasMore = (pagination['current_page'] ?? 1) <
-        (pagination['last_page'] ?? 1);
+    final hasMore =
+        (pagination['current_page'] ?? 1) < (pagination['last_page'] ?? 1);
 
     return {
       'data': rows,
       'stage_counts': stageCounts,
       'has_more': hasMore,
     };
+  }
+
+  /// Impor terakhir (bukan cancelled) untuk template nominal realisasi
+  /// biaya pada form create. Produk tidak dipakai; pemanggil hanya
+  /// mengambil biaya non-pajak karena PPh/PPN bergantung pada nilai barang
+  /// yang baru.
+  Future<ImportPurchase?> getLatestForCostTemplate() async {
+    final rows = (await getImports(page: 1, perPage: 10))['data']
+        as List<ImportPurchase>;
+    for (final row in rows) {
+      if (row.stage.isCancelled) continue;
+      try {
+        return (await getDetail(row.id)).importPurchase;
+      } catch (_) {
+        // Lewati record yang gagal dimuat; coba kandidat berikutnya.
+      }
+    }
+    return null;
+  }
+
+  /// Trend harga satuan seluruh produk dari semua proses impor yang
+  /// tidak dibatalkan — tiap titik berisi harga valuta asli dan rupiah.
+  Future<List<ImportProductPriceTrend>> getPriceTrends() async {
+    final body = await _api.getRaw('import-purchases/price-trends');
+    if (body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal memuat trend harga.');
+    }
+    return (body['data'] as List<dynamic>? ?? [])
+        .map((e) => ImportProductPriceTrend.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
   }
 
   Future<ImportPurchaseDetail> getDetail(int id) async {
@@ -86,7 +233,8 @@ class ImportService {
   }
 
   /// Buat draft baru. [payload] = {supplier_id, currency, exchange_rate,
-  /// notes?, items: [...], costs: [...]} — return id record baru.
+  /// invoice_number?, purchase_date, items: [...], costs: [...]} — return
+  /// id record baru.
   Future<int> createImport(Map<String, dynamic> payload) async {
     final body = await _api.postRaw('import-purchases', body: payload);
     final data = body['data'] as Map<String, dynamic>?;
@@ -123,15 +271,20 @@ class ImportService {
     await _api.delete('import-purchases/$importId/documents/$documentId');
   }
 
-  /// Simpan jumlah diterima per item + realisasi biaya per cost.
+  /// Simpan jumlah diterima, pembayaran per tranche, biaya lain, dan notul.
+  /// Mengirim list kosong akan menghapus semua baris pada bagian tersebut.
   Future<void> receive(
     int importId, {
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>> items = const [],
     List<Map<String, dynamic>>? costs,
+    List<Map<String, dynamic>>? payments,
+    List<Map<String, dynamic>>? notuls,
   }) async {
     await _api.post('import-purchases/$importId/receive', body: {
       'items': items,
       if (costs != null) 'costs': costs,
+      if (payments != null) 'payments': payments,
+      if (notuls != null) 'notuls': notuls,
     });
   }
 
@@ -162,10 +315,6 @@ class ImportService {
     } on ApiException catch (e) {
       _blockedOrRethrow(e);
     }
-  }
-
-  Future<void> cancel(int importId) async {
-    await _api.post('import-purchases/$importId/cancel');
   }
 
   /// Hapus permanen proses impor (belum final) beserta item, biaya &

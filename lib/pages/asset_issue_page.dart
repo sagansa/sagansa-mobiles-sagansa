@@ -6,6 +6,9 @@ import '../providers/asset_provider.dart';
 import '../services/asset_issue_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import 'asset_detail_page.dart';
 
 /// Daftar issue (default: open) + aksi tutup issue.
@@ -98,12 +101,10 @@ class _AssetIssuePageState extends State<AssetIssuePage> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    final cs = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: cs.error,
-      ),
+    showAppSnackBar(
+      context,
+      msg,
+      background: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -113,7 +114,9 @@ class _AssetIssuePageState extends State<AssetIssuePage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Issue Aset'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
@@ -180,7 +183,9 @@ class _AssetIssuePageState extends State<AssetIssuePage> {
                       onRefresh: _fetch,
                       child: ListView.builder(
                         controller: _scrollController,
-                        padding: AppSpacing.screenPadding,
+                        padding: AppSpacing.screenPadding.copyWith(
+                          top: AppBarInsets.top(context),
+                        ),
                         itemCount: _issues.length + (_hasMore ? 1 : 0),
                         itemBuilder: (context, i) {
                           if (i == _issues.length) {

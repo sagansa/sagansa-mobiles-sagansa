@@ -19,11 +19,12 @@ class StatusBadge extends StatelessWidget {
 
   const StatusBadge({
     super.key,
-    required this.label,
+    String? label,
+    String? text,
     this.type = StatusType.neutral,
     this.size = BadgeSize.small,
     this.style = StatusBadgeStyle.filled,
-  });
+  }) : label = label ?? text ?? '';
 
   Color _textColor(BuildContext context) {
     final cs = Theme.of(context).colorScheme;

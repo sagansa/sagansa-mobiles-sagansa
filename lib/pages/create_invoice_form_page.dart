@@ -10,6 +10,9 @@ import '../../services/procurement_service.dart';
 import '../../services/supplier_service.dart';
 import '../../theme/app_spacing.dart';
 import '../models/procurement_model.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 
@@ -142,7 +145,7 @@ class _CreateInvoiceFormPageState extends State<CreateInvoiceFormPage> {
 
   int _itemSubtotal(Map<String, dynamic> item) {
     final price =
-        int.tryParse((item['priceCtrl'] as TextEditingController).text) ?? 0;
+        parseAmountInt((item['priceCtrl'] as TextEditingController).text);
     final qty =
         int.tryParse((item['qtyCtrl'] as TextEditingController).text) ?? 0;
     return price * qty;
@@ -334,7 +337,10 @@ class _CreateInvoiceFormPageState extends State<CreateInvoiceFormPage> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Buat Invoice'),
       ),
       body: _isLoadingData
@@ -357,509 +363,553 @@ class _CreateInvoiceFormPageState extends State<CreateInvoiceFormPage> {
                 )
               : _isSubmitting
                   ? const Center(child: CircularProgressIndicator())
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: ListView(
-                            padding: AppSpacing.paddingMD,
-                            children: [
-                              Card(
-                                child: Padding(
-                                  padding: AppSpacing.paddingMD,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Informasi Toko & Supplier',
-                                          style: textTheme.titleSmall?.copyWith(
-                                              fontWeight: FontWeight.bold)),
-                                      AppSpacing.gapVerticalSM,
-                                      Row(
-                                        children: [
-                                          Icon(Icons.store,
-                                              size: 20,
-                                              color:
-                                                  colorScheme.onSurfaceVariant),
-                                          AppSpacing.gapHorizontalSM,
-                                          Text(_storeName,
-                                              style: textTheme.bodyMedium
-                                                  ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600)),
-                                        ],
-                                      ),
-                                      AppSpacing.gapVerticalSM,
-                                      InkWell(
-                                        onTap: _pickSupplier,
-                                        child: InputDecorator(
-                                          decoration: const InputDecoration(
-                                            labelText: 'Supplier *',
-                                            suffixIcon: Icon(Icons.search),
-                                            isDense: true,
-                                          ),
-                                          child: Text(
-                                            _selectedSupplierName.isEmpty
-                                                ? 'Pilih supplier'
-                                                : _selectedSupplierName,
-                                            style:
-                                                textTheme.bodyMedium?.copyWith(
-                                              color: _selectedSupplierName
-                                                      .isEmpty
-                                                  ? colorScheme.onSurfaceVariant
-                                                  : null,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      AppSpacing.gapVerticalMD,
-                                      DropdownButtonFormField<int>(
-                                        initialValue: _paymentTypeId,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Tipe Pembayaran *',
-                                          isDense: true,
-                                        ),
-                                        items: [
-                                          const DropdownMenuItem(
-                                              value: 1,
-                                              child: Text('Transfer')),
-                                          const DropdownMenuItem(
-                                              value: 2, child: Text('Tunai')),
-                                        ],
-                                        onChanged: (val) {
-                                          if (val != null) {
-                                            setState(
-                                                () => _paymentTypeId = val);
-                                            _reloadDetailRequests(val);
-                                          }
-                                        },
-                                      ),
-                                      AppSpacing.gapVerticalSM,
-                                      InkWell(
-                                        onTap: _pickDate,
-                                        child: InputDecorator(
-                                          decoration: const InputDecoration(
-                                            labelText: 'Tanggal',
-                                            prefixIcon: Icon(
-                                                Icons.calendar_today,
-                                                size: 20),
-                                            isDense: true,
-                                          ),
-                                          child: Text(
-                                            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                  : SafeArea(
+                      top: true,
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: ListView(
+                              padding: AppSpacing.paddingMD,
+                              children: [
+                                Card(
+                                  elevation: 0,
+                                  color: colorScheme.surface,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusLG,
+                                    side: BorderSide(
+                                      color: colorScheme.outlineVariant
+                                          .withValues(alpha: 0.5),
+                                      width: 1,
+                                    ),
                                   ),
-                                ),
-                              ),
-                              AppSpacing.gapVerticalMD,
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Item Produk',
-                                      style: textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.bold)),
-                                  TextButton.icon(
-                                    onPressed: _addItem,
-                                    icon: const Icon(Icons.add, size: 18),
-                                    label: const Text('Tambah Item'),
-                                  ),
-                                ],
-                              ),
-                              if (_items.isEmpty)
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                      vertical: AppSpacing.lg),
-                                  child: Center(
-                                    child: Text(
-                                        'Belum ada item. Ketuk "Tambah Item" untuk mulai.',
-                                        style: textTheme.bodyMedium?.copyWith(
-                                            color:
-                                                colorScheme.onSurfaceVariant)),
-                                  ),
-                                ),
-                              ..._items.asMap().entries.map((entry) {
-                                final idx = entry.key;
-                                final item = entry.value;
-                                final priceCtrl =
-                                    item['priceCtrl'] as TextEditingController;
-                                final qtyCtrl =
-                                    item['qtyCtrl'] as TextEditingController;
-
-                                return Card(
-                                  margin: EdgeInsets.only(
-                                      bottom: AppSpacing.sectionGap),
                                   child: Padding(
-                                    padding: AppSpacing.cardPadding,
+                                    padding: AppSpacing.paddingMD,
                                     child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
+                                        Text('Informasi Toko & Supplier',
+                                            style: textTheme.titleSmall
+                                                ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                        AppSpacing.gapVerticalSM,
                                         Row(
                                           children: [
-                                            Expanded(
-                                              flex: 3,
-                                              child:
-                                                  DropdownButtonFormField<int>(
-                                                decoration:
-                                                    const InputDecoration(
-                                                  labelText: 'Produk',
-                                                  isDense: true,
-                                                ),
-                                                initialValue:
-                                                    item['detail_request_id'],
-                                                items: _detailRequests
-                                                    .map<
-                                                        DropdownMenuItem<
-                                                            int>>((dr) =>
-                                                        DropdownMenuItem<int>(
-                                                          value: dr['id'] is int
-                                                              ? dr['id']
-                                                              : int.parse(dr[
-                                                                      'id']
-                                                                  .toString()),
-                                                          child: Text(
-                                                            dr['detail_request_name'] ??
-                                                                dr['product']
-                                                                    ?['name'] ??
-                                                                '',
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                          ),
-                                                        ))
-                                                    .toList(),
-                                                onChanged: (val) {
-                                                  final dr = _detailRequests
-                                                      .firstWhere(
-                                                    (d) => d['id'] == val,
-                                                    orElse: () =>
-                                                        <String, dynamic>{},
-                                                  );
-                                                  // API mengirim riwayat harga sebagai list (maks. 5).
-                                                  // Ambil harga terbaru untuk pengisian form, tanpa cast
-                                                  // langsung yang akan gagal saat respons berupa JSArray.
-                                                  final rawLpp =
-                                                      dr['last_purchase_price'];
-                                                  final lppData = rawLpp is List
-                                                      ? (rawLpp.isNotEmpty &&
-                                                              rawLpp.first
-                                                                  is Map
-                                                          ? Map<String,
-                                                                  dynamic>.from(
-                                                              rawLpp.first
-                                                                  as Map)
-                                                          : null)
-                                                      : rawLpp is Map
-                                                          ? Map<String,
-                                                                  dynamic>.from(
-                                                              rawLpp)
-                                                          : null;
-                                                  final lpp = LastPurchasePrice
-                                                      .fromJson(lppData);
-                                                  setState(() {
-                                                    item['detail_request_id'] =
-                                                        val;
-                                                    item['productName'] =
-                                                        dr['detail_request_name'] ??
-                                                            dr['product']
-                                                                ?['name'] ??
-                                                            '';
-                                                    item['unitName'] =
-                                                        dr['product']?['unit']
-                                                                ?['unit'] ??
-                                                            '';
-                                                    item['lastPurchasePrice'] =
-                                                        lpp;
-                                                  });
-                                                },
-                                              ),
-                                            ),
+                                            Icon(Icons.store,
+                                                size: 20,
+                                                color: colorScheme
+                                                    .onSurfaceVariant),
                                             AppSpacing.gapHorizontalSM,
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.delete_outline),
-                                              color: colorScheme.error,
-                                              onPressed: () => _removeItem(idx),
-                                            ),
+                                            Text(_storeName,
+                                                style: textTheme.bodyMedium
+                                                    ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w600)),
                                           ],
                                         ),
-                                        if (item['detail_request_id'] !=
-                                            null) ...[
-                                          AppSpacing.gapVerticalSM,
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: TextFormField(
-                                                  controller: qtyCtrl,
-                                                  decoration: InputDecoration(
-                                                    labelText: 'Jumlah',
-                                                    suffixText: item['unitName']
-                                                        ?.toString(),
-                                                    isDense: true,
-                                                  ),
-                                                  keyboardType:
-                                                      TextInputType.number,
-                                                  onTap: () {
-                                                    qtyCtrl.selection =
-                                                        TextSelection(
-                                                      baseOffset: 0,
-                                                      extentOffset:
-                                                          qtyCtrl.text.length,
-                                                    );
-                                                  },
-                                                  onChanged: (_) =>
-                                                      setState(() {}),
-                                                ),
+                                        AppSpacing.gapVerticalSM,
+                                        InkWell(
+                                          onTap: _pickSupplier,
+                                          child: InputDecorator(
+                                            decoration: const InputDecoration(
+                                              labelText: 'Supplier *',
+                                              suffixIcon: Icon(Icons.search),
+                                              isDense: true,
+                                            ),
+                                            child: Text(
+                                              _selectedSupplierName.isEmpty
+                                                  ? 'Pilih supplier'
+                                                  : _selectedSupplierName,
+                                              style: textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                color: _selectedSupplierName
+                                                        .isEmpty
+                                                    ? colorScheme
+                                                        .onSurfaceVariant
+                                                    : null,
                                               ),
-                                              AppSpacing.gapHorizontalSM,
-                                              Expanded(
-                                                child: TextFormField(
-                                                  controller: priceCtrl,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                    labelText: 'Harga',
-                                                    prefixText: 'Rp ',
-                                                    isDense: true,
-                                                  ),
-                                                  keyboardType:
-                                                      TextInputType.number,
-                                                  onTap: () {
-                                                    priceCtrl.selection =
-                                                        TextSelection(
-                                                      baseOffset: 0,
-                                                      extentOffset:
-                                                          priceCtrl.text.length,
-                                                    );
-                                                  },
-                                                  onChanged: (_) =>
-                                                      setState(() {}),
-                                                ),
-                                              ),
-                                            ],
+                                            ),
                                           ),
-                                          if (_isAdmin &&
-                                              item['lastPurchasePrice'] !=
-                                                  null &&
-                                              (item['lastPurchasePrice']
-                                                      as LastPurchasePrice)
-                                                  .hasData) ...[
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.blue
-                                                    .withValues(alpha: 0.08),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                () {
-                                                  final lpp =
-                                                      item['lastPurchasePrice']
-                                                          as LastPurchasePrice;
-                                                  final priceStr = lpp.unitPrice
-                                                      .toStringAsFixed(0)
-                                                      .replaceAllMapped(
-                                                          RegExp(
-                                                              r'(\d)(?=(\d{3})+(?!\d))'),
-                                                          (m) =>
-                                                              '${m.group(1)}.');
-                                                  final supplier = lpp
-                                                              .supplierName !=
-                                                          null
-                                                      ? ' • ${lpp.supplierName}'
-                                                      : '';
-                                                  return 'Harga beli terakhir: Rp $priceStr/${item['unitName']}$supplier';
-                                                }(),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: Colors.blue,
-                                                      fontStyle:
-                                                          FontStyle.italic,
-                                                    ),
-                                              ),
-                                            ),
+                                        ),
+                                        AppSpacing.gapVerticalMD,
+                                        DropdownButtonFormField<int>(
+                                          initialValue: _paymentTypeId,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Tipe Pembayaran *',
+                                            isDense: true,
+                                          ),
+                                          items: [
+                                            const DropdownMenuItem(
+                                                value: 1,
+                                                child: Text('Transfer')),
+                                            const DropdownMenuItem(
+                                                value: 2, child: Text('Tunai')),
                                           ],
-                                          if (_itemSubtotal(item) > 0)
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.only(top: 4),
-                                              child: Align(
-                                                alignment:
-                                                    Alignment.centerRight,
-                                                child: Text(
-                                                  'Subtotal: Rp ${_itemSubtotal(item).toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
-                                                  style: textTheme.bodySmall
-                                                      ?.copyWith(
-                                                          color: colorScheme
-                                                              .primary),
-                                                ),
-                                              ),
+                                          onChanged: (val) {
+                                            if (val != null) {
+                                              setState(
+                                                  () => _paymentTypeId = val);
+                                              _reloadDetailRequests(val);
+                                            }
+                                          },
+                                        ),
+                                        AppSpacing.gapVerticalSM,
+                                        InkWell(
+                                          onTap: _pickDate,
+                                          child: InputDecorator(
+                                            decoration: const InputDecoration(
+                                              labelText: 'Tanggal',
+                                              prefixIcon: Icon(
+                                                  Icons.calendar_today,
+                                                  size: 20),
+                                              isDense: true,
                                             ),
-                                        ],
+                                            child: Text(
+                                              '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                            ),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                );
-                              }),
-                              AppSpacing.gapVerticalMD,
-                              Card(
-                                child: Padding(
-                                  padding: AppSpacing.paddingMD,
-                                  child: Column(
-                                    children: [
-                                      TextFormField(
-                                        controller: _taxesController,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Pajak',
-                                          prefixText: 'Rp ',
-                                          isDense: true,
-                                        ),
-                                        keyboardType: TextInputType.number,
-                                        onTap: () {
-                                          _taxesController.selection =
-                                              TextSelection(
-                                            baseOffset: 0,
-                                            extentOffset:
-                                                _taxesController.text.length,
-                                          );
-                                        },
-                                        onChanged: (v) => setState(() =>
-                                            _taxes = int.tryParse(v) ?? 0),
-                                      ),
-                                      AppSpacing.gapVerticalMD,
-                                      TextFormField(
-                                        controller: _discountsController,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Diskon',
-                                          prefixText: 'Rp ',
-                                          isDense: true,
-                                        ),
-                                        keyboardType: TextInputType.number,
-                                        onTap: () {
-                                          _discountsController.selection =
-                                              TextSelection(
-                                            baseOffset: 0,
-                                            extentOffset: _discountsController
-                                                .text.length,
-                                          );
-                                        },
-                                        onChanged: (v) => setState(() =>
-                                            _discounts = int.tryParse(v) ?? 0),
-                                      ),
-                                      const Divider(height: 24),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text('Total',
-                                              style: textTheme.titleMedium
-                                                  ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.bold)),
-                                          Text(
-                                            'Rp ${_totalPrice.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
-                                            style:
-                                                textTheme.titleMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: colorScheme.primary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
                                 ),
-                              ),
-                              AppSpacing.gapVerticalSM,
-
-                              // Bukti/Foto Invoice
-                              Text(
-                                _isAdmin
-                                    ? 'Bukti/Foto Invoice'
-                                    : 'Bukti/Foto Invoice (Wajib)',
-                                style: textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              if (_imageFile != null) ...[
-                                Stack(
+                                AppSpacing.gapVerticalMD,
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMD),
-                                      child: Image.file(
-                                        _imageFile!,
-                                        height: 180,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: CircleAvatar(
-                                        backgroundColor:
-                                            Colors.black.withValues(alpha: 0.6),
-                                        radius: 18,
-                                        child: IconButton(
-                                          icon: const Icon(Icons.close_rounded,
-                                              size: 18, color: Colors.white),
-                                          onPressed: () =>
-                                              setState(() => _imageFile = null),
-                                        ),
-                                      ),
+                                    Text('Item Produk',
+                                        style: textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.bold)),
+                                    FormAddButton(
+                                      label: 'Tambah Item',
+                                      onPressed: _addItem,
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
-                              ],
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _pickImage,
-                                  icon: Icon(
-                                    _imageFile == null
-                                        ? Icons.add_a_photo_rounded
-                                        : Icons.edit_rounded,
-                                    size: 18,
+                                if (_items.isEmpty)
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        vertical: AppSpacing.lg),
+                                    child: Center(
+                                      child: Text(
+                                          'Belum ada item. Ketuk "Tambah Item" untuk mulai.',
+                                          style: textTheme.bodyMedium?.copyWith(
+                                              color: colorScheme
+                                                  .onSurfaceVariant)),
+                                    ),
                                   ),
-                                  label: Text(
-                                    _imageFile == null
-                                        ? 'Unggah Foto Invoice'
-                                        : 'Ganti Foto Invoice',
-                                  ),
-                                ),
-                              ),
-                              AppSpacing.gapVerticalSM,
+                                ..._items.asMap().entries.map((entry) {
+                                  final idx = entry.key;
+                                  final item = entry.value;
+                                  final priceCtrl = item['priceCtrl']
+                                      as TextEditingController;
+                                  final qtyCtrl =
+                                      item['qtyCtrl'] as TextEditingController;
 
-                              TextFormField(
-                                controller: _notesController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Catatan',
-                                  border: OutlineInputBorder(),
+                                  return Card(
+                                    margin: EdgeInsets.only(
+                                        bottom: AppSpacing.sectionGap),
+                                    child: Padding(
+                                      padding: AppSpacing.cardPadding,
+                                      child: Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                flex: 3,
+                                                child: DropdownButtonFormField<
+                                                    int>(
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    labelText: 'Produk',
+                                                    isDense: true,
+                                                  ),
+                                                  initialValue:
+                                                      item['detail_request_id'],
+                                                  items: _detailRequests
+                                                      .map<
+                                                          DropdownMenuItem<
+                                                              int>>((dr) =>
+                                                          DropdownMenuItem<int>(
+                                                            value: dr['id']
+                                                                    is int
+                                                                ? dr['id']
+                                                                : int.parse(dr[
+                                                                        'id']
+                                                                    .toString()),
+                                                            child: Text(
+                                                              dr['detail_request_name'] ??
+                                                                  dr['product']
+                                                                      ?[
+                                                                      'name'] ??
+                                                                  '',
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                            ),
+                                                          ))
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    final dr = _detailRequests
+                                                        .firstWhere(
+                                                      (d) => d['id'] == val,
+                                                      orElse: () =>
+                                                          <String, dynamic>{},
+                                                    );
+                                                    // API mengirim riwayat harga sebagai list (maks. 5).
+                                                    // Ambil harga terbaru untuk pengisian form, tanpa cast
+                                                    // langsung yang akan gagal saat respons berupa JSArray.
+                                                    final rawLpp = dr[
+                                                        'last_purchase_price'];
+                                                    final lppData = rawLpp
+                                                            is List
+                                                        ? (rawLpp.isNotEmpty &&
+                                                                rawLpp.first
+                                                                    is Map
+                                                            ? Map<String,
+                                                                    dynamic>.from(
+                                                                rawLpp.first
+                                                                    as Map)
+                                                            : null)
+                                                        : rawLpp is Map
+                                                            ? Map<String,
+                                                                    dynamic>.from(
+                                                                rawLpp)
+                                                            : null;
+                                                    final lpp =
+                                                        LastPurchasePrice
+                                                            .fromJson(lppData);
+                                                    setState(() {
+                                                      item['detail_request_id'] =
+                                                          val;
+                                                      item['productName'] =
+                                                          dr['detail_request_name'] ??
+                                                              dr['product']
+                                                                  ?['name'] ??
+                                                              '';
+                                                      item['unitName'] =
+                                                          dr['product']?['unit']
+                                                                  ?['unit'] ??
+                                                              '';
+                                                      item['lastPurchasePrice'] =
+                                                          lpp;
+                                                    });
+                                                  },
+                                                ),
+                                              ),
+                                              AppSpacing.gapHorizontalSM,
+                                              IconButton(
+                                                tooltip: 'Hapus',
+                                                icon: const Icon(
+                                                    Icons.delete_outline),
+                                                color: colorScheme.error,
+                                                onPressed: () =>
+                                                    _removeItem(idx),
+                                              ),
+                                            ],
+                                          ),
+                                          if (item['detail_request_id'] !=
+                                              null) ...[
+                                            AppSpacing.gapVerticalSM,
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: TextFormField(
+                                                    controller: qtyCtrl,
+                                                    decoration: InputDecoration(
+                                                      labelText: 'Jumlah',
+                                                      suffixText:
+                                                          item['unitName']
+                                                              ?.toString(),
+                                                      isDense: true,
+                                                    ),
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    onTap: () {
+                                                      qtyCtrl.selection =
+                                                          TextSelection(
+                                                        baseOffset: 0,
+                                                        extentOffset:
+                                                            qtyCtrl.text.length,
+                                                      );
+                                                    },
+                                                    onChanged: (_) =>
+                                                        setState(() {}),
+                                                  ),
+                                                ),
+                                                AppSpacing.gapHorizontalSM,
+                                                Expanded(
+                                                  child: TextFormField(
+                                                    controller: priceCtrl,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                      labelText: 'Harga',
+                                                      prefixText: 'Rp ',
+                                                      isDense: true,
+                                                    ),
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    inputFormatters:
+                                                        rupiahInputFormatters,
+                                                    onTap: () {
+                                                      priceCtrl.selection =
+                                                          TextSelection(
+                                                        baseOffset: 0,
+                                                        extentOffset: priceCtrl
+                                                            .text.length,
+                                                      );
+                                                    },
+                                                    onChanged: (_) =>
+                                                        setState(() {}),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (_isAdmin &&
+                                                item['lastPurchasePrice'] !=
+                                                    null &&
+                                                (item['lastPurchasePrice']
+                                                        as LastPurchasePrice)
+                                                    .hasData) ...[
+                                              AppSpacing.gapVerticalXS,
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue
+                                                      .withValues(alpha: 0.08),
+                                                  borderRadius:
+                                                      AppSpacing.borderRadiusSM,
+                                                ),
+                                                child: Text(
+                                                  () {
+                                                    final lpp = item[
+                                                            'lastPurchasePrice']
+                                                        as LastPurchasePrice;
+                                                    final priceStr = lpp
+                                                        .unitPrice
+                                                        .toStringAsFixed(0)
+                                                        .replaceAllMapped(
+                                                            RegExp(
+                                                                r'(\d)(?=(\d{3})+(?!\d))'),
+                                                            (m) =>
+                                                                '${m.group(1)}.');
+                                                    final supplier = lpp
+                                                                .supplierName !=
+                                                            null
+                                                        ? ' • ${lpp.supplierName}'
+                                                        : '';
+                                                    return 'Harga beli terakhir: Rp $priceStr/${item['unitName']}$supplier';
+                                                  }(),
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: Colors.blue,
+                                                        fontStyle:
+                                                            FontStyle.italic,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                            if (_itemSubtotal(item) > 0)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    top: 4),
+                                                child: Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: Text(
+                                                    'Subtotal: Rp ${_itemSubtotal(item).toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
+                                                    style: textTheme.bodySmall
+                                                        ?.copyWith(
+                                                            color: colorScheme
+                                                                .primary),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }),
+                                AppSpacing.gapVerticalMD,
+                                Card(
+                                  elevation: 0,
+                                  color: colorScheme.surface,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusLG,
+                                    side: BorderSide(
+                                      color: colorScheme.outlineVariant
+                                          .withValues(alpha: 0.5),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: AppSpacing.paddingMD,
+                                    child: Column(
+                                      children: [
+                                        TextFormField(
+                                          controller: _taxesController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Pajak',
+                                            prefixText: 'Rp ',
+                                            isDense: true,
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters:
+                                              rupiahInputFormatters,
+                                          onTap: () {
+                                            _taxesController.selection =
+                                                TextSelection(
+                                              baseOffset: 0,
+                                              extentOffset:
+                                                  _taxesController.text.length,
+                                            );
+                                          },
+                                          onChanged: (v) => setState(
+                                              () => _taxes = parseAmountInt(v)),
+                                        ),
+                                        AppSpacing.gapVerticalMD,
+                                        TextFormField(
+                                          controller: _discountsController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Diskon',
+                                            prefixText: 'Rp ',
+                                            isDense: true,
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters:
+                                              rupiahInputFormatters,
+                                          onTap: () {
+                                            _discountsController.selection =
+                                                TextSelection(
+                                              baseOffset: 0,
+                                              extentOffset: _discountsController
+                                                  .text.length,
+                                            );
+                                          },
+                                          onChanged: (v) => setState(() =>
+                                              _discounts = parseAmountInt(v)),
+                                        ),
+                                        const Divider(height: 24),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text('Total',
+                                                style: textTheme.titleMedium
+                                                    ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold)),
+                                            Text(
+                                              'Rp ${_totalPrice.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
+                                              style: textTheme.titleMedium
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: colorScheme.primary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 3,
-                              ),
-                            ],
+                                AppSpacing.gapVerticalSM,
+
+                                // Bukti/Foto Invoice
+                                Text(
+                                  _isAdmin
+                                      ? 'Bukti/Foto Invoice'
+                                      : 'Bukti/Foto Invoice (Wajib)',
+                                  style: textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                if (_imageFile != null) ...[
+                                  Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: AppSpacing.borderRadiusMD,
+                                        child: Image.file(
+                                          _imageFile!,
+                                          height: 180,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: CircleAvatar(
+                                          backgroundColor: Colors.black
+                                              .withValues(alpha: 0.6),
+                                          radius: 18,
+                                          child: IconButton(
+                                            tooltip: 'Hapus',
+                                            icon: const Icon(
+                                                Icons.close_rounded,
+                                                size: 18,
+                                                color: Colors.white),
+                                            onPressed: () => setState(
+                                                () => _imageFile = null),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  AppSpacing.gapVerticalSM,
+                                ],
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _pickImage,
+                                    icon: Icon(
+                                      _imageFile == null
+                                          ? Icons.add_a_photo_rounded
+                                          : Icons.edit_rounded,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      _imageFile == null
+                                          ? 'Unggah Foto Invoice'
+                                          : 'Ganti Foto Invoice',
+                                    ),
+                                  ),
+                                ),
+                                AppSpacing.gapVerticalSM,
+
+                                TextFormField(
+                                  controller: _notesController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Catatan',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 3,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        SafeBottomBar(
-                          child: ModernButton(
-                            text: 'Buat Invoice',
-                            icon: Icons.receipt_long_outlined,
-                            onPressed: _submit,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+      bottomNavigationBar: SafeBottomBar(
+        child: ModernButton(
+          text: 'Buat Invoice',
+          icon: Icons.receipt_long_outlined,
+          height: 52,
+          onPressed: _isSubmitting ? null : _submit,
+          isLoading: _isSubmitting,
+        ),
+      ),
     );
   }
 }

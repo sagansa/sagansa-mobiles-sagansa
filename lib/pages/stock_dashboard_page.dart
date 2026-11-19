@@ -127,8 +127,7 @@ class _StockDashboardPageState extends State<StockDashboardPage> {
                       ),
                       child: Text(
                         '$_assetDueTodayCount Jatuh Tempo',
-                        style: const TextStyle(
-                          fontSize: 10,
+                        style: theme.textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: AppColors.warning,
                         ),

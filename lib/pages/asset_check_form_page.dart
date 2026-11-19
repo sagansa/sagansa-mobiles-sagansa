@@ -1,18 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 
 import '../models/asset_category_model.dart';
 import '../models/asset_model.dart';
 import '../providers/asset_provider.dart';
+import '../services/image_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 
 /// Form pemeriksaan aset: checklist dinamis per kategori, foto kondisi,
@@ -38,7 +41,6 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
   final Map<String, _CheckEntry> _checklist = {};
 
   // Foto.
-  final ImagePicker _picker = ImagePicker();
   final List<File> _photos = [];
 
   // Geotag.
@@ -159,15 +161,10 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
       _showError('Maksimal 5 foto.');
       return;
     }
-    final picked = await _picker.pickImage(
+    final photo = await ImageService.pickAndResizeImage(
       source: ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1024,
     );
-    if (picked != null) {
-      final compressed = await ImageUtils.compressImage(picked.path);
-      if (mounted) setState(() => _photos.add(compressed));
-    }
+    if (photo != null && mounted) setState(() => _photos.add(photo));
   }
 
   void _removePhoto(int i) => setState(() => _photos.removeAt(i));
@@ -184,12 +181,10 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    final cs = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: cs.error,
-      ),
+    showAppSnackBar(
+      context,
+      msg,
+      background: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -236,7 +231,9 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Pemeriksaan Aset'),
       ),
       body: _isLoading
@@ -281,8 +278,12 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
                           ),
                         )
                       : SafeArea(
+                          top: false,
+                          bottom: false,
                           child: ListView(
-                            padding: AppSpacing.screenPadding,
+                            padding: AppSpacing.screenPadding.copyWith(
+                              top: AppBarInsets.top(context),
+                            ),
                             children: [
                               _buildAssetHeader(theme, colorScheme),
                               const SizedBox(height: AppSpacing.sectionGap),
@@ -350,6 +351,15 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
   Widget _buildChecklistSection(ThemeData theme, ColorScheme cs) {
     if (_checklist.isEmpty) {
       return Card(
+        elevation: 0,
+        color: cs.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppSpacing.borderRadiusLG,
+          side: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
         child: const Padding(
           padding: AppSpacing.cardPadding,
           child: Text('Kategori ini tidak memiliki checklist baku.'),
@@ -357,6 +367,15 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
       );
     }
     return Card(
+      elevation: 0,
+      color: cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.cardPadding,
         child: Column(
@@ -383,6 +402,15 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
 
   Widget _buildSeveritySection(ThemeData theme, ColorScheme cs) {
     return Card(
+      elevation: 0,
+      color: cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.cardPadding,
         child: Column(
@@ -444,6 +472,15 @@ class _AssetCheckFormPageState extends State<AssetCheckFormPage> {
 
   Widget _buildPhotoSection(ThemeData theme, ColorScheme cs) {
     return Card(
+      elevation: 0,
+      color: cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.cardPadding,
         child: Column(

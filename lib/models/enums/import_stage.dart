@@ -77,4 +77,9 @@ enum ImportStage {
   bool get isTerminal => this == finalized || this == cancelled;
   bool get isCancelled => this == cancelled;
   bool get canReceive => this == arrival || this == receiving;
+
+  /// Realisasi (nominal, jumlah diterima, pembayaran, notul) boleh diisi
+  /// sejak draft sampai sebelum final — bypass alur tahap.
+  bool get canRealizeCosts =>
+      this != finalized && this != cancelled && this != unknown;
 }

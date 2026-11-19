@@ -23,6 +23,12 @@ extension SystemBottomInsetX on BuildContext {
 /// Pakai ini untuk SEMUA bar aksi bawah agar masalah "tertutup nav bar" tidak
 /// berulang setiap ada fitur baru.
 ///
+/// JANGAN bungkus [child] dengan `SafeArea` — bar ini sudah menambahkan inset
+/// sistem bawah sendiri; SafeArea bersarang membuat inset terhitung dua kali
+/// sehingga bar terasa "paddingnya terlalu tinggi". Untuk mencegah hal itu
+/// terulang, MediaQuery padding bawah dinolkan untuk child, jadi SafeArea
+/// bersarang sekalipun tidak menambahkan inset lagi.
+///
 /// ```dart
 /// Scaffold(
 ///   bottomSheet: SafeBottomBar(
@@ -41,6 +47,12 @@ class SafeBottomBar extends StatelessWidget {
   /// Tampilkan shadow halus di atas bar.
   final bool showShadow;
 
+  /// Nolkan inset sistem bawah. Set true saat bar ini ditata DI ATAS
+  /// keyboard (mis. lewat padding viewInsets di AppPageScaffold) — area
+  /// home indicator sudah tertutup keyboard; menambahkannya lagi hanya
+  /// membuat bar bengkak.
+  final bool suppressSystemInset;
+
   const SafeBottomBar({
     super.key,
     required this.child,
@@ -48,12 +60,13 @@ class SafeBottomBar extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     this.showTopBorder = true,
     this.showShadow = true,
+    this.suppressSystemInset = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final inset = context.systemBottomInset;
+    final inset = suppressSystemInset ? 0.0 : context.systemBottomInset;
     return Container(
       width: double.infinity,
       // Padding konten + inset sistem bawah (auto).
@@ -76,7 +89,14 @@ class SafeBottomBar extends StatelessWidget {
               ]
             : null,
       ),
-      child: child,
+      // Inset sistem bawah sudah ditambahkan pada padding di atas — nolkan
+      // padding bawah MediaQuery untuk child agar SafeArea bersarang tidak
+      // menumpuk inset yang sama (penyebab bar terasa terlalu tinggi).
+      child: MediaQuery.removePadding(
+        context: context,
+        removeBottom: true,
+        child: child,
+      ),
     );
   }
 }

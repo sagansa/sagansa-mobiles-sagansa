@@ -304,10 +304,15 @@ class DeliveryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ganti item order terpilih (khusus admin). Setelah sukses, order
+  /// Ganti item order terpilih (khusus admin). [shippingCost] opsional —
+  /// bila dikirim, ongkos kirim ikut diubah (total = items + ongkos kirim);
+  /// bila null, nilai lama di server dipertahankan. Setelah sukses, order
   /// terpilih diganti dengan data terbaru dari server sehingga detail
-  /// langsung menampilkan items dan total yang baru.
-  Future<void> updateOrderItems(List<Map<String, dynamic>> items) async {
+  /// langsung menampilkan items, ongkos kirim, dan total yang baru.
+  Future<void> updateOrderItems(
+    List<Map<String, dynamic>> items, {
+    int? shippingCost,
+  }) async {
     final order = _formState.selectedOrder;
     final orderId = int.tryParse(order?['id']?.toString() ?? '');
     if (order == null || orderId == null) {
@@ -317,6 +322,7 @@ class DeliveryProvider extends ChangeNotifier {
     final result = await presenceService.updateSalesOrderItems(
       orderId: orderId,
       items: items,
+      shippingCost: shippingCost,
     );
 
     if (result['success'] == true && result['data'] is Map<String, dynamic>) {

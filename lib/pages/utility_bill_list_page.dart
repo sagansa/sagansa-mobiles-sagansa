@@ -6,12 +6,12 @@ import '../models/utility_bill_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/utility_bill_service.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_page_scaffold.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/empty_state.dart';
-import '../widgets/filter_app_bar_action.dart';
 import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import 'utility_bill_detail_page.dart';
 import 'utility_bill_form_page.dart';
 
@@ -77,11 +77,15 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200 &&
         !_isLoadingMore &&
         _hasMore) {
-      _loadMore();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        if (!_isLoadingMore && _hasMore) _loadMore();
+      });
     }
   }
 
@@ -226,43 +230,42 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tagihan Utility'),
-        actions: [
+    return AppPageScaffold(
+      titleText: 'Tagihan Utility',
+      actions: [
+        BarButtonCluster(actions: [
           if (_hasActiveFilters)
-            IconButton(
-              icon: const Icon(Icons.filter_list_off),
-              onPressed: _clearFilters,
+            BarButtonSpec(
+              icon: Icons.filter_list_off,
               tooltip: 'Hapus Filter',
+              onTap: _clearFilters,
             ),
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
+          BarButtonSpec(
+            icon: Icons.tune,
+            tooltip: 'Filter',
+            badgeCount: _activeFilterCount,
             onTap: _openFilterSheet,
           ),
-        ],
-      ),
-      floatingActionButton:
-          _canManage ? AddFab(onPressed: () => _openForm()) : null,
+          if (_canManage)
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Tagihan Utility',
+              onTap: () => _openForm(),
+            ),
+        ]),
+      ],
       bottomNavigationBar: ModernBottomNav(
-        currentIndex: 2, // Ops tab
+        currentIndex: 4, // Ops tab
         onTap: (index) {},
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? _buildError()
-                    : !_hasLoaded
-                        ? const Center(child: CircularProgressIndicator())
-                        : _items.isEmpty
-                            ? _buildEmpty(colorScheme)
-                            : _buildList(colorScheme, textTheme),
-          ),
-        ],
-      ),
+      isLoading: _isLoading || !_hasLoaded,
+      errorMessage: _errorMessage,
+      onRetry: _fetch,
+      isEmpty: _items.isEmpty,
+      emptyState: _buildEmpty(),
+      bodyPadding: EdgeInsets.zero,
+      body: _buildList(colorScheme, textTheme),
     );
   }
 
@@ -272,7 +275,11 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
       child: ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(
-            16, 12, 16, ModernBottomNav.height + context.systemBottomInset),
+          AppSpacing.md,
+          AppBarInsets.top(context),
+          AppSpacing.md,
+          ModernBottomNav.clearance(context),
+        ),
         itemCount: _items.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, idx) {
           if (idx == _items.length) {
@@ -341,8 +348,14 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
                     const SizedBox(height: AppSpacing.xs),
                     Row(
                       children: [
-                        Icon(Icons.payments_rounded,
-                            size: 13, color: AppColors.info),
+                        const ExcludeSemantics(
+                          child: Icon(
+                            Icons.payments_rounded,
+                            size: 16,
+                            color: AppColors.info,
+                            semanticLabel: null,
+                          ),
+                        ),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Text(
@@ -359,8 +372,14 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
                     const SizedBox(height: AppSpacing.xs),
                     Row(
                       children: [
-                        Icon(Icons.calendar_today_rounded,
-                            size: 11, color: AppColors.info),
+                        const ExcludeSemantics(
+                          child: Icon(
+                            Icons.calendar_today_rounded,
+                            size: 16,
+                            color: AppColors.info,
+                            semanticLabel: null,
+                          ),
+                        ),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Text(
@@ -374,8 +393,14 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
                         ),
                         if (item.storeNickname != null) ...[
                           const SizedBox(width: AppSpacing.sm),
-                          Icon(Icons.store_rounded,
-                              size: 11, color: AppColors.info),
+                          const ExcludeSemantics(
+                            child: Icon(
+                              Icons.store_rounded,
+                              size: 16,
+                              color: AppColors.info,
+                              semanticLabel: null,
+                            ),
+                          ),
                           const SizedBox(width: AppSpacing.xs),
                           Flexible(
                             child: Text(
@@ -402,20 +427,7 @@ class _UtilityBillListPageState extends State<UtilityBillListPage> {
     );
   }
 
-  Widget _buildError() {
-    return EmptyState(
-      icon: Icons.error_outline_rounded,
-      title: _errorMessage!,
-      subtitle: 'Terjadi kesalahan saat memuat data',
-      action: ElevatedButton.icon(
-        onPressed: _fetch,
-        icon: const Icon(Icons.refresh_rounded),
-        label: const Text('Coba Lagi'),
-      ),
-    );
-  }
-
-  Widget _buildEmpty(ColorScheme colorScheme) {
+  Widget _buildEmpty() {
     return EmptyState(
       icon: Icons.receipt_long_rounded,
       title: 'Belum ada data tagihan utility.',

@@ -12,15 +12,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/fuel_service_payment_provider.dart';
 import '../services/fuel_service_service.dart';
 import '../services/image_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/add_fab.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/fuel_service_payment_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/list_thumbnail.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/modern_dropdown.dart';
+import 'fuel_service_detail_page.dart';
 import 'fuel_service_form_page.dart';
 
 class FuelServiceListPage extends StatefulWidget {
@@ -198,15 +202,16 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: ListView(
+          padding: EdgeInsets.only(top: AppBarInsets.top(context)),
         scrollDirection: Axis.horizontal,
         children: [
           // User filter (admin only — staff tetap lihat milik sendiri).
           if (_isAdmin) ...[
             _buildUserFilterChip(cs),
-            const SizedBox(width: 16),
+            AppSpacing.gapHorizontalMD,
             // Separator visual.
             Container(width: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
-            const SizedBox(width: 16),
+            AppSpacing.gapHorizontalMD,
           ],
           // Fuel/Service filter.
           _filterChip(
@@ -218,9 +223,9 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
             },
             options: const ['Semua', 'Fuel', 'Service'],
           ),
-          const SizedBox(width: 16),
+          AppSpacing.gapHorizontalMD,
           Container(width: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
-          const SizedBox(width: 16),
+          AppSpacing.gapHorizontalMD,
           // Status filter.
           _filterChip(
             cs: cs,
@@ -231,9 +236,9 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
             },
             options: const ['Semua', 'Pending', 'Lunas'],
           ),
-          const SizedBox(width: 16),
+          AppSpacing.gapHorizontalMD,
           Container(width: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
-          const SizedBox(width: 16),
+          AppSpacing.gapHorizontalMD,
           // Payment type filter (index 0=Semua, 1=Tunai(2), 2=Transfer(1)).
           _filterChip(
             cs: cs,
@@ -298,7 +303,10 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
             const SizedBox(width: 6),
             Text(
               'Memuat user...',
-              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
             ),
           ],
         ),
@@ -323,7 +331,7 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
           color: isSelected
               ? cs.primary
               : cs.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: AppSpacing.borderRadiusLG,
           border: Border.all(
             color: isSelected
                 ? cs.primary
@@ -338,11 +346,10 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
               size: 14,
               color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
             ),
-            const SizedBox(width: 4),
+            AppSpacing.gapHorizontalXS,
             Text(
               userLabel,
-              style: TextStyle(
-                fontSize: 11,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 color: isSelected ? cs.onPrimary : cs.onSurfaceVariant,
               ),
@@ -378,15 +385,14 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: selected ? cs.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppSpacing.borderRadiusMD,
                 border: Border.all(
                   color: selected ? cs.primary : cs.outlineVariant.withValues(alpha: 0.5),
                 ),
               ),
               child: Text(
                 options[i],
-                style: TextStyle(
-                  fontSize: 11,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                   color: selected ? cs.onPrimary : cs.onSurfaceVariant,
                 ),
@@ -415,19 +421,29 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: Text(_paymentMode ? 'Pilih untuk Bayar Transfer' : 'Bensin & Servis'),
         actions: [
-          IconButton(
-            icon: Icon(_paymentMode ? Icons.close : Icons.payment),
-            tooltip: _paymentMode ? 'Batal' : 'Bayar Transfer',
-            onPressed: () {
-              setState(() => _paymentMode = !_paymentMode);
-              if (!_paymentMode) {
-                context.read<FuelServicePaymentProvider>().clearSelection();
-              }
-            },
-          ),
+          BarButtonCluster(actions: [
+            BarButtonSpec(
+              icon: _paymentMode ? Icons.close : Icons.payment,
+              tooltip: _paymentMode ? 'Batal' : 'Bayar Transfer',
+              onTap: () {
+                setState(() => _paymentMode = !_paymentMode);
+                if (!_paymentMode) {
+                  context.read<FuelServicePaymentProvider>().clearSelection();
+                }
+              },
+            ),
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Fuel Service',
+              onTap: _openFuelServiceForm,
+            ),
+          ]),
         ],
         bottom: _paymentMode
             ? null
@@ -442,6 +458,8 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
               onRefresh: _fetch,
               child: _errorMessage != null
                   ? ListView(
+                      padding: EdgeInsets.only(
+                          top: AppBarInsets.top(context)),
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: [
                         SizedBox(height: MediaQuery.of(context).size.height * 0.2),
@@ -493,7 +511,9 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
                           itemCount: _services.length + (_hasMore ? 1 : 0),
-                          padding: AppSpacing.paddingMD,
+                          padding: AppSpacing.paddingMD.copyWith(
+                              top: AppBarInsets.top(context),
+                              bottom: ModernBottomNav.clearance(context)),
                           itemBuilder: (context, index) {
                             if (index == _services.length) {
                               return const Padding(
@@ -519,131 +539,162 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: AppSpacing.sectionGap),
-                          child: Padding(
-                            padding: AppSpacing.paddingMD,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (canPayTransfer)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 14),
-                                    child: Checkbox(
-                                      value: context
-                                          .read<FuelServicePaymentProvider>()
-                                          .isSelected(fs['id'] as int),
-                                      onChanged: (v) {
-                                        final amount =
-                                            double.tryParse(fs['amount'].toString()) ?? 0;
-                                        context
-                                            .read<FuelServicePaymentProvider>()
-                                            .toggleSelection(
-                                              fs['id'] as int,
-                                              amount: amount.round(),
-                                            );
-                                      },
-                                    ),
-                                  ),
-                                ListThumbnail(
-                                  imageUrl: imageUrl,
-                                  placeholderIcon: Icons.local_gas_station_outlined,
-                                  onTap: imageUrl != null
-                                      ? () => _showImageFullscreen(imageUrl)
-                                      : null,
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () async {
+                              final updated = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => FuelServiceDetailPage(service: fs),
                                 ),
-                                const SizedBox(width: AppSpacing.md),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                                            decoration: BoxDecoration(
-                                              color: (isFuel ? AppColors.success : AppColors.warning)
-                                                  .withValues(alpha: 0.1),
-                                              borderRadius: AppSpacing.borderRadiusSM,
+                              );
+                              if (updated == true) {
+                                _fetch();
+                              }
+                            },
+                            child: Padding(
+                              padding: AppSpacing.paddingMD,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (canPayTransfer)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 14),
+                                      child: Checkbox(
+                                        value: context
+                                            .read<FuelServicePaymentProvider>()
+                                            .isSelected(fs['id'] as int),
+                                        onChanged: (v) {
+                                          final amount =
+                                              double.tryParse(fs['amount'].toString()) ?? 0;
+                                          final supplier = fs['supplier'];
+                                          final error = context
+                                              .read<FuelServicePaymentProvider>()
+                                              .toggleSelection(
+                                                fs['id'] as int,
+                                                amount: amount.round(),
+                                                // 1 = bensin (reimbursement
+                                                // ke rekening pembuat,
+                                                // supplier bebas), 2 = servis
+                                                // (wajib satu supplier sama).
+                                                fuelServiceType: isFuel ? 1 : 2,
+                                                supplierId: supplier != null
+                                                    ? (supplier['id'] as num?)?.toInt()
+                                                    : null,
+                                                supplierName: supplier?['name']?.toString(),
+                                                bankName: supplier?['bank']?['name']?.toString(),
+                                                bankAccountNo: supplier?['bank_account_no']?.toString(),
+                                                bankAccountName: supplier?['bank_account_name']?.toString(),
+                                                qris: supplier?['qris']?.toString(),
+                                              );
+                                          if (error != null && mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text(error)),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ListThumbnail(
+                                    imageUrl: imageUrl,
+                                    placeholderIcon: Icons.local_gas_station_outlined,
+                                    onTap: imageUrl != null
+                                        ? () => _showImageFullscreen(imageUrl)
+                                        : null,
+                                  ),
+                                  const SizedBox(width: AppSpacing.md),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                                              decoration: BoxDecoration(
+                                                color: (isFuel ? AppColors.success : AppColors.warning)
+                                                    .withValues(alpha: 0.1),
+                                                borderRadius: AppSpacing.borderRadiusSM,
+                                              ),
+                                              child: Text(
+                                                type,
+                                                style: textTheme.labelMedium?.copyWith(
+                                                  color: isFuel ? AppColors.success : AppColors.warning,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
                                             ),
-                                            child: Text(
-                                              type,
+                                            Text(
+                                              currencyFormatter.format(amount),
+                                              style: textTheme.titleMedium
+                                                  ?.copyWith(fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                        AppSpacing.gapVerticalSM,
+                                        Text(
+                                          '$vehicleNo (KM: $km)',
+                                          style: textTheme.titleSmall
+                                              ?.copyWith(fontWeight: FontWeight.bold),
+                                        ),
+                                        AppSpacing.gapVerticalXS,
+                                        Text(
+                                          'Tanggal: $date | Oleh: $creatorName'
+                                          '${fs['supplier']?['name'] != null ? ' | Supplier: ${fs['supplier']['name']}' : ''}',
+                                          style: textTheme.bodySmall
+                                              ?.copyWith(color: colorScheme.onSurfaceVariant),
+                                        ),
+                                        AppSpacing.gapVerticalSM,
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              statusStr,
                                               style: textTheme.labelMedium?.copyWith(
-                                                color: isFuel ? AppColors.success : AppColors.warning,
+                                                color: isPaid ? AppColors.success : colorScheme.error,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
-                                          ),
-                                          Text(
-                                            currencyFormatter.format(amount),
-                                            style: textTheme.titleMedium
-                                                ?.copyWith(fontWeight: FontWeight.bold),
-                                          ),
+                                            if (imageUrl != null)
+                                              IconButton(
+                                                icon: const Icon(Icons.share, size: 18),
+                                                onPressed: () => _shareImage(
+                                                    imageUrl,
+                                                    fs['id']),
+                                                tooltip: 'Bagikan',
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                              ),
+                                          ],
+                                        ),
+                                        if (fs['notes'] != null) ...[
+                                          AppSpacing.gapVerticalXS,
+                                          (() {
+                                            final stripped = _stripHtmlTags(fs['notes'].toString());
+                                            if (stripped.isNotEmpty) {
+                                              return Text(
+                                                stripped,
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(fontStyle: FontStyle.italic),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              );
+                                            }
+                                            return const SizedBox.shrink();
+                                          })(),
                                         ],
-                                      ),
-                                      AppSpacing.gapVerticalSM,
-                                      Text(
-                                        '$vehicleNo (KM: $km)',
-                                        style: textTheme.titleSmall
-                                            ?.copyWith(fontWeight: FontWeight.bold),
-                                      ),
-                                      AppSpacing.gapVerticalXS,
-                                      Text(
-                                        'Tanggal: $date | Oleh: $creatorName',
-                                        style: textTheme.bodySmall
-                                            ?.copyWith(color: colorScheme.onSurfaceVariant),
-                                      ),
-                                      AppSpacing.gapVerticalSM,
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            statusStr,
-                                            style: textTheme.labelMedium?.copyWith(
-                                              color: isPaid ? AppColors.success : colorScheme.error,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          if (imageUrl != null)
-                                            IconButton(
-                                              icon: const Icon(Icons.share, size: 18),
-                                              onPressed: () => _shareImage(
-                                                  imageUrl,
-                                                  fs['id']),
-                                              tooltip: 'Bagikan',
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(),
-                                            ),
-                                        ],
-                                      ),
-                                      if (fs['notes'] != null) ...[
-                                        AppSpacing.gapVerticalXS,
-                                        (() {
-                                          final stripped = _stripHtmlTags(fs['notes'].toString());
-                                          if (stripped.isNotEmpty) {
-                                            return Text(
-                                              stripped,
-                                              style: textTheme.bodySmall
-                                                  ?.copyWith(fontStyle: FontStyle.italic),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            );
-                                          }
-                                          return const SizedBox.shrink();
-                                        })(),
                                       ],
-                                    ],
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         );
                       },
                     )),
-      floatingActionButton: AddFab(
-        onPressed: _openFuelServiceForm,
-      ),
       bottomNavigationBar: _paymentMode &&
               context.watch<FuelServicePaymentProvider>().selectedCount > 0
           ? _buildPaymentActionBar()
@@ -664,9 +715,9 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
+          appBar: GlassAppBar(
             backgroundColor: colorScheme.onSurface.withValues(alpha: 0.87),
-            iconTheme: IconThemeData(color: colorScheme.surface),
+            foregroundColor: colorScheme.surface,
             title: Text('Bukti Bensin & Servis',
                 style: TextStyle(color: colorScheme.surface)),
           ),
@@ -743,7 +794,7 @@ class _FuelServiceListPageState extends State<FuelServiceListPage> {
               },
               icon: const Icon(Icons.payment),
               label: const Text('Bayar'),
-              style: ElevatedButton.styleFrom(
+              style: AppButtonStyle.elevated(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.gold,
               ),

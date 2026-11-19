@@ -1,5 +1,19 @@
 import '../services/image_service.dart';
 
+/// Backend kadang mengirim angka sebagai string (mis. `payment_status: "1"`
+/// dari response create yang belum di-cast) — parse secara toleran, bukan
+/// hard cast yang melempar TypeError dan memutus alur simpan.
+int _asInt(dynamic v, [int fallback = 0]) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v?.toString() ?? '') ?? fallback;
+}
+
+int? _asIntOrNull(dynamic v) {
+  if (v == null) return null;
+  return _asInt(v);
+}
+
 /// Satu baris item produk dalam SalesOrderEmployee.
 class SalesOrderEmployeeItem {
   final int id;
@@ -23,13 +37,13 @@ class SalesOrderEmployeeItem {
   factory SalesOrderEmployeeItem.fromJson(Map<String, dynamic> j) {
     final product = j['product'] as Map<String, dynamic>? ?? {};
     return SalesOrderEmployeeItem(
-      id: (j['id'] ?? 0) as int,
-      productId: (j['product_id'] ?? 0) as int,
+      id: _asInt(j['id']),
+      productId: _asInt(j['product_id']),
       productName: product['name'] as String? ?? '',
       productUnit: product['unit']?['unit'] as String?,
-      quantity: (j['quantity'] ?? 0) as int,
-      unitPrice: (j['unit_price'] ?? 0) as int,
-      subtotalPrice: (j['subtotal_price'] ?? 0) as int,
+      quantity: _asInt(j['quantity']),
+      unitPrice: _asInt(j['unit_price']),
+      subtotalPrice: _asInt(j['subtotal_price']),
     );
   }
 }
@@ -97,21 +111,21 @@ class SalesOrderEmployeeModel {
         [];
 
     return SalesOrderEmployeeModel(
-      id: (j['id'] ?? 0) as int,
-      storeId: (j['store_id'] ?? 0) as int,
+      id: _asInt(j['id']),
+      storeId: _asInt(j['store_id']),
       storeName: store?['nickname'] as String?,
       deliveryDate: date,
-      deliveryAddressId: j['delivery_address_id'] as int?,
+      deliveryAddressId: _asIntOrNull(j['delivery_address_id']),
       deliveryAddressName: deliveryAddress?['delivery_address_name'] as String?,
-      transferToAccountId: j['transfer_to_account_id'] as int?,
+      transferToAccountId: _asIntOrNull(j['transfer_to_account_id']),
       transferToAccountName: transferToAccount?['transfer_name'] as String?,
       imagePayment: j['image_payment'] as String?,
-      paymentStatus: (j['payment_status'] ?? 1) as int,
-      deliveryStatus: (j['delivery_status'] ?? 1) as int,
-      orderedById: (j['ordered_by_id'] ?? 0) as int,
+      paymentStatus: _asInt(j['payment_status'], 1),
+      deliveryStatus: _asInt(j['delivery_status'], 1),
+      orderedById: _asInt(j['ordered_by_id']),
       orderedByName: orderedBy?['name'] as String?,
       notes: j['notes'] as String?,
-      totalPrice: (j['total_price'] ?? 0) as int,
+      totalPrice: _asInt(j['total_price']),
       items: rawItems,
       createdAt: j['created_at']?.toString(),
     );

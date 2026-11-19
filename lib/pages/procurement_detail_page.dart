@@ -5,9 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/procurement_model.dart';
 import '../../services/procurement_service.dart';
+import '../../theme/app_button_style.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/status_mappers.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/detail/detail_section_card.dart';
+import '../widgets/detail_row.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
 import 'create_invoice_page.dart';
@@ -28,6 +34,7 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
   bool _isLoading = true;
   String? _errorMessage;
   bool _isAdmin = false;
+  bool _isSuperAdmin = false;
   bool _isActionLoading = false;
   bool _isDeleting = false;
 
@@ -47,6 +54,7 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
         setState(() {
           _isAdmin =
               userRoles.contains('admin') || userRoles.contains('super_admin');
+          _isSuperAdmin = userRoles.contains('super_admin');
         });
       }
     } catch (_) {}
@@ -192,7 +200,7 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
             child: const Text('Batal'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
+            style: AppButtonStyle.filled(
               backgroundColor: AppColors.error,
               foregroundColor: Colors.white,
             ),
@@ -252,19 +260,29 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
             .any((item) => item.statusEnum.isPartiallyApproved) ??
         false;
 
+    // Guard hapus (sinkron dengan backend destroyRequest): request yang
+    // sudah punya invoice tidak boleh dihapus kecuali oleh super_admin.
+    // Tombol tetap tampil namun disabled agar jelas aksinya ada tapi
+    // terkunci.
+    final deleteLocked =
+        _request?.hasInvoices == true && !_isSuperAdmin;
+
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Detail Request'),
         actions: [
-          if (_isAdmin)
-            IconButton(
-              icon: Icon(
-                Icons.delete_outline,
-                color: colorScheme.error,
+          BarButtonCluster(actions: [
+            if (_isAdmin)
+              BarButtonSpec(
+                icon: Icons.delete_outline,
+                tooltip: deleteLocked
+                    ? 'Hapus tidak tersedia — request sudah menjadi invoice'
+                    : 'Hapus Request',
+                onTap: _isDeleting || deleteLocked ? null : _deleteRequest,
               ),
-              onPressed: _isDeleting ? null : _deleteRequest,
-              tooltip: 'Hapus Request',
-            ),
+          ]),
         ],
       ),
       body: _isLoading
@@ -287,244 +305,314 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
                     ),
                   ),
                 )
-              : SafeArea(
-                  top: false,
-                  bottom: true,
-                  child: Stack(
-                    children: [
-                      Column(
-                        children: [
-                          Expanded(
-                            child: SingleChildScrollView(
-                              padding: AppSpacing.paddingMD,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Info Card
-                                  Card(
-                                    child: Padding(
-                                      padding: AppSpacing.paddingMD,
-                                      child: Column(
+              : Builder(
+                  builder: (bodyContext) => SafeArea(
+                    top: false,
+                    bottom: true,
+                    child: Stack(
+                      children: [
+                        SingleChildScrollView(
+                          padding: AppSpacing.paddingMD.copyWith(
+                              top: AppBarInsets.top(bodyContext)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header Info Card using DetailSectionCard
+                            DetailSectionCard(
+                              icon: Icons.assignment_outlined,
+                              iconColor: AppColors.warning,
+                              title: 'REQ #${_request!.id}',
+                              trailing: StatusBadge(
+                                text: _request!.overallStatusText,
+                                type: StatusMappers.procurementGlobalStatus(
+                                    _request!.overallStatusText),
+                              ),
+                              children: [
+                                DetailRow(
+                                  label: 'Toko / Outlet',
+                                  value: _request!.storeName,
+                                ),
+                                DetailRow(
+                                  label: 'Tanggal Request',
+                                  value: _request!.date,
+                                ),
+                                DetailRow(
+                                  label: 'Diminta Oleh',
+                                  value: _request!.userName,
+                                ),
+                                DetailRow(
+                                  label: 'Total Item',
+                                  value: '${_request!.detailRequests.length} item',
+                                ),
+                              ],
+                            ),
+                            AppSpacing.gapVerticalLG,
+
+                            // Header Item Belanja
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Daftar Item Belanja',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.surfaceContainerHighest,
+                                    borderRadius: AppSpacing.borderRadiusMD,
+                                  ),
+                                  child: Text(
+                                    '${_request!.detailRequests.length} Item',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            AppSpacing.gapVerticalSM,
+
+                            // Items List
+                            ..._request!.detailRequests.map((item) {
+                              final statusColor = _getStatusColor(item.status);
+                              final isCash = item.paymentTypeId == 2;
+                              return Container(
+                                margin: const EdgeInsets.only(
+                                    bottom: AppSpacing.itemGap),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surface,
+                                  borderRadius: AppSpacing.borderRadiusLG,
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.35),
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.shadow
+                                          .withValues(alpha: 0.04),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          _buildInfoRow('Toko / Outlet',
-                                              _request!.storeName, theme),
-                                          const Divider(height: 20),
-                                          _buildInfoRow('Tanggal Request',
-                                              _request!.date, theme),
-                                          const Divider(height: 20),
-                                          _buildInfoRow('Diminta Oleh',
-                                              _request!.userName, theme),
-                                          const Divider(height: 20),
-                                          _buildInfoRow(
-                                              'Status Global',
-                                              _request!.overallStatusText,
-                                              theme,
-                                              isStatus: true),
+                                          Expanded(
+                                            child: Text(
+                                              item.productName,
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: colorScheme.onSurface,
+                                              ),
+                                            ),
+                                          ),
+                                          AppSpacing.gapHorizontalSM,
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme.primary
+                                                  .withValues(alpha: 0.1),
+                                              borderRadius:
+                                                  AppSpacing.borderRadiusSM,
+                                            ),
+                                            child: Text(
+                                              '${item.quantityPlan.toStringAsFixed(0)} ${item.unitName}',
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: colorScheme.primary,
+                                              ),
+                                            ),
+                                          ),
                                         ],
                                       ),
-                                    ),
-                                  ),
-                                  AppSpacing.gapVerticalLG,
-                                  Text(
-                                    'Daftar Item Belanja',
-                                    style:
-                                        theme.textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  AppSpacing.gapVerticalSM,
-                                  ..._request!.detailRequests.map((item) {
-                                    return Card(
-                                      margin: const EdgeInsets.only(
-                                          bottom: AppSpacing.itemGap),
-                                      child: Padding(
-                                        padding: AppSpacing.cardPadding,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    item.productName,
-                                                    style: theme
-                                                        .textTheme.titleMedium
-                                                        ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${item.quantityPlan.toStringAsFixed(0)} ${item.unitName}',
-                                                  style: theme
-                                                      .textTheme.titleMedium
-                                                      ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: colorScheme.primary,
-                                                  ),
-                                                ),
-                                              ],
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: statusColor
+                                                  .withValues(alpha: 0.12),
+                                              borderRadius:
+                                                  AppSpacing.borderRadiusSM,
+                                              border: Border.all(
+                                                color: statusColor
+                                                    .withValues(alpha: 0.3),
+                                                width: 0.8,
+                                              ),
                                             ),
-                                            AppSpacing.gapVerticalSM,
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Container(
+                                            child: Text(
+                                              item.statusText,
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                color: statusColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          if (item.paymentTypeId != null)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: colorScheme
+                                                    .surfaceContainerHighest
+                                                    .withValues(alpha: 0.5),
+                                                borderRadius:
+                                                    AppSpacing.borderRadiusSM,
+                                              ),
+                                              child: Text(
+                                                isCash
+                                                    ? (item.statusEnum.isPending
+                                                        ? 'Tunai (Perlu Approval)'
+                                                        : 'Tunai')
+                                                    : 'Transfer',
+                                                style: theme
+                                                    .textTheme.labelSmall
+                                                    ?.copyWith(
+                                                  color: (isCash &&
+                                                          item.statusEnum
+                                                              .isPending)
+                                                      ? AppColors.warning
+                                                      : colorScheme
+                                                          .onSurfaceVariant,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+
+                                      // Admin Actions inline (Approve, Reject, Tidak Digunakan)
+                                      if (_isAdmin &&
+                                          (item.statusEnum.isPending ||
+                                              item.statusEnum
+                                                  .isPartiallyApproved)) ...[
+                                        const SizedBox(height: 12),
+                                        Divider(
+                                          height: 1,
+                                          color: colorScheme.outlineVariant
+                                              .withValues(alpha: 0.3),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            if (item.statusEnum.isPending) ...[
+                                              OutlinedButton.icon(
+                                                onPressed: _isActionLoading
+                                                    ? null
+                                                    : () =>
+                                                        _rejectItem(item.id),
+                                                style: AppButtonStyle.outlined(
+                                                  foregroundColor:
+                                                      colorScheme.error,
+                                                  borderColor: colorScheme.error
+                                                      .withValues(
+                                                          alpha: 0.5),
                                                   padding: const EdgeInsets
                                                       .symmetric(
-                                                      horizontal: AppSpacing.sm,
-                                                      vertical: 3),
-                                                  decoration: BoxDecoration(
-                                                    color: _getStatusColor(
-                                                            item.status)
-                                                        .withValues(alpha: 0.1),
-                                                    borderRadius: AppSpacing
-                                                        .borderRadiusMD,
-                                                  ),
-                                                  child: Text(
-                                                    item.statusText,
-                                                    style: theme
-                                                        .textTheme.labelSmall
-                                                        ?.copyWith(
-                                                      color: _getStatusColor(
-                                                          item.status),
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
+                                                      horizontal: 10,
+                                                      vertical: 4),
+                                                  minimumSize:
+                                                      const Size(0, 32),
                                                 ),
-                                                if (item.paymentTypeId != null)
-                                                  Text(
-                                                    item.paymentTypeId == 2
-                                                        ? (item.statusEnum
-                                                                .isPending
-                                                            ? 'Tunai (Butuh Approval)'
-                                                            : 'Tunai (Langsung)')
-                                                        : 'Transfer (Langsung)',
-                                                    style: theme
-                                                        .textTheme.bodySmall
-                                                        ?.copyWith(
-                                                      color:
-                                                          (item.paymentTypeId ==
-                                                                      2 &&
-                                                                  item.statusEnum
-                                                                      .isPending)
-                                                              ? AppColors
-                                                                  .warning
-                                                              : AppColors
-                                                                  .success,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                            // Admin Actions inline (Approve, Reject, Tidak Digunakan)
-                                            if (_isAdmin &&
-                                                (item.statusEnum.isPending ||
-                                                    item.statusEnum
-                                                        .isPartiallyApproved)) ...[
-                                              const Divider(height: 20),
-                                              Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.end,
-                                                children: [
-                                                  if (item.statusEnum
-                                                      .isPending) ...[
-                                                    OutlinedButton.icon(
-                                                      onPressed:
-                                                          _isActionLoading
-                                                              ? null
-                                                              : () =>
-                                                                  _rejectItem(
-                                                                      item.id),
-                                                      style: OutlinedButton
-                                                          .styleFrom(
-                                                        foregroundColor:
-                                                            colorScheme.error,
-                                                        side: BorderSide(
-                                                            color: colorScheme
-                                                                .error),
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal:
-                                                                    AppSpacing
-                                                                        .md),
-                                                      ),
-                                                      icon: const Icon(
-                                                          Icons.close,
-                                                          size: 16),
-                                                      label:
-                                                          const Text('Reject'),
-                                                    ),
-                                                    AppSpacing.gapHorizontalSM,
-                                                    ElevatedButton.icon(
-                                                      onPressed:
-                                                          _isActionLoading
-                                                              ? null
-                                                              : () =>
-                                                                  _approveItem(
-                                                                      item.id),
-                                                      style: ElevatedButton
-                                                          .styleFrom(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal:
-                                                                    AppSpacing
-                                                                        .md),
-                                                      ),
-                                                      icon: const Icon(
-                                                          Icons.check,
-                                                          size: 16),
-                                                      label:
-                                                          const Text('Approve'),
-                                                    ),
-                                                    AppSpacing.gapHorizontalSM,
-                                                  ],
-                                                  OutlinedButton.icon(
-                                                    onPressed: _isActionLoading
-                                                        ? null
-                                                        : () => _cancelItem(
-                                                            item.id),
-                                                    style: OutlinedButton
-                                                        .styleFrom(
-                                                      foregroundColor:
-                                                          AppColors.warning,
-                                                      side: BorderSide(
-                                                          color: AppColors
-                                                              .warning),
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal:
-                                                              AppSpacing.md),
-                                                    ),
-                                                    icon: const Icon(
-                                                        Icons.block,
-                                                        size: 16),
-                                                    label: const Text(
-                                                        'Tidak Digunakan'),
-                                                  ),
-                                                ],
+                                                icon: const Icon(Icons.close,
+                                                    size: 14),
+                                                label: Text(
+                                                  'Reject',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall,
+                                                ),
                                               ),
-                                            ],
+                                              AppSpacing.gapHorizontalSM,
+                                              FilledButton.icon(
+                                                onPressed: _isActionLoading
+                                                    ? null
+                                                    : () =>
+                                                        _approveItem(item.id),
+                                                style: AppButtonStyle.filled(
+                                                  backgroundColor:
+                                                      AppColors.success,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 4),
+                                                  minimumSize:
+                                                      const Size(0, 32),
+                                                ),
+                                                icon: const Icon(Icons.check,
+                                                    size: 14),
+                                                label: Text(
+                                                  'Approve',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.bold),
+                                                ),
+                                              ),
+                                              AppSpacing.gapHorizontalSM,
+                                            TextButton.icon(
+                                              onPressed: _isActionLoading
+                                                  ? null
+                                                  : () => _cancelItem(item.id),
+                                              style: AppButtonStyle.text(
+                                                foregroundColor:
+                                                    AppColors.warning,
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4),
+                                                minimumSize:
+                                                    const Size(0, 32),
+                                              ),
+                                              icon: const Icon(Icons.block,
+                                                  size: 14),
+                                              label: Text(
+                                                'Tidak Digunakan',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall,
+                                              ),
+                                            ),
+                                          ],
                                           ],
                                         ),
-                                      ),
-                                    );
-                                  }),
-                                  SizedBox(height: AppSpacing.xxl),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 80),
+                          ],
+                        ),
                       ),
                       if (_isActionLoading)
                         Container(
@@ -535,67 +623,29 @@ class _ProcurementDetailPageState extends State<ProcurementDetailPage> {
                     ],
                   ),
                 ),
+              ),
       bottomSheet: hasApprovedItems
           ? SafeBottomBar(
               child: SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
+                child: FilledButton.icon(
                   onPressed: _isActionLoading ? null : _navigateToCreateInvoice,
-                  style: ElevatedButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  style: AppButtonStyle.filled(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    borderRadius: AppSpacing.borderRadiusMD,
                   ),
-                  icon: const Icon(Icons.receipt_long),
+                  icon: const Icon(Icons.receipt_long, size: 18),
                   label: Text(
                     'Buat Invoice',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
             )
           : null,
     );
-  }
-
-  Widget _buildInfoRow(String label, String value, ThemeData theme,
-      {bool isStatus = false}) {
-    final colorScheme = theme.colorScheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: isStatus ? _statusColor(value, colorScheme) : null,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Warna nilai status global mengikuti konvensi dashboard procurement
-  /// (Pending Approval=warning, Partially Approved/Approved=info,
-  /// Done=success, Rejected=error) — bukan colorScheme.primary.
-  Color _statusColor(String label, ColorScheme colorScheme) {
-    switch (StatusMappers.procurementGlobalStatus(label)) {
-      case StatusType.success:
-        return AppColors.success;
-      case StatusType.warning:
-        return AppColors.warning;
-      case StatusType.error:
-        return AppColors.error;
-      case StatusType.info:
-        return AppColors.info;
-      case StatusType.neutral:
-        return colorScheme.primary;
-    }
   }
 }

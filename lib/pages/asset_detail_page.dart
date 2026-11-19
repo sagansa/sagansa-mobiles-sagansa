@@ -1,8 +1,8 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 
 import '../models/asset_check_model.dart';
 import '../models/asset_issue_model.dart';
@@ -11,6 +11,9 @@ import '../providers/asset_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/constants.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_fab.dart';
 import 'asset_check_form_page.dart';
 
@@ -79,12 +82,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    final cs = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: cs.error,
-      ),
+    showAppSnackBar(
+      context,
+      msg,
+      background: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -128,7 +129,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Detail Aset'),
         actions: [
           if (_isAdmin && _asset != null)
@@ -170,7 +173,9 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView(
-                        padding: AppSpacing.screenPadding,
+                        padding: AppSpacing.screenPadding.copyWith(
+                          top: AppBarInsets.top(context),
+                        ),
                         children: [
                           _buildHeader(theme, colorScheme),
                           SizedBox(height: AppSpacing.sectionGap),
@@ -254,6 +259,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
         d == null ? '-' : '${d.day}/${d.month}/${d.year}';
 
     return Card(
+      elevation: 0,
+      color: colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.cardPadding,
         child: Column(

@@ -4,6 +4,9 @@ import '../models/hygiene_model.dart';
 import '../services/hygiene_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import 'home_page.dart';
 import 'hrd_dashboard_page.dart';
@@ -158,13 +161,26 @@ class _HygieneListPageState extends State<HygieneListPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('List Kebersihan Toko'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-            tooltip: 'Segarkan',
+          BarButtonCluster(
+            actions: [
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Kebersihan',
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HygienePage()),
+                  );
+                  _load();
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -213,7 +229,11 @@ class _HygieneListPageState extends State<HygieneListPage> {
                       child: ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm, vertical: AppSpacing.md),
+                                horizontal: AppSpacing.sm,
+                                vertical: AppSpacing.md)
+                            .copyWith(
+                                top: AppBarInsets.top(context),
+                                bottom: ModernBottomNav.clearance(context)),
                         itemCount: _items.length + (_hasMore ? 1 : 0),
                         itemBuilder: (context, idx) {
                           if (idx == _items.length) {
@@ -371,17 +391,6 @@ class _HygieneListPageState extends State<HygieneListPage> {
                         },
                       ),
                     ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const HygienePage()),
-          );
-          _load();
-        },
-        tooltip: 'Inspeksi Kebersihan Baru',
-        child: const Icon(Icons.add),
-      ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 4,
         onTap: (index) => _handleNavigation(context, index),

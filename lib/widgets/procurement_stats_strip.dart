@@ -3,7 +3,7 @@ import '../theme/app_colors.dart';
 
 /// Stats horizontal strip di bawah AppBar halaman procurement workflow.
 ///
-/// Menampilkan 3 metrik action (lihat spec section 4.2):
+/// Menampilkan 3 metrik action:
 ///   0 = pending approval (request dengan item pending admin approval)
 ///   1 = siap invoice (request yang belum jadi invoice)
 ///   2 = siap bayar (invoice siap dibuat payment receipt)
@@ -26,36 +26,34 @@ class ProcurementStatsStrip extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Container(
-      // Pakai surfaceContainerHighest agar konsisten light/dark mode,
-      // tidak ada lagi "garis charcoal" yang kontras berlebihan di light.
-      color: cs.surfaceContainerHighest,
-      height: 32,
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+      height: 38,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
           _buildChip(
             context: context,
             index: 0,
-            emoji: '🟡',
+            icon: Icons.pending_actions_rounded,
             count: pendingApprovalCount,
             label: 'approval',
             color: AppColors.warning,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           _buildChip(
             context: context,
             index: 1,
-            emoji: '🔵',
+            icon: Icons.receipt_long_rounded,
             count: siapInvoiceCount,
             label: 'siap invoice',
             color: AppColors.info,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           _buildChip(
             context: context,
             index: 2,
-            emoji: '🔴',
+            icon: Icons.payment_rounded,
             count: siapBayarCount,
             label: 'siap bayar',
             color: AppColors.error,
@@ -68,7 +66,7 @@ class ProcurementStatsStrip extends StatelessWidget {
   Widget _buildChip({
     required BuildContext context,
     required int index,
-    required String emoji,
+    required IconData icon,
     required int count,
     required String label,
     required Color color,
@@ -76,35 +74,48 @@ class ProcurementStatsStrip extends StatelessWidget {
     final hasCount = count > 0;
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+
     return InkWell(
       onTap: hasCount ? () => onChipTap?.call(index) : null,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: hasCount ? 0.18 : 0.08),
-          borderRadius: BorderRadius.circular(12),
+          color: hasCount
+              ? color.withValues(alpha: 0.12)
+              : cs.surface.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasCount
+                ? color.withValues(alpha: 0.3)
+                : cs.outlineVariant.withValues(alpha: 0.25),
+            width: 1,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 10)),
-            const SizedBox(width: 4),
+            Icon(
+              icon,
+              size: 13,
+              color: hasCount ? color : cs.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
+            const SizedBox(width: 5),
             Text(
               '$count',
               style: TextStyle(
                 color: hasCount ? color : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 3),
+            const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 color: hasCount ? cs.onSurface : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

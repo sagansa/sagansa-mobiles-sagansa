@@ -6,6 +6,10 @@ import '../services/store_service.dart';
 import '../services/transfer_stock_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/safe_bottom_bar.dart';
@@ -58,7 +62,7 @@ class _CreateTransferStockPageState extends State<CreateTransferStockPage> {
       final results = await Future.wait([
         _storeService.getStores(),
         _transferStockService.getProducts(),
-        _userService.getUsers(),
+        _userService.getUsers(role: 'staff'),
       ]);
 
       setState(() {
@@ -217,8 +221,11 @@ class _CreateTransferStockPageState extends State<CreateTransferStockPage> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Transfer Stok Baru'),
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: const GlassAppBar(
+        title: Text('Transfer Stok Baru'),
       ),
       body: _isLoadingData
           ? const Center(child: CircularProgressIndicator())
@@ -241,267 +248,281 @@ class _CreateTransferStockPageState extends State<CreateTransferStockPage> {
                     ),
                   ),
                 )
-              : Stack(
-                  children: [
-                    Column(
-                      children: [
-                        Expanded(
-                          child: ListView(
-                            padding: AppSpacing.paddingMD,
-                            children: [
-                              ModernDropdown<StoreModel>(
-                                labelText: 'Toko Asal',
-                                hint: 'Pilih toko asal...',
-                                prefixIcon:
-                                    const Icon(Icons.storefront, size: 20),
-                                value: _selectedFromStore,
-                                items: _stores
-                                    .where((s) =>
-                                        _selectedToStore == null ||
-                                        s.id != _selectedToStore!.id)
-                                    .toList(),
-                                getLabel: (s) => s.nickname,
-                                getSubtitle: (s) => '',
-                                onChanged: (val) {
-                                  setState(() => _selectedFromStore = val);
-                                },
-                              ),
-                              AppSpacing.gapVerticalMD,
-                              ModernDropdown<StoreModel>(
-                                labelText: 'Toko Tujuan',
-                                hint: 'Pilih toko tujuan...',
-                                prefixIcon: const Icon(Icons.store, size: 20),
-                                value: _selectedToStore,
-                                items: _stores
-                                    .where((s) =>
-                                        _selectedFromStore == null ||
-                                        s.id != _selectedFromStore!.id)
-                                    .toList(),
-                                getLabel: (s) => s.nickname,
-                                getSubtitle: (s) => '',
-                                onChanged: (val) {
-                                  setState(() => _selectedToStore = val);
-                                },
-                              ),
-                              AppSpacing.gapVerticalMD,
-                              InkWell(
-                                onTap: _pickDate,
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Tanggal',
-                                    prefixIcon: Icon(Icons.calendar_today),
-                                  ),
-                                  child: Text(
-                                    '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppBarInsets.top(context),
+                    AppSpacing.md,
+                    AppSpacing.md + context.systemBottomInset + 72,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FormSectionCard(
+                        title: 'Rute Transfer',
+                        subtitle: 'Toko/gudang asal pengiriman dan tujuan',
+                        icon: Icons.swap_horiz_rounded,
+                        children: [
+                          ModernDropdown<StoreModel>(
+                            labelText: 'Toko Asal',
+                            hint: 'Pilih toko asal...',
+                            isRequired: true,
+                            prefixIcon: const Icon(Icons.storefront, size: 20),
+                            value: _selectedFromStore,
+                            items: _stores
+                                .where((s) =>
+                                    _selectedToStore == null ||
+                                    s.id != _selectedToStore!.id)
+                                .toList(),
+                            getLabel: (s) => s.nickname,
+                            getSubtitle: (s) => '',
+                            onChanged: (val) {
+                              setState(() => _selectedFromStore = val);
+                            },
+                          ),
+                          ModernDropdown<StoreModel>(
+                            labelText: 'Toko Tujuan',
+                            hint: 'Pilih toko tujuan...',
+                            isRequired: true,
+                            prefixIcon: const Icon(Icons.store, size: 20),
+                            value: _selectedToStore,
+                            items: _stores
+                                .where((s) =>
+                                    _selectedFromStore == null ||
+                                    s.id != _selectedFromStore!.id)
+                                .toList(),
+                            getLabel: (s) => s.nickname,
+                            getSubtitle: (s) => '',
+                            onChanged: (val) {
+                              setState(() => _selectedToStore = val);
+                            },
+                          ),
+                        ],
+                      ),
+                      AppSpacing.gapVerticalMD,
+                      FormSectionCard(
+                        title: 'Waktu & Petugas',
+                        subtitle: 'Tanggal mutasi stok serta staf penanggung jawab',
+                        icon: Icons.schedule_rounded,
+                        children: [
+                          InkWell(
+                            onTap: _pickDate,
+                            borderRadius: AppSpacing.borderRadiusMD,
+                            child: InputDecorator(
+                              decoration: InputDecoration(
+                                labelText: 'Tanggal Transfer',
+                                prefixIcon: const Icon(Icons.calendar_today, size: 20),
+                                border: OutlineInputBorder(
+                                  borderRadius: AppSpacing.borderRadiusMD,
+                                  borderSide: BorderSide(
+                                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
                                   ),
                                 ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                               ),
-                              AppSpacing.gapVerticalMD,
-                              ModernDropdown<int>(
-                                labelText: 'Pengirim',
-                                hint: 'Pilih pengirim...',
-                                prefixIcon:
-                                    const Icon(Icons.person_outline, size: 20),
-                                value: _selectedSender?['id'] is int
-                                    ? _selectedSender!['id']
-                                    : int.tryParse(
-                                        _selectedSender?['id']?.toString() ??
-                                            ''),
-                                items: _users
-                                    .map<int>((u) => u['id'] is int
-                                        ? u['id']
-                                        : int.parse(u['id'].toString()))
-                                    .toList(),
-                                getLabel: (val) {
-                                  final u = _users.firstWhere(
-                                      (e) => e['id'] == val,
-                                      orElse: () => {});
-                                  return u['name']?.toString() ?? '';
-                                },
-                                onChanged: (val) {
-                                  if (val == null) return;
-                                  setState(() => _selectedSender =
-                                      _users.firstWhere((u) => u['id'] == val));
-                                },
+                              child: Text(
+                                '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                style: textTheme.bodyMedium,
                               ),
-                              AppSpacing.gapVerticalMD,
-                              ModernDropdown<int>(
-                                labelText: 'Penerima',
-                                hint: 'Pilih penerima...',
-                                prefixIcon: const Icon(Icons.person, size: 20),
-                                value: _selectedReceiver?['id'] is int
-                                    ? _selectedReceiver!['id']
-                                    : int.tryParse(
-                                        _selectedReceiver?['id']?.toString() ??
-                                            ''),
-                                items: _users
-                                    .map<int>((u) => u['id'] is int
-                                        ? u['id']
-                                        : int.parse(u['id'].toString()))
-                                    .toList(),
-                                getLabel: (val) {
-                                  final u = _users.firstWhere(
-                                      (e) => e['id'] == val,
-                                      orElse: () => {});
-                                  return u['name']?.toString() ?? '';
-                                },
-                                onChanged: (val) {
-                                  if (val == null) return;
-                                  setState(() => _selectedReceiver =
-                                      _users.firstWhere((u) => u['id'] == val));
-                                },
-                              ),
-                              AppSpacing.gapVerticalMD,
-                              TextFormField(
-                                controller: _notesController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Catatan',
-                                  prefixIcon: Icon(Icons.notes),
+                            ),
+                          ),
+                          ModernDropdown<int>(
+                            labelText: 'Staf Pengirim',
+                            hint: 'Pilih pengirim...',
+                            prefixIcon: const Icon(Icons.person_outline, size: 20),
+                            value: _selectedSender?['id'] is int
+                                ? _selectedSender!['id']
+                                : int.tryParse(_selectedSender?['id']?.toString() ?? ''),
+                            items: _users
+                                .map<int>((u) => u['id'] is int
+                                    ? u['id']
+                                    : int.parse(u['id'].toString()))
+                                .toList(),
+                            getLabel: (val) {
+                              final u = _users.firstWhere(
+                                  (e) => e['id'] == val,
+                                  orElse: () => {});
+                              return u['name']?.toString() ?? '';
+                            },
+                            onChanged: (val) {
+                              if (val == null) return;
+                              setState(() => _selectedSender =
+                                  _users.firstWhere((u) => u['id'] == val));
+                            },
+                          ),
+                          ModernDropdown<int>(
+                            labelText: 'Staf Penerima',
+                            hint: 'Pilih penerima...',
+                            prefixIcon: const Icon(Icons.person, size: 20),
+                            value: _selectedReceiver?['id'] is int
+                                ? _selectedReceiver!['id']
+                                : int.tryParse(_selectedReceiver?['id']?.toString() ?? ''),
+                            items: _users
+                                .map<int>((u) => u['id'] is int
+                                    ? u['id']
+                                    : int.parse(u['id'].toString()))
+                                .toList(),
+                            getLabel: (val) {
+                              final u = _users.firstWhere(
+                                  (e) => e['id'] == val,
+                                  orElse: () => {});
+                              return u['name']?.toString() ?? '';
+                            },
+                            onChanged: (val) {
+                              if (val == null) return;
+                              setState(() => _selectedReceiver =
+                                  _users.firstWhere((u) => u['id'] == val));
+                            },
+                          ),
+                        ],
+                      ),
+                      AppSpacing.gapVerticalMD,
+                      FormSectionCard(
+                        title: 'Item Produk Transfer',
+                        subtitle: 'Daftar produk dan jumlah yang dipindahkan',
+                        icon: Icons.inventory_2_outlined,
+                        trailing: FormAddButton(
+                          label: 'Tambah Item',
+                          onPressed: _addItem,
+                        ),
+                        children: [
+                          if (_items.isEmpty)
+                            InkWell(
+                              onTap: _addItem,
+                              borderRadius: AppSpacing.borderRadiusMD,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 24),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                                  borderRadius: AppSpacing.borderRadiusMD,
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                                    style: BorderStyle.solid,
+                                  ),
                                 ),
-                                maxLines: 2,
-                              ),
-                              AppSpacing.gapVerticalLG,
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Item Produk',
-                                    style: textTheme.titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: _addItem,
-                                    icon: const Icon(Icons.add, size: 18),
-                                    label: const Text('Tambah Item'),
-                                  ),
-                                ],
-                              ),
-                              if (_items.isEmpty)
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                      vertical: AppSpacing.lg),
-                                  child: Center(
-                                    child: Text(
-                                      'Belum ada item. Ketuk "Tambah Item" untuk mulai.',
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.add_shopping_cart_rounded,
+                                        size: 32, color: colorScheme.primary),
+                                    AppSpacing.gapVerticalXS,
+                                    Text(
+                                      'Belum ada item ditambahkan',
                                       style: textTheme.bodyMedium?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Ketuk untuk memilih produk yang akan ditransfer',
+                                      style: textTheme.bodySmall?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ..._items.asMap().entries.map((entry) {
-                                final idx = entry.key;
-                                final item = entry.value;
-                                return Card(
-                                  margin: EdgeInsets.only(
-                                      bottom: AppSpacing.sectionGap),
-                                  child: Padding(
-                                    padding: AppSpacing.cardPadding,
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              flex: 3,
-                                              child: ModernDropdown<int>(
-                                                labelText: 'Produk',
-                                                hint: 'Pilih produk...',
-                                                value:
-                                                    item['product_id'] as int?,
-                                                items: _products
-                                                    .map((p) => p.id)
-                                                    .toList(),
-                                                getLabel: (val) {
-                                                  final p = _products.firstWhere(
-                                                      (e) => e.id == val,
-                                                      orElse: () =>
-                                                          TransferStockProduct(
-                                                              id: 0,
-                                                              name: '',
-                                                              unitName: ''));
-                                                  return p.name;
-                                                },
-                                                getSubtitle: (val) {
-                                                  final p = _products.firstWhere(
-                                                      (e) => e.id == val,
-                                                      orElse: () =>
-                                                          TransferStockProduct(
-                                                              id: 0,
-                                                              name: '',
-                                                              unitName: ''));
-                                                  return p.unitName;
-                                                },
-                                                onChanged: (val) {
-                                                  if (val == null) return;
-                                                  final product =
-                                                      _products.firstWhere(
-                                                          (p) => p.id == val,
-                                                          orElse: () =>
-                                                              TransferStockProduct(
-                                                                  id: 0,
-                                                                  name: '',
-                                                                  unitName:
-                                                                      ''));
-                                                  setState(() {
-                                                    item['product_id'] = val;
-                                                    item['productName'] =
-                                                        product.name;
-                                                    item['unitName'] =
-                                                        product.unitName;
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                            AppSpacing.gapHorizontalSM,
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.remove_circle_outline),
-                                              color: colorScheme.error,
-                                              onPressed: () => _removeItem(idx),
-                                            ),
-                                          ],
-                                        ),
-                                        AppSpacing.gapVerticalSM,
-                                        if (item['product_id'] != null)
-                                          TextFormField(
-                                            controller: item['controller'],
-                                            keyboardType: TextInputType.number,
-                                            decoration: InputDecoration(
-                                              labelText: 'Kuantitas',
-                                              suffixText: item['unitName'],
-                                            ),
-                                            onTap: () {
-                                              final ctrl = item['controller']
-                                                  as TextEditingController;
-                                              ctrl.selection = TextSelection(
-                                                  baseOffset: 0,
-                                                  extentOffset:
-                                                      ctrl.text.length);
-                                            },
-                                          ),
-                                      ],
+                              ),
+                            ),
+                          ..._items.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final item = entry.value;
+                            return FormSectionCard(
+                              title: item['productName'] ?? 'Item #${idx + 1}',
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 20, color: Colors.red),
+                                onPressed: () => _removeItem(idx),
+                              ),
+                              children: [
+                                ModernDropdown<int>(
+                                  labelText: 'Produk',
+                                  hint: 'Pilih produk...',
+                                  value: item['product_id'] as int?,
+                                  items: _products.map((p) => p.id).toList(),
+                                  getLabel: (val) {
+                                    final p = _products.firstWhere(
+                                        (e) => e.id == val,
+                                        orElse: () => TransferStockProduct(
+                                            id: 0, name: '', unitName: ''));
+                                    return p.name;
+                                  },
+                                  getSubtitle: (val) {
+                                    final p = _products.firstWhere(
+                                        (e) => e.id == val,
+                                        orElse: () => TransferStockProduct(
+                                            id: 0, name: '', unitName: ''));
+                                    return p.unitName;
+                                  },
+                                  onChanged: (val) {
+                                    if (val == null) return;
+                                    final product = _products.firstWhere(
+                                        (p) => p.id == val,
+                                        orElse: () => TransferStockProduct(
+                                            id: 0, name: '', unitName: ''));
+                                    setState(() {
+                                      item['product_id'] = val;
+                                      item['productName'] = product.name;
+                                      item['unitName'] = product.unitName;
+                                    });
+                                  },
+                                ),
+                                if (item['product_id'] != null)
+                                  TextFormField(
+                                    controller: item['controller'],
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: 'Kuantitas',
+                                      suffixText: item['unitName'],
+                                      border: OutlineInputBorder(
+                                        borderRadius: AppSpacing.borderRadiusMD,
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
                                     ),
+                                    onTap: () {
+                                      final ctrl = item['controller'] as TextEditingController;
+                                      ctrl.selection = TextSelection(
+                                          baseOffset: 0,
+                                          extentOffset: ctrl.text.length);
+                                    },
                                   ),
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_isSubmitting)
-                      Container(
-                        color: colorScheme.scrim.withValues(alpha: 0.3),
-                        child: const Center(child: CircularProgressIndicator()),
+                              ],
+                            );
+                          }),
+                        ],
                       ),
-                  ],
+                      AppSpacing.gapVerticalMD,
+                      FormSectionCard(
+                        title: 'Catatan Tambahan',
+                        icon: Icons.notes_rounded,
+                        children: [
+                          TextFormField(
+                            controller: _notesController,
+                            decoration: InputDecoration(
+                              labelText: 'Catatan (opsional)',
+                              hintText: 'Keterangan mutasi stok...',
+                              border: OutlineInputBorder(
+                                borderRadius: AppSpacing.borderRadiusMD,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
       bottomNavigationBar: SafeBottomBar(
-        child: ModernButton(
-          text: 'Ajukan Transfer Stok',
-          onPressed: _isSubmitting ? null : _submitTransfer,
-          isLoading: _isSubmitting,
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ModernButton(
+            text: 'Ajukan Transfer Stok',
+            onPressed: _isSubmitting ? null : _submitTransfer,
+            isLoading: _isSubmitting,
+          ),
         ),
       ),
     );

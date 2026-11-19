@@ -5,7 +5,9 @@ import '../models/storage_stock_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_stock_service.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_page_scaffold.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/modern_bottom_nav.dart';
 import 'create_storage_stock_page.dart';
 import 'storage_stock_detail_page.dart';
@@ -73,11 +75,17 @@ class _StorageStockListPageState extends State<StorageStockListPage> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    // Listener scroll bisa fire di tengah fase layout; setState langsung
+    // di sini → "setState() called during build". Tunda ke post-frame.
+    if (pos.pixels >= pos.maxScrollExtent - 200 &&
         !_isLoadingMore &&
         _hasMore) {
-      _loadMore();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        if (!_isLoadingMore && _hasMore) _loadMore();
+      });
     }
   }
 
@@ -133,151 +141,79 @@ class _StorageStockListPageState extends State<StorageStockListPage> {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Riwayat Stok Gudang')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: AppSpacing.paddingLG,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_errorMessage!, style: TextStyle(color: colorScheme.error)),
-                        AppSpacing.gapVerticalMD,
-                        ElevatedButton(
-                          onPressed: _fetchReports,
-                          child: const Text('Coba Lagi'),
-                        ),
-                      ],
+    return AppPageScaffold(
+      titleText: 'Riwayat Stok Gudang',
+      actions: [
+        BarButtonCluster(
+          actions: [
+            if (_canReport)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Stok Gudang',
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CreateStorageStockPage(),
                     ),
-                  ),
-                )
-              : _reports.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.inventory_2_outlined,
-                            size: 48,
-                            color: AppColors.info,
-                          ),
-                          AppSpacing.gapVerticalMD,
-                          Text(
-                            'Belum ada riwayat laporan stok gudang.',
-                            style: textTheme.titleMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _fetchReports,
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        padding: AppSpacing.paddingMD,
-                        itemCount: _reports.length + (_hasMore ? 1 : 0),
-                        itemBuilder: (context, idx) {
-                          if (idx == _reports.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(AppSpacing.md),
-                              child: Center(child: CircularProgressIndicator()),
-                            );
-                          }
+                  );
+                  if (result == true) {
+                    _fetchReports();
+                    _checkCanReport();
+                  }
+                },
+              ),
+          ],
+        ),
+      ],
+      isLoading: _isLoading,
+      errorMessage: _errorMessage,
+      onRetry: _fetchReports,
+      isEmpty: _reports.isEmpty,
+      emptyState: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.inventory_2_outlined,
+              size: 48,
+              color: AppColors.info,
+            ),
+            AppSpacing.gapVerticalMD,
+            Text(
+              'Belum ada riwayat laporan stok gudang.',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      bodyPadding: EdgeInsets.zero,
+      body: RefreshIndicator(
+        onRefresh: _fetchReports,
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: AppSpacing.paddingMD.copyWith(
+            top: AppBarInsets.top(context),
+            bottom: ModernBottomNav.clearance(context),
+          ),
+          itemCount: _reports.length + (_hasMore ? 1 : 0),
+          itemBuilder: (context, idx) {
+            if (idx == _reports.length) {
+              return const Padding(
+                padding: EdgeInsets.all(AppSpacing.md),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-                          final report = _reports[idx];
+            final report = _reports[idx];
 
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: AppSpacing.sectionGap),
-                            child: InkWell(
-                              borderRadius: AppSpacing.borderRadiusLG,
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => StorageStockDetailPage(reportId: report.id),
-                                  ),
-                                );
-                              },
-                              child: Padding(
-                                padding: AppSpacing.paddingMD,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          report.storeName,
-                                          style: textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                                          decoration: BoxDecoration(
-                                            color: colorScheme.primary.withValues(alpha:0.1),
-                                            borderRadius: AppSpacing.borderRadiusXL,
-                                          ),
-                                          child: Text(
-                                            report.statusText,
-                                            style: textTheme.labelSmall?.copyWith(
-                                              color: colorScheme.onSurfaceVariant,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    AppSpacing.gapVerticalSM,
-                                    Text(
-                                      'Tanggal: ${report.date}',
-                                      style: textTheme.bodyMedium?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                    AppSpacing.gapVerticalXS,
-                                    Text(
-                                      'Dilaporkan oleh: ${report.createdByName}',
-                                      style: textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant.withValues(alpha:0.8),
-                                      ),
-                                    ),
-                                    const Divider(height: 24),
-                                    Text(
-                                      '${report.details.length} jenis item terdata',
-                                      style: textTheme.bodySmall?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-      floatingActionButton: _canReport
-          ? AddFab(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const CreateStorageStockPage(),
-                  ),
-                );
-                if (result == true) {
-                  _fetchReports();
-                  _checkCanReport();
-                }
-              },
-            )
-          : null,
+            return _buildReportCard(context, report, colorScheme, textTheme);
+          },
+        ),
+      ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 2,
         onTap: (index) {
@@ -285,6 +221,86 @@ class _StorageStockListPageState extends State<StorageStockListPage> {
             Navigator.pop(context);
           }
         },
+      ),
+    );
+  }
+
+  Widget _buildReportCard(
+    BuildContext context,
+    StorageStockModel report,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sectionGap),
+      child: InkWell(
+        borderRadius: AppSpacing.borderRadiusLG,
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  StorageStockDetailPage(reportId: report.id),
+            ),
+          );
+        },
+        child: Padding(
+          padding: AppSpacing.paddingMD,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    report.storeName,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: AppSpacing.borderRadiusXL,
+                    ),
+                    child: Text(
+                      report.statusText,
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              AppSpacing.gapVerticalSM,
+              Text(
+                'Tanggal: ${report.date}',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              AppSpacing.gapVerticalXS,
+              Text(
+                'Dilaporkan oleh: ${report.createdByName}',
+                style: textTheme.bodySmall?.copyWith(
+                  color:
+                      colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+              const Divider(height: 24),
+              Text(
+                '${report.details.length} jenis item terdata',
+                style: textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -82,9 +82,15 @@ class ModernButton extends StatelessWidget {
                 Icon(icon, color: resolvedForeground),
                 AppSpacing.gapHorizontalSM,
               ],
-              Text(
-                text,
-                style: TextStyle(color: resolvedForeground),
+              // Flexible + ellipsis: label panjang menyusut rapi, bukan
+              // overflow kecil saat ruang tombol mepet (mis. bar aksi bawah).
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: resolvedForeground),
+                ),
               ),
             ],
           );
@@ -93,7 +99,12 @@ class ModernButton extends StatelessWidget {
       minimumSize: WidgetStateProperty.all(
         Size(fullWidth ? double.infinity : 0, height ?? 48),
       ),
-      padding: WidgetStateProperty.all(AppSpacing.paddingVerticalMD),
+      // Padding horizontal wajib: tanpa ini tombol non-fullWidth (mis.
+      // "Tambah Item" di FormSectionCard) ikon/teksnya menempel garis
+      // border sehingga tampak terpotong. Standar sama dengan AppButtonStyle.
+      padding: WidgetStateProperty.all(
+        AppSpacing.paddingVerticalMD + AppSpacing.paddingHorizontalLG,
+      ),
       backgroundColor: variant == ModernButtonVariant.filled
           ? WidgetStateProperty.all(effectiveBg)
           : (backgroundColor != null

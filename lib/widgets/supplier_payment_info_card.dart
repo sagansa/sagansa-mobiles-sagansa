@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
-import '../services/image_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/format_utils.dart';
+import '../utils/qris_payload_parser.dart';
 
 class SupplierPaymentInfoCard extends StatelessWidget {
   final Map<String, dynamic>? selectedSupplier;
@@ -11,6 +13,10 @@ class SupplierPaymentInfoCard extends StatelessWidget {
   final String? bankAccountNo;
   final String? qris;
 
+  /// Nominal yang disisipkan ke QRIS dinamis saat dialog dibuka
+  /// (mis. total transfer). Null / <= 0 → QR statis tanpa nominal.
+  final int? amount;
+
   const SupplierPaymentInfoCard({
     super.key,
     this.selectedSupplier,
@@ -18,6 +24,7 @@ class SupplierPaymentInfoCard extends StatelessWidget {
     this.bankAccountName,
     this.bankAccountNo,
     this.qris,
+    this.amount,
   });
 
   @override
@@ -31,18 +38,16 @@ class SupplierPaymentInfoCard extends StatelessWidget {
 
     final effectiveBankName =
         (selectedSupplier?['bank_name'] ?? bankName ?? '').toString();
-    final effectiveAccountName = (selectedSupplier?['bank_account_name'] ??
-            bankAccountName ??
-            '')
-        .toString();
-    final effectiveAccountNo = (selectedSupplier?['bank_account_no'] ??
-            bankAccountNo ??
-            '')
-        .toString();
-    final effectiveQris =
-        (selectedSupplier?['qris'] ?? qris ?? '').toString();
+    final effectiveAccountName =
+        (selectedSupplier?['bank_account_name'] ?? bankAccountName ?? '')
+            .toString();
+    final effectiveAccountNo =
+        (selectedSupplier?['bank_account_no'] ?? bankAccountNo ?? '')
+            .toString();
+    final effectiveQris = (selectedSupplier?['qris'] ?? qris ?? '').toString();
 
-    final hasBank = effectiveAccountNo.isNotEmpty || effectiveBankName.isNotEmpty;
+    final hasBank =
+        effectiveAccountNo.isNotEmpty || effectiveBankName.isNotEmpty;
     final hasQris = effectiveQris.isNotEmpty;
 
     final theme = Theme.of(context);
@@ -61,7 +66,8 @@ class SupplierPaymentInfoCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+            const Icon(Icons.warning_amber_rounded,
+                color: Colors.amber, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -158,7 +164,8 @@ class SupplierPaymentInfoCard extends StatelessWidget {
                                 );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('No. rekening berhasil disalin!'),
+                                    content:
+                                        Text('No. rekening berhasil disalin!'),
                                     duration: Duration(seconds: 2),
                                   ),
                                 );
@@ -191,10 +198,11 @@ class SupplierPaymentInfoCard extends StatelessWidget {
             ),
           ],
 
-          if (hasBank && hasQris) const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8.0),
-            child: Divider(height: 1),
-          ),
+          if (hasBank && hasQris)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8.0),
+              child: Divider(height: 1),
+            ),
 
           // QRIS Section
           if (hasQris) ...[
@@ -235,13 +243,14 @@ class SupplierPaymentInfoCard extends StatelessWidget {
                 ),
                 OutlinedButton.icon(
                   onPressed: () {
-                    _showQrisDialog(context, effectiveQris);
+                    _showQrisDialog(context, effectiveQris, amount);
                   },
                   icon: const Icon(Icons.crop_free, size: 16),
                   label: const Text('Lihat QRIS'),
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     textStyle: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -253,8 +262,22 @@ class SupplierPaymentInfoCard extends StatelessWidget {
     );
   }
 
-  void _showQrisDialog(BuildContext context, String qris) {
-    final imageUrl = ImageService.buildUrl(qris);
+  void _showQrisDialog(BuildContext context, String qris, int? amount) {
+    // `qris` adalah string payload EMV/QRIS — QR digenerate ulang dari
+    // payload saat ditampilkan (gambar tidak pernah disimpan).
+    //
+    // Bila [amount] tersedia, payload diubah menjadi QRIS DINAMIS
+    // (nominal disisipkan) supaya aplikasi bank otomatis mengisi nominal.
+    final hasAmount = amount != null && amount > 0;
+    String payloadToDraw = qris;
+    if (hasAmount) {
+      try {
+        payloadToDraw = generateDynamicQrisPayload(qris, amount);
+      } catch (_) {
+        // Payload tidak bisa dimodifikasi → fallback QR statis.
+      }
+    }
+    final parsed = parseQrisPayload(payloadToDraw);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -265,39 +288,117 @@ class SupplierPaymentInfoCard extends StatelessWidget {
             Text('QRIS Supplier'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (imageUrl != null && imageUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageUrl,
-                  height: 280,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: SelectableText(
-                      qris,
-                      textAlign: TextAlign.center,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.all(12),
+                    // SizedBox berdimensi tetap wajib: QrImageView memakai
+                    // LayoutBuilder yang tidak mendukung intrinsic dimensions —
+                    // di dalam AlertDialog (IntrinsicWidth) dialog akan gagal
+                    // layout dan hanya menampilkan barrier gelap.
+                    child: SizedBox(
+                      width: 240,
+                      height: 240,
+                      child: QrImageView(
+                        data: payloadToDraw,
+                        version: QrVersions.auto,
+                        errorStateBuilder: (_, __) => const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            'Payload QRIS terlalu panjang / tidak valid untuk digambar.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              )
-            else
-              SelectableText(
-                qris,
-                textAlign: TextAlign.center,
-              ),
-          ],
+                const SizedBox(height: 12),
+                // Nama merchant & NMID hasil parse payload — dicocokkan
+                // dengan data supplier untuk memastikan QRIS yang benar.
+                _qrisMetaRow(ctx, 'Nama Merchant', parsed.merchantName ?? '-'),
+                const SizedBox(height: 4),
+                _qrisMetaRow(ctx, 'NMID', parsed.merchantNmid ?? '-'),
+                if (parsed.merchantCity != null) ...[
+                  const SizedBox(height: 4),
+                  _qrisMetaRow(ctx, 'Kota Merchant', parsed.merchantCity!),
+                ],
+                if (hasAmount) ...[
+                  const SizedBox(height: 4),
+                  _qrisMetaRow(ctx, 'Nominal QRIS', FormatUtils.formatCurrency(amount)),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  hasAmount
+                      ? 'QRIS dinamis — nominal Rp ${FormatUtils.formatNumber(amount)} otomatis terisi saat discan.'
+                      : 'QRIS statis — nominal diisi manual saat scan. Pastikan Nama Merchant & NMID sesuai dengan supplier ini.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  payloadToDraw,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: payloadToDraw));
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(
+                  content: Text('Payload QRIS berhasil disalin!'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Salin'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Tutup'),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _qrisMetaRow(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.end,
+          ),
+        ),
+      ],
     );
   }
 }

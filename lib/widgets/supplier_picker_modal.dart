@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import 'safe_bottom_bar.dart';
 
 class SupplierPickerModal extends StatefulWidget {
   final List<dynamic> suppliers;
@@ -49,7 +50,8 @@ class _SupplierPickerModalState extends State<SupplierPickerModal> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final screenHeight = MediaQuery.of(context).size.height;
-    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom +
+        context.systemBottomInset;
 
     final filtered = widget.suppliers.where((s) {
       // Filter out blacklisted suppliers (status == 3)
@@ -58,8 +60,9 @@ class _SupplierPickerModalState extends State<SupplierPickerModal> {
       if (_query.isEmpty) return true;
       final name = (s['name'] ?? '').toString().toLowerCase();
       final address = (s['address'] ?? '').toString().toLowerCase();
+      final country = (s['country_name'] ?? '').toString().toLowerCase();
       final q = _query.toLowerCase();
-      return name.contains(q) || address.contains(q);
+      return name.contains(q) || address.contains(q) || country.contains(q);
     }).toList();
 
     return Container(
@@ -301,10 +304,39 @@ class _SupplierPickerModalState extends State<SupplierPickerModal> {
                                         ),
                                       ],
                                       const SizedBox(height: 4),
-                                      // Bank / QRIS badges
+                                      // Bank / QRIS / asal luar negeri
                                       Wrap(
                                         spacing: 6,
+                                        runSpacing: 4,
                                         children: [
+                                          if (item['is_foreign'] == true)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.info.withValues(alpha: 0.14),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.public_rounded,
+                                                      size: 11, color: AppColors.info),
+                                                  const SizedBox(width: 3),
+                                                  Text(
+                                                    [
+                                                      (item['country_name'] ?? 'Luar Negeri').toString(),
+                                                      if ((item['currency'] ?? '').toString().isNotEmpty)
+                                                        item['currency'].toString(),
+                                                    ].join(' • '),
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: AppColors.info,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
                                           if ((item['bank_account_no'] ?? '').toString().isNotEmpty ||
                                               (item['bank_name'] ?? '').toString().isNotEmpty)
                                             Container(

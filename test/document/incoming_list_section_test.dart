@@ -251,23 +251,28 @@ void main() {
     expect(incoming.lastQuery, 'undangan');
     expect(incoming.calls, 2);
 
-    // Chip filter status + sifat (widgetWithText: label sama dengan badge
-    // kartu, pilih khusus chip). Baris chip scrollable horizontal —
-    // geser kiri dulu agar chip target terlihat.
-    await tester.drag(
-        find.widgetWithText(ChoiceChip, 'Terdaftar'), const Offset(-250, 0));
+    // Filter via tombol tune AppBar → FilterBottomSheet (pola standar):
+    // pilih Status + Sifat di dropdown, Terapkan → service menerima filter.
+    await tester.tap(find.byTooltip('Filter Surat Masuk'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Diproses'));
-    await tester.pumpAndSettle();
-    expect(incoming.lastStatus, 'diproses');
+    expect(find.text('Filter Surat Masuk'), findsOneWidget);
 
-    await tester.drag(
-        find.widgetWithText(ChoiceChip, 'Biasa'), const Offset(-250, 0));
+    // Dropdown Status → ModernPickerSheet → pilih 'Diproses'.
+    await tester.tap(find.text('Pilih Status'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Rahasia'));
+    await tester.tap(find.text('Diproses').last);
     await tester.pumpAndSettle();
-    expect(incoming.lastSifat, 'rahasia');
+
+    // Dropdown Sifat → pilih 'Rahasia'.
+    await tester.tap(find.text('Pilih Sifat'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rahasia').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Terapkan'));
+    await tester.pumpAndSettle();
     expect(incoming.lastStatus, 'diproses');
+    expect(incoming.lastSifat, 'rahasia');
   });
 
   testWidgets('pindah tab pulang-pergi mempertahankan state Masuk '
@@ -371,10 +376,9 @@ void main() {
     await tester.tap(find.byTooltip('Aksi Surat Masuk'));
     await tester.pumpAndSettle();
 
-    // Menu kini aktif (Task 11) — tidak lagi "tersedia setelah Tugas 11".
-    final item =
-        tester.widget<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>));
-    expect(item.enabled, isTrue);
+    // Menu ⋮ kartu kini bottom sheet aksi (bukan PopupMenu) — aksi
+    // tersedia langsung (Task 11).
+    expect(find.text('Daftarkan sebagai balasan pihak luar'), findsOneWidget);
 
     await tester.tap(find.text('Daftarkan sebagai balasan pihak luar'));
     await tester.pumpAndSettle();

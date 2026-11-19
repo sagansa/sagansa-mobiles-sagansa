@@ -26,12 +26,12 @@ class AppColors {
 
   // Surface Colors - Clean Warm White / Obsidian
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceVariant = Color(0xFFF7F4EC); // warm off-white
+  static const Color surfaceVariant = Color(0xFFE8E2D5); // warm cream-stone (chips, inputs)
   static const Color onSurface = Color(0xFF262626); // charcoal (header text / button bg)
   static const Color onSurfaceVariant = Color(0xFF5C5648); // warm gray
 
-  // Background Colors - Champagne Light
-  static const Color background = Color(0xFFFBF7EE); // emas light / champagne
+  // Background Colors - Champagne Canvas (Memberikan kontras optimal untuk efek glassmorphism & kartu putih)
+  static const Color background = Color(0xFFF2EEE9); // warm champagne canvas / luxury neutral
   static const Color onBackground = Color(0xFF262626);
 
   // Status Colors

@@ -162,6 +162,14 @@ Future<void> _pumpWizard(WidgetTester tester, DocumentService service) async {
 
 /// Buka sheet "Salin surat lama" dan pilih sumber arsip.
 Future<void> _duplicateViaSheet(WidgetTester tester) async {
+  // Langkah 1 kini memuat pencarian + grid + template — tombol salin
+  // berada di bawah lipat viewport; gulir dulu ke tombol.
+  await tester.dragUntilVisible(
+    find.text('Salin surat lama'),
+    find.byType(ListView),
+    const Offset(0, -200),
+  );
+  await tester.pumpAndSettle();
   await tester.tap(find.text('Salin surat lama'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('017/KUA/III/2026'));
@@ -196,6 +204,14 @@ void main() {
       find.widgetWithText(TextField, 'Jl. Merdeka 12'),
       findsOneWidget,
     );
+    // Field khusus di bawah lipat viewport (bar aksi bawah menyusutkan
+    // area konten) — gulir dulu sebelum mengassert, pola 'Masa berlaku'.
+    await tester.dragUntilVisible(
+      find.text('Siti Rahayu (penerima kuasa)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(
       find.widgetWithText(TextField, 'Siti Rahayu (penerima kuasa)'),
       findsOneWidget,
@@ -287,10 +303,24 @@ void main() {
     await tester.tap(find.text('Surat Tugas'));
     await tester.pumpAndSettle();
 
+    // Seksi template & tombol salin di bawah lipat viewport langkah 1 —
+    // gulir dulu sebelum mengassert.
+    await tester.dragUntilVisible(
+      find.text('Template KUA Standar'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Template ST'), findsNothing);
     expect(find.text('Template KUA Standar'), findsOneWidget);
 
     // Tombol "Salin surat lama" juga nonaktif saat terkunci.
+    await tester.dragUntilVisible(
+      find.widgetWithText(OutlinedButton, 'Salin surat lama'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     final dupButton =
         find.widgetWithText(OutlinedButton, 'Salin surat lama');
     expect(tester.widget<OutlinedButton>(dupButton).onPressed, isNull);

@@ -1,3 +1,4 @@
+import '../utils/supplier_name.dart';
 import 'enums/import_document_type.dart';
 import 'enums/import_stage.dart';
 
@@ -29,6 +30,13 @@ class ImportItem {
   final double? quantityReceived;
   final double? hppEstimate;
   final double? hppReal;
+
+  /// HPP satuan hasil hitung server (endpoint list) — bisa lebih baru dari
+  /// snapshot [hppEstimate]/[hppReal] yang baru tersimpan saat finalisasi.
+  final double? hppEstimateUnit;
+  final double? hppRealUnit;
+  final double? unitPriceIdr;
+  final bool priceIsRealized;
   final String productName;
   final String unitName;
 
@@ -40,6 +48,10 @@ class ImportItem {
     this.quantityReceived,
     this.hppEstimate,
     this.hppReal,
+    this.hppEstimateUnit,
+    this.hppRealUnit,
+    this.unitPriceIdr,
+    this.priceIsRealized = false,
     required this.productName,
     required this.unitName,
   });
@@ -53,10 +65,25 @@ class ImportItem {
       quantityReceived: _toDoubleNull(json['quantity_received']),
       hppEstimate: _toDoubleNull(json['hpp_estimate']),
       hppReal: _toDoubleNull(json['hpp_real']),
-      productName: (json['product']?['name'] ?? json['product_name'] ?? '')
-          .toString(),
+      hppEstimateUnit: _toDoubleNull(json['hpp_estimate_unit']),
+      hppRealUnit: _toDoubleNull(json['hpp_real_unit']),
+      unitPriceIdr: _toDoubleNull(json['unit_price_idr']),
+      priceIsRealized: json['price_is_realized'] == true,
+      productName:
+          (json['product']?['name'] ?? json['product_name'] ?? '').toString(),
       unitName: (json['product']?['unit']?['unit'] ?? '').toString(),
     );
+  }
+
+  /// Harga satuan rupiah yang ditampilkan: realisasi bila sudah ada,
+  /// fallback estimasi, lalu snapshot HPP lama.
+  double? get displayUnitPriceIdr {
+    if ((unitPriceIdr ?? 0) > 0) return unitPriceIdr;
+    if (priceIsRealized && (hppReal ?? 0) > 0) return hppReal;
+    if ((hppEstimateUnit ?? 0) > 0) return hppEstimateUnit;
+    if ((hppRealUnit ?? 0) > 0) return hppRealUnit;
+    if ((hppEstimate ?? 0) > 0) return hppEstimate;
+    return hppReal;
   }
 }
 
@@ -65,7 +92,8 @@ class ImportCost {
   final int id;
   final String stage; // purchase|payment|shipment|customs|arrival
   final String name;
-  final String category; // goods|bank|tax|logistics|other
+  final String category; // goods|bank|tax|logistics|other|discount
+  final String? source; // payment|notul (baris turunan, read-only)
   final double? taxRate;
   final bool isForeignCurrency;
   final double? amountForeign;
@@ -77,6 +105,7 @@ class ImportCost {
     required this.stage,
     required this.name,
     required this.category,
+    this.source,
     this.taxRate,
     required this.isForeignCurrency,
     this.amountForeign,
@@ -90,6 +119,7 @@ class ImportCost {
       stage: (json['stage'] ?? 'other').toString(),
       name: (json['name'] ?? '').toString(),
       category: (json['category'] ?? 'other').toString(),
+      source: json['source']?.toString(),
       taxRate: _toDoubleNull(json['tax_rate']),
       isForeignCurrency: json['is_foreign_currency'] == true,
       amountForeign: _toDoubleNull(json['amount_foreign']),
@@ -98,15 +128,116 @@ class ImportCost {
     );
   }
 
+  bool get isDerived => source != null;
+
   String get categoryLabel {
     return switch (category) {
       'bank' => 'Bank',
       'tax' => 'Pajak',
       'logistics' => 'Logistik',
       'goods' => 'Barang',
+      'discount' => 'Diskon',
       _ => 'Lainnya',
     };
   }
+}
+
+/// Pembayaran bank per tranche (import_payments) — satu angka debit bank
+/// yang mencakup nilai barang + biaya bank − diskon.
+class ImportPayment {
+  final int id;
+  final double amount;
+  final DateTime? paidAt;
+  final String? note;
+  final String? proofPath;
+  final String? proofOriginalName;
+  final String? proofMimeType;
+  final int? proofSizeBytes;
+
+  ImportPayment({
+    required this.id,
+    required this.amount,
+    this.paidAt,
+    this.note,
+    this.proofPath,
+    this.proofOriginalName,
+    this.proofMimeType,
+    this.proofSizeBytes,
+  });
+
+  factory ImportPayment.fromJson(Map<String, dynamic> json) {
+    return ImportPayment(
+      id: _toInt(json['id']),
+      amount: _toDouble(json['amount']),
+      paidAt: DateTime.tryParse((json['paid_at'] ?? '').toString()),
+      note: json['note']?.toString(),
+      proofPath: json['proof_path']?.toString(),
+      proofOriginalName: json['proof_original_name']?.toString(),
+      proofMimeType: json['proof_mime_type']?.toString(),
+      proofSizeBytes: json['proof_size_bytes'] == null
+          ? null
+          : _toInt(json['proof_size_bytes']),
+    );
+  }
+
+  bool get hasProof => (proofPath ?? '').isNotEmpty;
+}
+
+/// Notul pabean (import_notuls). PPh/PPN notul terbaru menjadi angka final.
+class ImportNotul {
+  final int id;
+  final String? number;
+  final DateTime? date;
+  final double pphAmount;
+  final double ppnAmount;
+  final double penaltyAmount;
+  final double otherAmount;
+  final String? otherDescription;
+  final String? note;
+  final String? documentPath;
+  final String? documentOriginalName;
+  final String? documentMimeType;
+  final int? documentSizeBytes;
+
+  ImportNotul({
+    required this.id,
+    this.number,
+    this.date,
+    required this.pphAmount,
+    required this.ppnAmount,
+    required this.penaltyAmount,
+    required this.otherAmount,
+    this.otherDescription,
+    this.note,
+    this.documentPath,
+    this.documentOriginalName,
+    this.documentMimeType,
+    this.documentSizeBytes,
+  });
+
+  factory ImportNotul.fromJson(Map<String, dynamic> json) {
+    return ImportNotul(
+      id: _toInt(json['id']),
+      number: json['notul_number']?.toString(),
+      date: DateTime.tryParse((json['notul_date'] ?? '').toString()),
+      pphAmount: _toDouble(json['pph_amount']),
+      ppnAmount: _toDouble(json['ppn_amount']),
+      penaltyAmount: _toDouble(json['penalty_amount']),
+      otherAmount: _toDouble(json['other_amount']),
+      otherDescription: json['other_description']?.toString(),
+      note: json['note']?.toString(),
+      documentPath: json['document_path']?.toString(),
+      documentOriginalName: json['document_original_name']?.toString(),
+      documentMimeType: json['document_mime_type']?.toString(),
+      documentSizeBytes: json['document_size_bytes'] == null
+          ? null
+          : _toInt(json['document_size_bytes']),
+    );
+  }
+
+  bool get hasDocument => (documentPath ?? '').isNotEmpty;
+
+  double get taxTotal => pphAmount + ppnAmount;
 }
 
 /// Dokumen kelengkapan proses impor (import_documents).
@@ -273,7 +404,8 @@ class ImportStageCheck {
         .entries
         .map((e) => ImportStageDocCheck(
               type: e.key,
-              label: (e.value as Map<String, dynamic>)['label']?.toString() ?? e.key,
+              label: (e.value as Map<String, dynamic>)['label']?.toString() ??
+                  e.key,
               required: (e.value as Map<String, dynamic>)['required'] == true,
               present: (e.value as Map<String, dynamic>)['present'] == true,
             ))
@@ -299,12 +431,20 @@ class ImportPurchase {
   final int? storeId;
   final String currency;
   final double exchangeRate;
+
+  /// Kurs 1 USD = x VND saat transaksi (embedded, untuk analisa trend
+  /// lintas valuta); null untuk transaksi lama.
+  final double? usdVndRate;
+  final String? invoiceNumber;
+  final DateTime? purchaseDate;
   final ImportStage stage;
   final String? notes;
   final double totalEstimate;
   final double totalReal;
   final List<ImportItem> items;
   final List<ImportCost> costs;
+  final List<ImportPayment> payments;
+  final List<ImportNotul> notuls;
   final List<ImportDocumentModel> documents;
   final int documentCount;
 
@@ -315,12 +455,17 @@ class ImportPurchase {
     this.storeId,
     required this.currency,
     required this.exchangeRate,
+    this.usdVndRate,
+    this.invoiceNumber,
+    this.purchaseDate,
     required this.stage,
     this.notes,
     required this.totalEstimate,
     required this.totalReal,
     required this.items,
     required this.costs,
+    this.payments = const [],
+    this.notuls = const [],
     required this.documents,
     this.documentCount = 0,
   });
@@ -332,6 +477,12 @@ class ImportPurchase {
     final costs = (json['costs'] as List<dynamic>? ?? [])
         .map((e) => ImportCost.fromJson(e as Map<String, dynamic>))
         .toList();
+    final payments = (json['payments'] as List<dynamic>? ?? [])
+        .map((e) => ImportPayment.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final notuls = (json['notuls'] as List<dynamic>? ?? [])
+        .map((e) => ImportNotul.fromJson(e as Map<String, dynamic>))
+        .toList();
     final documents = (json['documents'] as List<dynamic>? ?? [])
         .map((e) => ImportDocumentModel.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -339,17 +490,27 @@ class ImportPurchase {
     return ImportPurchase(
       id: _toInt(json['id']),
       supplierId: _toInt(json['supplier_id']),
-      supplierName: (json['supplier']?['name'] ?? json['supplier_name'] ?? '-')
-          .toString(),
+      supplierName: formatSupplierName(
+        (json['supplier']?['name'] ?? json['supplier_name'] ?? '-').toString(),
+      ),
       storeId: json['store_id'] == null ? null : _toInt(json['store_id']),
       currency: (json['currency'] ?? 'USD').toString(),
       exchangeRate: _toDouble(json['exchange_rate']),
+      usdVndRate: json['usd_vnd_rate'] == null
+          ? null
+          : _toDouble(json['usd_vnd_rate']),
+      invoiceNumber: json['invoice_number']?.toString(),
+      purchaseDate: DateTime.tryParse(
+        (json['purchase_date'] ?? '').toString(),
+      ),
       stage: ImportStage.fromApi(json['stage']?.toString()),
       notes: json['notes']?.toString(),
       totalEstimate: _toDouble(json['total_estimate']),
       totalReal: _toDouble(json['total_real']),
       items: items,
       costs: costs,
+      payments: payments,
+      notuls: notuls,
       documents: documents,
       documentCount: _toInt(json['documents_count']),
     );
@@ -358,6 +519,13 @@ class ImportPurchase {
   /// Tipe dokumen unik yang sudah ter-upload — untuk checklist cepat.
   Set<ImportDocumentType> get uploadedTypes =>
       documents.map((d) => d.type).toSet();
+
+  double get paymentsTotal => payments.fold(0, (sum, p) => sum + p.amount);
+
+  /// Biaya manual yang tampil di bagian "Biaya Lain" — baris turunan
+  /// pembayaran/notul tidak boleh diedit.
+  List<ImportCost> get manualCosts =>
+      costs.where((c) => !c.isDerived).toList(growable: false);
 }
 
 /// Response lengkap GET /import-purchases/{id}.
@@ -373,4 +541,109 @@ class ImportPurchaseDetail {
     required this.checklist,
     this.nextStage,
   });
+
+  /// Dokumen wajib tahap BERIKUTNYA yang belum diupload — dasar merender
+  /// keadaan tombol "Lanjut" (syarat belum lengkap → gaya peringatan).
+  /// Gerbang sebenarnya tetap di server; ini hanya pratinjau state.
+  List<ImportStageDocCheck> get missingRequiredForNextStage {
+    final next = importPurchase.stage.next;
+    if (next == null) return const [];
+    return checklist
+        .where((c) => c.stage == next)
+        .expand((c) => c.documents)
+        .where((d) => d.required && !d.present)
+        .toList(growable: false);
+  }
+}
+
+/// Satu titik harga satuan produk dari sebuah proses impor.
+class ImportPriceTrendPoint {
+  final int importId;
+  final DateTime? date;
+  final String supplierName;
+  final String currency;
+  final double exchangeRate;
+
+  /// Kurs 1 USD = x VND yang melekat pada transaksi impor ini — menang
+  /// atas referensi per tanggal saat konversi trend.
+  final double? usdVndRate;
+  final double quantity;
+  final double? quantityReceived;
+  final double unitPriceForeign;
+  final double unitPriceIdr;
+  final double unitPriceIdrEstimate;
+  final double unitPriceIdrReal;
+  final bool isRealized;
+
+  ImportPriceTrendPoint({
+    required this.importId,
+    this.date,
+    required this.supplierName,
+    required this.currency,
+    required this.exchangeRate,
+    this.usdVndRate,
+    required this.quantity,
+    this.quantityReceived,
+    required this.unitPriceForeign,
+    required this.unitPriceIdr,
+    required this.unitPriceIdrEstimate,
+    required this.unitPriceIdrReal,
+    required this.isRealized,
+  });
+
+  factory ImportPriceTrendPoint.fromJson(Map<String, dynamic> json) {
+    return ImportPriceTrendPoint(
+      importId: _toInt(json['import_id']),
+      date: DateTime.tryParse((json['date'] ?? '').toString()),
+      supplierName: formatSupplierName(
+        (json['supplier_name'] ?? '-').toString(),
+      ),
+      currency: (json['currency'] ?? 'USD').toString(),
+      exchangeRate: _toDouble(json['exchange_rate']),
+      usdVndRate: json['usd_vnd_rate'] == null
+          ? null
+          : _toDouble(json['usd_vnd_rate']),
+      quantity: _toDouble(json['quantity']),
+      quantityReceived: _toDoubleNull(json['quantity_received']),
+      unitPriceForeign: _toDouble(json['unit_price_foreign']),
+      unitPriceIdr: _toDouble(json['unit_price_idr']),
+      unitPriceIdrEstimate: _toDouble(json['unit_price_idr_estimate']),
+      unitPriceIdrReal: _toDouble(json['unit_price_idr_real']),
+      isRealized: json['is_realized'] == true,
+    );
+  }
+}
+
+/// Deret harga satuan satu produk lintas seluruh proses impor.
+class ImportProductPriceTrend {
+  final int productId;
+  final String productName;
+  final String unitName;
+  final String currency;
+  final List<ImportPriceTrendPoint> points;
+
+  ImportProductPriceTrend({
+    required this.productId,
+    required this.productName,
+    required this.unitName,
+    required this.currency,
+    required this.points,
+  });
+
+  factory ImportProductPriceTrend.fromJson(Map<String, dynamic> json) {
+    return ImportProductPriceTrend(
+      productId: _toInt(json['product_id']),
+      productName: (json['product_name'] ?? '').toString(),
+      unitName: (json['unit_name'] ?? '').toString(),
+      currency: (json['currency'] ?? 'USD').toString(),
+      points: (json['points'] as List<dynamic>? ?? [])
+          .map((e) => ImportPriceTrendPoint.fromJson(e as Map<String, dynamic>))
+          .toList(growable: false),
+    );
+  }
+
+  ImportPriceTrendPoint? get latest => points.isEmpty ? null : points.last;
+
+  ImportPriceTrendPoint? get previous =>
+      points.length < 2 ? null : points[points.length - 2];
 }

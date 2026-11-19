@@ -165,6 +165,60 @@ void main() {
     }, () => mock);
   });
 
+  testWidgets(
+      'bypass ditolak server (server lama tak mengenal flag) → dialog '
+      'informatif muncul lagi, bukan "Gagal"', (tester) async {
+    final blockedBody = {
+      'success': false,
+      'message': 'Syarat tahap belum terpenuhi.',
+      'data': {
+        'blockers': [
+          {
+            'kind': 'document',
+            'message': 'Dokumen wajib belum diupload: Invoice',
+          },
+        ],
+      },
+    };
+
+    var advanceCalls = 0;
+    final mock = MockClient((request) async {
+      if (request.url.path.endsWith('/advance') && request.method == 'POST') {
+        advanceCalls++;
+        return http.Response(jsonEncode(blockedBody), 422);
+      }
+      return http.Response(
+        jsonEncode(detailJson('payment')),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+
+    await http.runWithClient(() async {
+      await pumpPage(tester);
+
+      await tester.tap(find.text('Lanjut: Pengiriman'));
+      await pumpFrames(tester);
+      await tester.tap(find.text('Lanjut Tanpa Dokumen'));
+      await pumpFrames(tester);
+
+      // Bypass terkirim dua kali; penolakan kedua ditampilkan sebagai
+      // dialog syarat (tanpa tombol bypass) + diagnosis server lama,
+      // bukan dialog "Gagal".
+      expect(advanceCalls, 2);
+      expect(find.text('Gagal'), findsNothing);
+      expect(
+        find.textContaining('Masih Belum Terpenuhi'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('server perlu diperbarui'),
+        findsOneWidget,
+      );
+      expect(find.text('Lanjut Tanpa Dokumen'), findsNothing);
+    }, () => mock);
+  });
+
   testWidgets('tombol Finalisasi aktif saat idle di tahap receiving (regresi)',
       (tester) async {
     final mock = MockClient(

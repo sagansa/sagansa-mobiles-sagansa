@@ -7,6 +7,11 @@ class SectionCard extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
   final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
+
+  /// Jarak vertikal setelah divider header (default [AppSpacing.md]).
+  /// Halaman padat (mis. detail multi-seksi) boleh mengecilkan.
+  final double headerSpacing;
   final VoidCallback? onTap;
   final List<Widget>? actions;
 
@@ -17,6 +22,8 @@ class SectionCard extends StatelessWidget {
     this.icon,
     this.iconColor,
     this.padding,
+    this.margin,
+    this.headerSpacing = AppSpacing.md,
     this.onTap,
     this.actions,
   });
@@ -29,6 +36,7 @@ class SectionCard extends StatelessWidget {
     final card = Card(
       color: colorScheme.surface,
       elevation: 0,
+      margin: margin,
       shape: RoundedRectangleBorder(
         borderRadius: AppSpacing.borderRadiusLG,
         side: BorderSide(
@@ -50,7 +58,8 @@ class SectionCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: (iconColor ?? colorScheme.primary).withValues(alpha: 0.1),
+                          color: (iconColor ?? colorScheme.primary)
+                              .withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -80,8 +89,11 @@ class SectionCard extends StatelessWidget {
                 height: 1,
                 color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               ),
-            if ((title != null || icon != null)) AppSpacing.gapVerticalMD,
-            child,
+            if ((title != null || icon != null)) ...[
+              SizedBox(height: headerSpacing),
+              child,
+            ] else
+              child,
           ],
         ),
       ),

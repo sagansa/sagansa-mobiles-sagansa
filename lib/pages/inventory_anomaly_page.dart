@@ -8,6 +8,8 @@ import '../services/inventory_anomaly_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 
 class InventoryAnomalyPage extends StatefulWidget {
   const InventoryAnomalyPage({super.key});
@@ -169,7 +171,9 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
       body = _buildBody();
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Perbandingan Penjualan vs Stok')),
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(title: const Text('Perbandingan Penjualan vs Stok')),
       body: body,
     );
   }
@@ -266,9 +270,13 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
         child: Column(
           children: [
             Text('$value',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: color, fontSize: 16)),
-            Text(label, style: TextStyle(color: color, fontSize: 11)),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold, color: color)),
+            Text(label,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: color)),
           ],
         ),
       );
@@ -280,10 +288,10 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          chip('Cocok', s.matchCount, const Color(0xFF2E7D32)),
-          chip('Selisih', s.mismatchCount, const Color(0xFFC62828)),
-          chip('No SO', s.noSoDataCount, const Color(0xFF616161)),
-          chip('No Stok', s.noStockDataCount, const Color(0xFFF9A825)),
+          chip('Cocok', s.matchCount, AppColors.success),
+          chip('Selisih', s.mismatchCount, AppColors.error),
+          chip('No SO', s.noSoDataCount, AppColors.onSurfaceVariant),
+          chip('No Stok', s.noStockDataCount, AppColors.warning),
           chip('Total', s.productsCompared, AppColors.primary),
         ],
       ),
@@ -313,7 +321,10 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
         ),
         child: Text(
           it.status.label,
-          style: TextStyle(color: it.status.color, fontSize: 11),
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: it.status.color),
         ),
       ),
     );
@@ -417,9 +428,11 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Pilih Store',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('Pilih Store',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold)),
                         TextButton(
                           onPressed: () {
                             setSheet(() {
@@ -440,6 +453,7 @@ class _InventoryAnomalyPageState extends State<InventoryAnomalyPage> {
                       maxHeight: MediaQuery.of(context).size.height * 0.5,
                     ),
                     child: ListView(
+          padding: EdgeInsets.only(top: AppBarInsets.top(context)),
                       shrinkWrap: true,
                       children: _allStores.map((s) {
                         return CheckboxListTile(

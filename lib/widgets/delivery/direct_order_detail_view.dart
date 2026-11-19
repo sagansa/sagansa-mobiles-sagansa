@@ -8,6 +8,9 @@ import '../../services/image_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/status_mappers.dart';
+import '../../widgets/detail/detail_image_view.dart';
+import '../../widgets/detail/detail_product_tile.dart';
+import '../../widgets/detail/detail_section_card.dart';
 import '../../widgets/detail_row.dart';
 import '../../widgets/photo_uploader.dart';
 import '../../widgets/status_badge.dart';
@@ -15,6 +18,7 @@ import '../app_snackbar.dart';
 import '../procurement/purchase_invoice_link_card.dart';
 import 'delivery_actions.dart';
 import 'delivery_stepper.dart';
+import 'edit_delivery_photos_sheet.dart';
 import 'edit_order_assignment_sheet.dart';
 import 'edit_order_items_sheet.dart';
 
@@ -44,7 +48,10 @@ class DirectOrderDetailView extends StatelessWidget {
     final canSubmitDelivery = deliveryStatus.canSubmitDelivery;
 
     return SingleChildScrollView(
-      padding: AppSpacing.paddingMD,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -52,33 +59,44 @@ class DirectOrderDetailView extends StatelessWidget {
             status: status,
             orderMode: orderMode,
           ),
-          AppSpacing.gapVerticalMD,
+          const SizedBox(height: 10),
           _buildTransactionInfoCard(
               context, textTheme, colorScheme, provider, listState, isLocked),
-          AppSpacing.gapVerticalMD,
+          const SizedBox(height: 10),
           _buildProductsCard(
               context, textTheme, colorScheme, provider, listState, isLocked),
-          AppSpacing.gapVerticalMD,
           if (order['image_payment_url'] != null) ...[
+            const SizedBox(height: 10),
             _buildPaymentProofCard(context, textTheme, colorScheme),
-            AppSpacing.gapVerticalMD,
           ],
-          if (order['image_delivery_url'] != null) ...[
-            _buildDeliveryPhotoCard(context, textTheme, colorScheme),
-            AppSpacing.gapVerticalMD,
+          if (_deliveryPhotoUrls().isNotEmpty ||
+              listState.canEditDeliveryPhotos) ...[
+            const SizedBox(height: 10),
+            _buildDeliveryPhotoCard(
+                context, textTheme, colorScheme, provider, listState),
           ],
-          // Invoice pembelian terkait — hanya untuk admin/super_admin +
-          // storage-staff (flag dimuat di DeliveryProvider.initialize).
-          if (listState.canManageSalesLink &&
-              int.tryParse('${order['id']}') != null) ...[
-            PurchaseInvoiceLinkCard(orderId: int.tryParse('${order['id']}')!),
-            AppSpacing.gapVerticalMD,
+          // Invoice pembelian terkait — tampil pada order valid; tombol link aktif
+          // jika memiliki izin (storage-staff atau admin/super_admin).
+          if (int.tryParse('${order['id']}') != null) ...[
+            const SizedBox(height: 10),
+            PurchaseInvoiceLinkCard(
+              orderId: int.tryParse('${order['id']}')!,
+              canEdit: listState.canManageSalesLink || listState.isAdmin,
+            ),
           ],
+          const SizedBox(height: 10),
           if (canMarkReadyToShip)
             MarkReadyToShipCard(
               isLoading: formState.isMarkingReady,
               onMarkReady: () {
-                provider.markReadyToShip().catchError((e) {
+                provider.markReadyToShip().then((_) {
+                  if (context.mounted) {
+                    showSuccessSnackBar(
+                      context,
+                      'Order berhasil ditandai siap dikirim.',
+                    );
+                  }
+                }).catchError((e) {
                   if (context.mounted) _showError(context, e);
                 });
               },
@@ -86,7 +104,7 @@ class DirectOrderDetailView extends StatelessWidget {
           else if (canSubmitDelivery) ...[
             _buildDeliveryForm(context, provider, textTheme, colorScheme),
             if (status == DeliveryStatus.fix) ...[
-              AppSpacing.gapVerticalMD,
+              const SizedBox(height: 10),
               _buildRefundButton(context, provider, colorScheme),
             ],
           ],
@@ -106,88 +124,62 @@ class DirectOrderDetailView extends StatelessWidget {
     final canEditAssignment = listState.isAdmin &&
         !(status == DeliveryStatus.delivered &&
             order['payment_status']?.toString() == '2');
-    final editIcon = canEditAssignment
-        ? _buildEditAssignmentIcon(context, provider)
-        : null;
 
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return DetailSectionCard(
+      title: 'ORDER #${order['id']}',
+      icon: Icons.receipt_long_outlined,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'ORDER #${order['id']}',
-                      style: textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    StatusBadge(
-                      label: StatusMappers.deliveryLabel(
-                          order['delivery_status']),
-                      type: StatusMappers.deliveryStatus(
-                          order['delivery_status']),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                DetailRow(
-                    label: 'Toko',
-                    value: order['store_name'] ?? '-',
-                    trailing: editIcon),
-                const SizedBox(height: 8),
-                DetailRow(
-                    label: 'Metode Bayar',
-                    value: order['payment_method'] ?? '-'),
-                const SizedBox(height: 8),
-                DetailRow(
-                    label: 'Status Bayar',
-                    value: StatusMappers.paymentLabel(
-                        order['payment_status']?.toString()),
-                    trailing: editIcon),
-                if (order['bank_name'] != null) ...[
-                  const SizedBox(height: 8),
-                  DetailRow(
-                    label: 'Rekening Tujuan',
-                    value:
-                        '${order['bank_name']} - ${order['bank_account_number']} (${order['bank_account_name']})',
-                  ),
-                ],
-                const SizedBox(height: 8),
-                DetailRow(
-                    label: 'Jasa Kirim',
-                    value: order['delivery_service_name'] ?? '-'),
-                const SizedBox(height: 8),
-                DetailRow(
-                    label: 'Tanggal Kirim',
-                    value: order['delivery_date'] ?? '-'),
-                if (isLocked) ...[
-                  const SizedBox(height: 8),
-                  DetailRow(
-                      label: 'Penerima',
-                      value: order['received_by'] ?? '-'),
-                ],
-              ],
-            ),
+          StatusBadge(
+            label: StatusMappers.deliveryLabel(order['delivery_status']),
+            type: StatusMappers.deliveryStatus(order['delivery_status']),
           ),
+          const SizedBox(width: 6),
+          StatusBadge(
+            label: StatusMappers.paymentLabel(order['payment_status']?.toString()),
+            type: StatusMappers.paymentStatus(order['payment_status']?.toString()),
+          ),
+          if (canEditAssignment) ...[
+            const SizedBox(width: 6),
+            _buildEditAssignmentIcon(context, provider),
+          ],
         ],
       ),
+      itemSpacing: 6,
+      children: [
+        DetailRow(
+          label: 'Toko',
+          value: order['store_name'] ?? '-',
+        ),
+        DetailRow(
+          label: 'Metode Bayar',
+          value: order['payment_method'] ?? '-',
+        ),
+        DetailRow(
+          label: 'Status Bayar',
+          value: StatusMappers.paymentLabel(order['payment_status']?.toString()),
+        ),
+        if (order['bank_name'] != null)
+          DetailRow(
+            label: 'Rekening Tujuan',
+            value:
+                '${order['bank_name']} - ${order['bank_account_number']} (${order['bank_account_name']})',
+          ),
+        DetailRow(
+          label: 'Jasa Kirim',
+          value: order['delivery_service_name'] ?? '-',
+        ),
+        DetailRow(
+          label: 'Tanggal Kirim',
+          value: order['delivery_date'] ?? '-',
+        ),
+        if (isLocked)
+          DetailRow(
+            label: 'Penerima',
+            value: order['received_by'] ?? '-',
+          ),
+      ],
     );
   }
 
@@ -205,6 +197,8 @@ class DirectOrderDetailView extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       tooltip: 'Ubah toko & status bayar',
       color: Theme.of(context).colorScheme.primary,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
     );
   }
 
@@ -216,123 +210,88 @@ class DirectOrderDetailView extends StatelessWidget {
     DeliveryListState listState,
     bool isLocked,
   ) {
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.inventory_2_outlined,
-                      color: Colors.blue, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Rincian Produk',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ],
+    final items = order['items'] as List?;
+    final hasItems = items != null && items.isNotEmpty;
+
+    return DetailSectionCard(
+      title: 'Rincian Produk (${hasItems ? items.length : 0})',
+      icon: Icons.inventory_2_outlined,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      trailing: (listState.isAdmin && !isLocked)
+          ? _buildEditItemsIcon(context, provider)
+          : null,
+      children: [
+        if (hasItems) ...[
+          ...items.map((item) {
+            final qty = item['quantity'] is int
+                ? item['quantity'] as int
+                : int.tryParse('${item['quantity']}') ?? 1;
+            return DetailProductTile(
+              productName: item['product_name'] ?? '-',
+              productUnit: item['product_unit']?.toString(),
+              quantity: qty,
+              formattedUnitPrice: listState.isAdmin
+                  ? provider.formatPrice(item['unit_price'] ?? 0)
+                  : null,
+              formattedSubtotalPrice: listState.isAdmin
+                  ? provider.formatPrice(item['subtotal_price'] ?? 0)
+                  : null,
+              showPrice: listState.isAdmin,
+            );
+          }),
+        ] else
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Text(
+              'Tidak ada rincian produk.',
+              style: textTheme.bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 12),
-            Divider(
-                height: 1,
-                color: colorScheme.outlineVariant
-                    .withValues(alpha: 0.3)),
-            const SizedBox(height: 12),
-            if (order['items'] != null &&
-                (order['items'] as List).isNotEmpty) ...[
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: (order['items'] as List).length,
-                separatorBuilder: (context, index) => Divider(
-                    height: 16,
-                    color: colorScheme.outlineVariant
-                        .withValues(alpha: 0.2)),
-                itemBuilder: (context, index) {
-                  final item = order['items'][index];
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+          ),
+        // Ringkasan nilai TIDAK bergantung pada hasItems — order tanpa
+        // detail (data lama) tetap menampilkan ongkir & total untuk admin.
+        if (listState.isAdmin) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Ongkos kirim ikut dirangkum total — tampil hanya bila
+                // server mengirim field-nya.
+                if (order['shipping_cost'] != null) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary
-                              .withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: colorScheme.primary
-                                  .withValues(alpha: 0.2)),
-                        ),
-                        child: Text(
-                          '${item['quantity']} ${item['product_unit'] ?? 'pcs'}',
-                          style: textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.primary,
-                          ),
+                      Text(
+                        'Ongkos Kirim',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item['product_name'] ?? '-',
-                              style: textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.onSurface,
-                              ),
-                            ),
-                            if (listState.isAdmin) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                '${provider.formatPrice(item['unit_price'] ?? 0)} x ${item['quantity']} = ${provider.formatPrice(item['subtotal_price'] ?? 0)}',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ],
+                      Text(
+                        provider.formatPrice(order['shipping_cost']),
+                        style: textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
-                  );
-                },
-              ),
-              if (listState.isAdmin) ...[
-                AppSpacing.gapVerticalMD,
-                Divider(
-                    height: 1,
-                    color: colorScheme.outlineVariant
-                        .withValues(alpha: 0.3)),
-                const SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Total Harga',
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
+                      'Total Nilai Order',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
@@ -345,42 +304,29 @@ class DirectOrderDetailView extends StatelessWidget {
                   ],
                 ),
               ],
-            ] else
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Tidak ada rincian produk.',
-                  style: textTheme.bodySmall
-                      ?.copyWith(color: colorScheme.onSurfaceVariant),
-                ),
-              ),
-            if (listState.isAdmin && !isLocked) ...[
-              AppSpacing.gapVerticalMD,
-              _buildAdminProductEditSection(context, provider),
-            ],
-          ],
-        ),
-      ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
-  Widget _buildAdminProductEditSection(
+  Widget _buildEditItemsIcon(
     BuildContext context,
     DeliveryProvider provider,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: () => EditOrderItemsSheet.show(
-          context,
-          order: order,
-          provider: provider,
-        ),
-        icon: Icon(Icons.edit_outlined, color: colorScheme.primary, size: 18),
-        label: const Text('Ubah Rincian Produk'),
+    return IconButton(
+      onPressed: () => EditOrderItemsSheet.show(
+        context,
+        order: order,
+        provider: provider,
       ),
+      icon: const Icon(Icons.edit_rounded, size: 16),
+      visualDensity: VisualDensity.compact,
+      tooltip: 'Ubah rincian produk',
+      color: Theme.of(context).colorScheme.primary,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
     );
   }
 
@@ -389,88 +335,104 @@ class DirectOrderDetailView extends StatelessWidget {
     TextTheme textTheme,
     ColorScheme colorScheme,
   ) {
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.payment,
-                    color: colorScheme.primary, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  'Bukti Pembayaran',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildNetworkImage(context,
-              imageUrl: order['image_payment_url'],
-              errorText: 'Gagal memuat bukti pembayaran',
-              colorScheme: colorScheme,
-              textTheme: textTheme,
-            ),
-          ],
-        ),
+    return DetailSectionCard(
+      title: 'Bukti Pembayaran',
+      icon: Icons.payments_outlined,
+      child: _buildNetworkImage(
+        context,
+        imageUrl: order['image_payment_url'],
+        errorText: 'Gagal memuat bukti pembayaran',
+        colorScheme: colorScheme,
+        textTheme: textTheme,
+        previewTitle: 'Bukti Pembayaran',
       ),
     );
+  }
+
+  /// Daftar URL foto bukti pengiriman dari `image_delivery_urls` (plural,
+  /// multi-upload) dengan fallback ke `image_delivery_url` (singular,
+  /// respons backend lama).
+  List<String> _deliveryPhotoUrls() {
+    final urls = order['image_delivery_urls'];
+    if (urls is List && urls.isNotEmpty) {
+      return urls
+          .map((u) => u?.toString() ?? '')
+          .where((u) => u.isNotEmpty)
+          .toList();
+    }
+    final single = order['image_delivery_url']?.toString();
+    return (single == null || single.isEmpty) ? [] : [single];
   }
 
   Widget _buildDeliveryPhotoCard(
     BuildContext context,
     TextTheme textTheme,
     ColorScheme colorScheme,
+    DeliveryProvider provider,
+    DeliveryListState listState,
   ) {
-    return Card(
-      color: colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.photo,
-                    color: colorScheme.primary, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  'Foto Bukti Pengiriman',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
+    final photoUrls = _deliveryPhotoUrls();
+    final resolvedUrls = photoUrls
+        .map((u) => ImageService.buildUrl(u))
+        .whereType<String>()
+        .toList();
+
+    return DetailSectionCard(
+      title: photoUrls.length > 1
+          ? 'Foto Bukti Pengiriman (${photoUrls.length})'
+          : 'Foto Bukti Pengiriman',
+      icon: Icons.photo_camera_outlined,
+      trailing: listState.canEditDeliveryPhotos
+          ? _buildEditDeliveryPhotosIcon(context, provider)
+          : null,
+      child: resolvedUrls.isEmpty
+          ? _buildImagePlaceholder(
+              colorScheme, textTheme, 'Belum ada foto bukti pengiriman', 140)
+          : resolvedUrls.length == 1
+              ? DetailImageView(
+                  imageUrl: resolvedUrls.first,
+                  aspectRatio: 16 / 9,
+                  previewTitle: 'Foto Bukti Pengiriman',
+                )
+              : SizedBox(
+                  height: 200,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: resolvedUrls.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(width: AppSpacing.sm),
+                    // Lebar tetap: DetailImageView memakai width infinity
+                    // yang tidak valid di main-axis horizontal list.
+                    itemBuilder: (context, index) => SizedBox(
+                      width: 280,
+                      child: DetailImageView(
+                        imageUrl: resolvedUrls[index],
+                        height: 200,
+                        previewTitle:
+                            'Foto Bukti Pengiriman (${index + 1}/${resolvedUrls.length})',
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildNetworkImage(context,
-              imageUrl: order['image_delivery_url'],
-              errorText: 'Gagal memuat bukti pengiriman',
-              colorScheme: colorScheme,
-              textTheme: textTheme,
-            ),
-          ],
-        ),
+    );
+  }
+
+  Widget _buildEditDeliveryPhotosIcon(
+    BuildContext context,
+    DeliveryProvider provider,
+  ) {
+    return IconButton(
+      onPressed: () => EditDeliveryPhotosSheet.show(
+        context,
+        order: order,
+        provider: provider,
       ),
+      icon: const Icon(Icons.edit_rounded, size: 16),
+      visualDensity: VisualDensity.compact,
+      tooltip: 'Ganti foto bukti pengiriman',
+      color: Theme.of(context).colorScheme.primary,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
     );
   }
 
@@ -480,103 +442,17 @@ class DirectOrderDetailView extends StatelessWidget {
     required String errorText,
     required ColorScheme colorScheme,
     required TextTheme textTheme,
+    String? previewTitle,
   }) {
-    // Normalisasi URL: backend mungkin mengirim path relatif (mis. hasil
-    // decode JSON yang gagal) atau URL absolut. buildUrl menangani keduanya
-    // dan menjamin host img.sagansa.id yang benar. Null/empty → placeholder.
+    // Normalisasi URL: backend mungkin mengirim path relatif atau URL absolut.
     final resolvedUrl = ImageService.buildUrl(imageUrl);
     if (resolvedUrl == null || resolvedUrl.isEmpty) {
-      return _buildImagePlaceholder(colorScheme, textTheme, errorText, 200);
+      return _buildImagePlaceholder(colorScheme, textTheme, errorText, 140);
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: () {
-          showDialog(
-            context: context,
-            builder: (context) => Dialog(
-              backgroundColor: Colors.transparent,
-              child: Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  InteractiveViewer(
-                    child: Image.network(
-                      resolvedUrl,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return Center(
-                          child: CircularProgressIndicator(
-                            value: progress.cumulativeBytesLoaded /
-                                (progress.expectedTotalBytes ?? 1),
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          padding: const EdgeInsets.all(32),
-                          color: Colors.black54,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.broken_image,
-                                  color: Colors.white70, size: 48),
-                              const SizedBox(height: 12),
-                              Text(errorText,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(color: Colors.white70)),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white, size: 30),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            Image.network(
-              resolvedUrl,
-              height: 200,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _buildImagePlaceholder(
-                    colorScheme, textTheme, errorText, 120);
-              },
-            ),
-            Container(
-              width: double.infinity,
-              color: Colors.black.withValues(alpha: 0.6),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.zoom_in,
-                      color: Colors.white, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Ketuk untuk memperbesar gambar',
-                    style: textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return DetailImageView(
+      imageUrl: resolvedUrl,
+      aspectRatio: 16 / 9,
+      previewTitle: previewTitle,
     );
   }
 
@@ -591,10 +467,11 @@ class DirectOrderDetailView extends StatelessWidget {
       color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
       alignment: Alignment.center,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.broken_image, color: Colors.grey, size: 36),
-          const SizedBox(height: 8),
+          const Icon(Icons.broken_image, color: Colors.grey, size: 32),
+          const SizedBox(height: 6),
           Text(errorText, style: textTheme.bodySmall),
         ],
       ),
@@ -689,9 +566,11 @@ class DirectOrderDetailView extends StatelessWidget {
       style: TextStyle(color: colorScheme.onSurface),
       decoration: InputDecoration(
         labelText: labelText,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         labelStyle:
             TextStyle(color: colorScheme.onSurfaceVariant),
-        prefixIcon: Icon(prefixIcon, color: AppColors.info),
+        prefixIcon: Icon(prefixIcon, color: AppColors.info, size: 20),
       ),
     );
   }

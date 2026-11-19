@@ -3,6 +3,10 @@ import '../models/applicant_detail_model.dart';
 import '../services/user_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/detail/detail_image_view.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 
 class AdminProfileDetailPage extends StatefulWidget {
@@ -36,10 +40,27 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
     try {
       final res = await _userService.getAdminProfileDetail(widget.profileId);
       if (!mounted) return;
+
+      final dataMap = res['data'] is Map<String, dynamic>
+          ? res['data'] as Map<String, dynamic>
+          : null;
+
+      final rawDetails = res['details'] ??
+          dataMap?['details'] ??
+          (res['data'] is Map<String, dynamic> && !res.containsKey('details')
+              ? res['data']
+              : null);
+
+      final rawUser = res['user'] ?? dataMap?['user'];
+
       setState(() {
-        _detail = res['details'];
-        _user = res['user'];
-        _locked = res['locked'] == true;
+        _detail = rawDetails is Map<String, dynamic>
+            ? rawDetails
+            : (res.containsKey('nickname') || res.containsKey('phone')
+                ? res
+                : null);
+        _user = rawUser is Map<String, dynamic> ? rawUser : null;
+        _locked = res['locked'] == true || dataMap?['locked'] == true;
         _isLoading = false;
       });
     } catch (e) {
@@ -58,16 +79,27 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
       final res =
           await _userService.setProfileStatus(widget.profileId, newStatus);
       if (!mounted) return;
+
+      final dataMap = res['data'] is Map<String, dynamic>
+          ? res['data'] as Map<String, dynamic>
+          : null;
+
       setState(() {
-        _locked = res['locked'] == true;
+        _locked = res['locked'] == true || dataMap?['locked'] == true;
         if (res['details'] is Map<String, dynamic>) {
-          _detail = res['details'];
+          _detail = res['details'] as Map<String, dynamic>;
+        } else if (dataMap?['details'] is Map<String, dynamic>) {
+          _detail = dataMap!['details'] as Map<String, dynamic>;
         }
         _isSaving = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? 'Berhasil.')),
+          SnackBar(
+            content: Text(res['message']?.toString() ??
+                dataMap?['message']?.toString() ??
+                'Status profil berhasil diperbarui.'),
+          ),
         );
       }
     } catch (e) {
@@ -82,19 +114,148 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
   Widget _row(String label, String? value, TextTheme textTheme,
       ColorScheme colorScheme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: textTheme.bodyMedium),
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           Expanded(
             child: Text(
               value?.isNotEmpty == true ? value! : '-',
               textAlign: TextAlign.end,
-              style:
-                  textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentCard({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required String? imageUrl,
+    required TextTheme textTheme,
+    required ColorScheme colorScheme,
+  }) {
+    final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: AppSpacing.borderRadiusMD,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasImage
+                      ? AppColors.success.withValues(alpha: 0.15)
+                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: hasImage
+                        ? AppColors.success.withValues(alpha: 0.4)
+                        : colorScheme.outlineVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      hasImage ? Icons.check_circle : Icons.info_outline,
+                      size: 12,
+                      color: hasImage
+                          ? AppColors.success
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      hasImage ? 'Terlampir' : 'Belum Diunggah',
+                      style: textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: hasImage
+                            ? AppColors.success
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          AppSpacing.gapVerticalXS,
+          if (hasImage)
+            DetailImageView(
+              imageUrl: imageUrl,
+              height: 180,
+              previewTitle: title,
+            )
+          else
+            Container(
+              height: 80,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLowest,
+                borderRadius: AppSpacing.borderRadiusMD,
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 24,
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Belum ada foto yang diunggah',
+                      style: textTheme.bodySmall?.copyWith(
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -106,15 +267,19 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
     final textTheme = Theme.of(context).textTheme;
 
     if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Detail Profil')),
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: GlassAppBar(title: Text('Detail Profil')),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Detail Profil')),
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: const GlassAppBar(title: Text('Detail Profil')),
         body: Center(
           child: Padding(
             padding: AppSpacing.paddingLG,
@@ -139,11 +304,13 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
     final detail = ApplicantDetail.fromJson(d);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail Profil')),
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: const GlassAppBar(title: Text('Detail Profil')),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
           AppSpacing.md,
-          AppSpacing.md,
+          AppBarInsets.top(context),
           AppSpacing.md,
           AppSpacing.md + context.systemBottomInset,
         ),
@@ -158,62 +325,108 @@ class _AdminProfileDetailPageState extends State<AdminProfileDetailPage> {
                     ? colorScheme.error.withValues(alpha: 0.1)
                     : AppColors.success.withValues(alpha: 0.1),
                 borderRadius: AppSpacing.borderRadiusMD,
+                border: Border.all(
+                  color: _locked
+                      ? colorScheme.error.withValues(alpha: 0.3)
+                      : AppColors.success.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
                   Icon(
-                    _locked ? Icons.lock : Icons.lock_open,
+                    _locked ? Icons.lock_outline : Icons.lock_open_outlined,
                     color: _locked ? colorScheme.error : AppColors.success,
+                    size: 24,
                   ),
                   AppSpacing.gapHorizontalSM,
                   Expanded(
-                    child: Text(
-                      _locked
-                          ? 'Profil TERKUNCI — hanya rekening yang dapat diubah user.'
-                          : 'Profil TERBUKA — user dapat mengubah semua data.',
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: _locked ? colorScheme.error : AppColors.success,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _locked ? 'Profil Terkunci' : 'Profil Terbuka',
+                          style: textTheme.titleSmall?.copyWith(
+                            color: _locked ? colorScheme.error : AppColors.success,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        AppSpacing.gapVerticalXS,
+                        Text(
+                          _locked
+                              ? 'Hanya data rekening yang dapat diubah user.'
+                              : 'User dapat mengubah seluruh data profil.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
             AppSpacing.gapVerticalMD,
-            Text('Data User',
-                style: textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            _row('Nama', _user?['name'], textTheme, colorScheme),
-            _row('Email', _user?['email'], textTheme, colorScheme),
-            _row('Status', detail.status ?? 'draft', textTheme, colorScheme),
+            FormSectionCard(
+              title: 'Data Akun & User',
+              icon: Icons.person_outline,
+              children: [
+                _row('Nama', _user?['name'], textTheme, colorScheme),
+                _row('Email', _user?['email'], textTheme, colorScheme),
+                _row('Status Rekrutmen', detail.status ?? 'draft', textTheme, colorScheme),
+              ],
+            ),
             AppSpacing.gapVerticalMD,
-            Text('Data Pribadi',
-                style: textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            _row('Nama Panggilan', detail.nickname, textTheme, colorScheme),
-            _row('No. Telepon', detail.phone, textTheme, colorScheme),
-            _row('NIK', detail.nik, textTheme, colorScheme),
-            _row('Tempat Lahir', detail.birthPlace, textTheme, colorScheme),
-            _row('Tanggal Lahir', detail.birthDate, textTheme, colorScheme),
-            _row('Agama', detail.religion, textTheme, colorScheme),
-            _row('Status Pernikahan', detail.maritalStatus, textTheme,
-                colorScheme),
-            _row('Pendidikan', detail.educationLevel, textTheme, colorScheme),
-            _row('Alamat', detail.address, textTheme, colorScheme),
-            _row(
-                'Kontak Darurat', detail.emergencyName, textTheme, colorScheme),
-            _row('Telepon Darurat', detail.emergencyPhone, textTheme,
-                colorScheme),
+            FormSectionCard(
+              title: 'Data Pribadi',
+              icon: Icons.badge_outlined,
+              children: [
+                _row('Nama Panggilan', detail.nickname, textTheme, colorScheme),
+                _row('No. Telepon', detail.phone, textTheme, colorScheme),
+                _row('NIK', detail.nik, textTheme, colorScheme),
+                _row('Tempat Lahir', detail.birthPlace, textTheme, colorScheme),
+                _row('Tanggal Lahir', detail.birthDate, textTheme, colorScheme),
+                _row('Agama', detail.religion, textTheme, colorScheme),
+                _row('Status Pernikahan', detail.maritalStatus, textTheme, colorScheme),
+                _row('Pendidikan', detail.educationLevel, textTheme, colorScheme),
+                _row('Alamat', detail.address, textTheme, colorScheme),
+                _row('Kontak Darurat', detail.emergencyName, textTheme, colorScheme),
+                _row('Telepon Darurat', detail.emergencyPhone, textTheme, colorScheme),
+              ],
+            ),
             AppSpacing.gapVerticalMD,
-            Text('Data Rekening',
-                style: textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            _row('Nama Bank', detail.bankName, textTheme, colorScheme),
-            _row('Pemilik Rekening', detail.bankAccountName, textTheme,
-                colorScheme),
-            _row('No. Rekening', detail.bankAccountNumber, textTheme,
-                colorScheme),
+            FormSectionCard(
+              title: 'Data Rekening Bank',
+              icon: Icons.account_balance_outlined,
+              children: [
+                _row('Nama Bank', detail.bankName, textTheme, colorScheme),
+                _row('Pemilik Rekening', detail.bankAccountName, textTheme, colorScheme),
+                _row('No. Rekening', detail.bankAccountNumber, textTheme, colorScheme),
+              ],
+            ),
+            AppSpacing.gapVerticalMD,
+            FormSectionCard(
+              title: 'Dokumen Verifikasi',
+              subtitle: 'Foto KTP & Foto Diri untuk identifikasi pelamar',
+              icon: Icons.photo_library_outlined,
+              children: [
+                _buildDocumentCard(
+                  context: context,
+                  title: 'Foto KTP',
+                  icon: Icons.badge_outlined,
+                  imageUrl: detail.ktpImageUrl,
+                  textTheme: textTheme,
+                  colorScheme: colorScheme,
+                ),
+                _buildDocumentCard(
+                  context: context,
+                  title: 'Foto Diri (Selfie)',
+                  icon: Icons.face_outlined,
+                  imageUrl: detail.selfieImageUrl,
+                  textTheme: textTheme,
+                  colorScheme: colorScheme,
+                ),
+              ],
+            ),
             AppSpacing.gapVerticalLG,
             SizedBox(
               width: double.infinity,

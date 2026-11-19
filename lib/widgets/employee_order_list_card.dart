@@ -13,13 +13,17 @@ import 'status_badge.dart';
 /// badge status, info baris berikon, preview item, padding AppSpacing konsisten.
 /// Berbeda dari OrderListCard: tidak ada tombol cetak resi (employee pakai
 /// detail page terpisah) dan menampilkan total harga (relevan utk employee).
+/// [isAdmin] mengontrol nominal per harga satuan di preview item — pola yang
+/// sama dengan tab Online/Direct (user non-admin tidak melihat nominal).
 class EmployeeOrderListCard extends StatelessWidget {
   final SalesOrderEmployeeModel order;
+  final bool isAdmin;
   final VoidCallback onTap;
 
   const EmployeeOrderListCard({
     super.key,
     required this.order,
+    required this.isAdmin,
     required this.onTap,
   });
 
@@ -57,6 +61,18 @@ class EmployeeOrderListCard extends StatelessWidget {
                 colorScheme,
                 textTheme,
               ),
+              // Konsumen tujuan pengiriman (alamat pengiriman) — sesuai
+              // field "Konsumen" di halaman detail penjualan employee.
+              if (order.deliveryAddressName != null &&
+                  order.deliveryAddressName!.isNotEmpty) ...[
+                AppSpacing.gapVerticalXS,
+                _buildInfoRow(
+                  Icons.local_shipping_outlined,
+                  'Dikirim ke: ${order.deliveryAddressName}',
+                  colorScheme,
+                  textTheme,
+                ),
+              ],
               if (order.deliveryDate != null) ...[
                 AppSpacing.gapVerticalXS,
                 _buildInfoRow(
@@ -181,10 +197,15 @@ class EmployeeOrderListCard extends StatelessWidget {
           ),
           AppSpacing.gapVerticalXS,
           ...order.items.map((item) {
+            // Nominal per harga satuan hanya untuk admin — konsisten dengan
+            // tab Online/Direct yang menyembunyikan nominal utk non-admin.
+            final priceSuffix = isAdmin
+                ? ' × ${FormatUtils.formatCurrency(item.unitPrice)}'
+                : '';
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
               child: Text(
-                '• ${item.productName} (${item.quantity} ${item.productUnit ?? ''})',
+                '• ${item.productName} (${item.quantity} ${item.productUnit ?? ''})$priceSuffix',
                 style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
               ),
             );

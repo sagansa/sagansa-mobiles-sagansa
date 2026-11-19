@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,6 +13,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/document/document_models.dart';
 import '../../services/document/document_service.dart';
 import '../../services/document/incoming_models.dart';
+import '../../services/document/incoming_service.dart';
 import '../../services/document/quill_html_codec.dart';
 import '../../theme/app_button_style.dart';
 import '../../theme/app_spacing.dart';
@@ -67,12 +69,17 @@ class DocumentCreateWizard extends StatefulWidget {
 
   final Future<Uint8List> Function(String url)? fetchUrl;
 
+  /// Service surat masuk — diteruskan ke Detail Surat hasil "Lihat
+  /// runutan" (detail memuat runutan secara eager). Null = instance baru.
+  final IncomingService? incomingService;
+
   const DocumentCreateWizard({
     super.key,
     this.service,
     this.documentId,
     this.replyTo,
     this.fetchUrl,
+    this.incomingService,
   });
 
   @override
@@ -119,8 +126,13 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       TextEditingController();
   final TextEditingController _recipientIdentityController =
       TextEditingController();
+  final TextEditingController _recipientTitleController =
+      TextEditingController();
   final TextEditingController _recipientAddressController =
       TextEditingController();
+
+  /// Klasifikasi surat — 'umum' (default) | 'rahasia'; dicap di PDF.
+  String _classification = 'umum';
   DateTime _date = DateTime.now();
   bool _subjectMissing = false;
   String? _pickedPartyName;
@@ -136,6 +148,25 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   bool _editorFromDuplicate = false;
   bool _editorUnsupported = false;
   bool _editorParseFailed = false;
+
+  /// Isi editor berbeda dari versi terakhir yang tersimpan di server.
+  bool _bodyDirty = false;
+
+  /// Snapshot Delta terakhir yang diketahui tersimpan (pembanding dirty).
+  String? _lastSavedBodySnapshot;
+
+  /// Waktu simpan isi terakhir yang berhasil (indikator di StepEditor).
+  DateTime? _bodySavedAt;
+
+  /// Timer autosave setelah berhenti mengetik.
+  Timer? _bodyAutosave;
+
+  /// Guard agar perubahan programatik (template/prefill) tidak dianggap
+  /// ketikan pengguna.
+  bool _syncingBody = false;
+
+  /// Jeda autosave isi surat setelah ketikan terakhir.
+  static const Duration _bodyAutosaveDelay = Duration(seconds: 4);
 
   // ——— draf ———
   String? _draftId;
@@ -188,6 +219,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     _unitController.addListener(_onUnitChanged);
     _subjectController.addListener(_notify);
     _recipientNameController.addListener(_notify);
+    _quillController.addListener(_onBodyChanged);
     _typesLoading = _loadLetterTypes();
     final editId = widget.documentId;
     if (editId != null) _loadExistingDraft(editId);
@@ -240,8 +272,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   String? get _replyOpeningHtml {
     final reply = widget.replyTo;
     if (reply == null) return null;
-    final number =
-        reply.numberExternal ?? reply.agendaNumber;
+    final number = reply.numberExternal ?? reply.agendaNumber;
     final datePart = reply.letterDate == null
         ? ''
         : ' tanggal ${DateFormat('d MMMM yyyy', 'id_ID').format(reply.letterDate!)}';
@@ -296,6 +327,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           ? null
           : QuillHtmlCodec.tryHtmlToDelta(bodyHtml);
 
+      _syncingBody = true;
       setState(() {
         _draftId = detail.id;
         _isDuplicate = false;
@@ -331,18 +363,25 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         _signingRequested = detail.signingRequests.isNotEmpty;
         _step = 1; // mulai di Formulir — jenis & sumber terkunci.
       });
+      _syncingBody = false;
+      _lastSavedBodySnapshot = _bodySnapshot();
+      _bodyDirty = false;
     } catch (e) {
+      _syncingBody = false;
       if (mounted) showErrorSnackBar(context, e);
     }
   }
 
   @override
   void dispose() {
+    _bodyAutosave?.cancel();
     _unitController.dispose();
     _subjectController.dispose();
     _recipientNameController.dispose();
     _recipientIdentityController.dispose();
+    _recipientTitleController.dispose();
     _recipientAddressController.dispose();
+    _quillController.removeListener(_onBodyChanged);
     _quillController.dispose();
     for (final controller in _specificControllers.values) {
       controller.dispose();
@@ -359,6 +398,40 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   void _onUnitChanged() {
     _unitEdited = true;
     _notify();
+  }
+
+  // ——— penyimpanan isi surat (langkah 3) ———
+
+  String _bodySnapshot() =>
+      jsonEncode(_quillController.document.toDelta().toJson());
+
+  /// Listener Quill: hanya perubahan DOKUMEN yang dihitung (pindah kursor
+  /// juga memicu notify, tetapi Delta-nya sama).
+  void _onBodyChanged() {
+    if (_syncingBody || !mounted) return;
+    final changed = _bodySnapshot() != _lastSavedBodySnapshot;
+    if (changed == _bodyDirty) return;
+    setState(() => _bodyDirty = changed);
+    if (changed) {
+      _scheduleBodyAutosave();
+    } else {
+      _bodyAutosave?.cancel();
+    }
+  }
+
+  void _scheduleBodyAutosave() {
+    _bodyAutosave?.cancel();
+    if (_draftId == null) return;
+    _bodyAutosave = Timer(_bodyAutosaveDelay, () {
+      if (!mounted || !_bodyDirty || _saving) return;
+      unawaited(_saveBody(showFeedback: false));
+    });
+  }
+
+  /// Simpan manual dari tombol "Simpan isi" — memberi umpan balik snackbar.
+  Future<void> _saveBodyManually() async {
+    _bodyAutosave?.cancel();
+    await _saveBody(showFeedback: true);
   }
 
   // ——— langkah 1 ———
@@ -457,9 +530,38 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _typesError = ErrorUtils.sanitize(e, fallback: 'Gagal memuat jenis surat.');
+        _typesError =
+            ErrorUtils.sanitize(e, fallback: 'Gagal memuat jenis surat.');
         _loadingTypes = false;
       });
+    }
+  }
+
+  /// Tambah jenis surat manual (POST /letter-types) lalu langsung pilih —
+  /// alur "jenis belum ada" tanpa meninggalkan wizard.
+  Future<LetterTypeModel?> _createLetterType(
+    String name,
+    String? code,
+  ) async {
+    try {
+      final created = await _service.createLetterType(name: name, code: code);
+      if (!mounted) return null;
+      setState(() {
+        _letterTypes = [..._letterTypes, created]
+          ..sort((a, b) => a.code.compareTo(b.code));
+        _loadingTypes = false;
+      });
+      await _selectType(created);
+      if (mounted) {
+        showSuccessSnackBar(
+          context,
+          'Jenis surat "${created.name}" (${created.code}) ditambahkan.',
+        );
+      }
+      return created;
+    } catch (e) {
+      if (mounted) showErrorSnackBar(context, e);
+      return null;
     }
   }
 
@@ -534,7 +636,11 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     final templateHtml = template?.bodyHtml;
     final html = (replyOpening ?? '') + (templateHtml ?? '');
     if (html.trim().isEmpty) {
+      _syncingBody = true;
       _quillController.clear();
+      _syncingBody = false;
+      _lastSavedBodySnapshot = _bodySnapshot();
+      _bodyDirty = false;
       return;
     }
     var delta = QuillHtmlCodec.tryHtmlToDelta(html);
@@ -542,6 +648,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     if (openingOnlyFallback) {
       delta = QuillHtmlCodec.tryHtmlToDelta(replyOpening);
     }
+    _syncingBody = true;
     setState(() {
       _editorUnsupported = QuillHtmlCodec.hasUnsupportedHtml(html);
       _editorParseFailed = delta == null;
@@ -551,6 +658,11 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         _quillController.clear();
       }
     });
+    _syncingBody = false;
+    // Isi template adalah titik awal server-side setelah formulir
+    // disimpan, jadi bukan "perubahan belum tersimpan".
+    _lastSavedBodySnapshot = _bodySnapshot();
+    _bodyDirty = false;
   }
 
   void _selectTemplate(TemplateModel? template) {
@@ -598,7 +710,9 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         _editorFromDuplicate = true;
         _editorUnsupported = false;
         _editorParseFailed = false;
+        _syncingBody = true;
         _quillController.clear();
+        _syncingBody = false;
         _rebuildSpecificControllers(fullType);
         // Fix review: backend menyalin metadata + unit sumber — prefill form
         // dari metadata salinan agar PATCH berikutnya TIDAK mendorong nilai
@@ -615,6 +729,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         _unitEdited = false;
         _step = 1;
       });
+      _lastSavedBodySnapshot = _bodySnapshot();
+      _bodyDirty = false;
       // Template hanya ditampilkan (locked) — draf salinan sudah berisi.
       unawaited(_loadTemplatesFor(fullType, autoSelectDefault: false));
       showSuccessSnackBar(context, 'Draf salinan dibuat — lanjutkan formulir.');
@@ -635,8 +751,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       _recipientNameController.text = recipient['name']?.toString() ?? '';
       _recipientIdentityController.text =
           recipient['identity_no']?.toString() ?? '';
-      _recipientAddressController.text =
-          recipient['address']?.toString() ?? '';
+      _recipientTitleController.text = recipient['title']?.toString() ?? '';
+      _recipientAddressController.text = recipient['address']?.toString() ?? '';
       _pickedPartyName = _recipientNameController.text.trim().isEmpty
           ? null
           : _recipientNameController.text.trim();
@@ -671,8 +787,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   }
 
   Future<void> _pickValidityDate() async {
-    final initial = _validityDate ??
-        DateTime.now().add(const Duration(days: 30));
+    final initial =
+        _validityDate ?? DateTime.now().add(const Duration(days: 30));
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -699,6 +815,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
   Map<String, dynamic>? _buildMetadata() {
     final name = _recipientNameController.text.trim();
     final identity = _recipientIdentityController.text.trim();
+    final title = _recipientTitleController.text.trim();
     final address = _recipientAddressController.text.trim();
 
     final specific = <String, String>{};
@@ -717,6 +834,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
         'recipient': {
           'name': name,
           if (identity.isNotEmpty) 'identity_no': identity,
+          if (title.isNotEmpty) 'title': title,
           if (address.isNotEmpty) 'address': address,
         },
       if (specific.isNotEmpty) 'specific': specific,
@@ -775,11 +893,14 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           subject: subject,
           date: _date,
           metadata: metadata,
+          classification: _classification == 'umum' ? null : _classification,
           templateId: template?.id,
           // Template flow: body template langsung tersimpan sebagai awal
           // isi (editor prefill darinya — termasuk paragraf pembuka
           // balasan yang menyertainya). Duplicate flow: backend menyalin.
-          bodyHtml: template == null ? null : (_replyOpeningHtml ?? '') + (template.bodyHtml ?? ''),
+          bodyHtml: template == null
+              ? null
+              : (_replyOpeningHtml ?? '') + (template.bodyHtml ?? ''),
           // Mode balasan: tautkan draf sebagai balasan surat masuk (edge
           // letter_links dibuat backend dalam transaksi create).
           inReplyTo: _inReplyToPayload,
@@ -795,6 +916,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           subject: subject,
           date: _date,
           metadata: metadataChanged ? metadata : null,
+          classification: _classification,
         );
         if (unitChanged) {
           _syncedUnit = unit;
@@ -842,16 +964,45 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
 
   /// Simpan isi surat (body_html) — dilewati bila editor kosong agar isi
   /// salinan/template di server tidak tertimpa.
-  Future<bool> _saveBody() async {
+  ///
+  /// [showFeedback] true untuk tombol "Simpan isi" (snackbar sukses/gagal);
+  /// autosave memakai false agar tidak berisik. Status dirty hanya
+  /// dibersihkan bila server benar-benar menerima isi editor (snapshot
+  /// Delta dibandingkan lagi saat listener berikutnya).
+  Future<bool> _saveBody({bool showFeedback = true}) async {
     if (_draftId == null) return true;
+    if (_saving) return false;
     final plainText = _quillController.document.toPlainText().trim();
-    if (plainText.isEmpty) return true;
+    if (plainText.isEmpty) {
+      // Editor kosong = "pakai isi salinan/template apa adanya" — bukan
+      // perubahan yang perlu ditulis. Tandai bersih agar indikator tidak
+      // berkedip terus.
+      final wasDirty = _bodyDirty;
+      _bodyDirty = false;
+      _bodyAutosave?.cancel();
+      if (wasDirty && mounted && showFeedback) {
+        showInfoSnackBar(
+            context, 'Editor kosong — isi surat yang tersimpan tidak diubah.');
+      }
+      return true;
+    }
 
     setState(() => _saving = true);
     try {
       final html =
           QuillHtmlCodec.deltaToHtml(_quillController.document.toDelta());
       await _service.updateDraft(_draftId!, bodyHtml: html);
+      if (mounted) {
+        _lastSavedBodySnapshot = _bodySnapshot();
+        setState(() {
+          _bodyDirty = false;
+          _bodySavedAt = DateTime.now();
+          _editorParseFailed = false;
+        });
+        if (showFeedback) {
+          showSuccessSnackBar(context, 'Isi surat tersimpan.');
+        }
+      }
       return true;
     } catch (e) {
       if (mounted) showErrorSnackBar(context, e);
@@ -981,8 +1132,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       final mine = results[0];
       final all = results[1];
 
-      final creator =
-          mine.where((s) => s.role == 'direktur').firstOrNull ?? mine.firstOrNull;
+      final creator = mine.where((s) => s.role == 'direktur').firstOrNull ??
+          mine.firstOrNull;
       setState(() {
         _creatorSigner = creator;
         _commissionerCandidates = all
@@ -995,7 +1146,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _signersError = ErrorUtils.sanitize(e, fallback: 'Gagal memuat penandatangan.');
+        _signersError =
+            ErrorUtils.sanitize(e, fallback: 'Gagal memuat penandatangan.');
         _loadingSigners = false;
       });
     }
@@ -1014,8 +1166,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       await _service.requestSigning(_draftId!, _selectedCommissioner!.id);
       if (!mounted) return false;
       setState(() => _signingRequested = true);
-      showSuccessSnackBar(
-          context, 'Tanda tangan ${_selectedCommissioner!.displayName} diajukan.');
+      showSuccessSnackBar(context,
+          'Tanda tangan ${_selectedCommissioner!.displayName} diajukan.');
       return true;
     } catch (e) {
       if (mounted) showErrorSnackBar(context, e);
@@ -1065,8 +1217,8 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       setState(() => _previewBytes = bytes);
     } catch (e) {
       if (!mounted) return;
-      setState(() =>
-          _buildError = ErrorUtils.sanitize(e, fallback: 'Gagal memuat pratinjau.'));
+      setState(() => _buildError =
+          ErrorUtils.sanitize(e, fallback: 'Gagal memuat pratinjau.'));
     } finally {
       if (mounted) setState(() => _building = false);
     }
@@ -1106,6 +1258,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
                       builder: (_) => DocumentDetailPage(
                         documentId: draftId,
                         service: _service,
+                        incomingService: widget.incomingService,
                       ),
                     ),
                   );
@@ -1190,8 +1343,14 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     }
   }
 
-  void _goBack() {
-    if (_step > 0) setState(() => _step -= 1);
+  Future<void> _goBack() async {
+    // Mundur dari langkah isi surat: simpan dulu perubahan yang belum
+    // tersimpan (senyap) agar tulisan tidak hilang.
+    if (_step == 2 && _bodyDirty) {
+      _bodyAutosave?.cancel();
+      await _saveBody(showFeedback: false);
+    }
+    if (mounted && _step > 0) setState(() => _step -= 1);
   }
 
   Future<void> _confirmExit() async {
@@ -1203,12 +1362,40 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     final leave = await showConfirmDialog(
       context,
       title: 'Keluar dari wizard?',
-      content:
-          'Draf yang sudah dibuat tetap tersimpan di arsip surat dan bisa '
-          'dilanjutkan lagi dari sana.',
+      content: 'Perubahan terakhir otomatis disimpan. Draf tetap ada di arsip '
+          'surat dan bisa dilanjutkan lagi dari sana (menu Edit di detail '
+          'surat).',
       confirmText: 'Keluar',
     );
-    if (leave && mounted) navigator.pop();
+    if (leave && mounted) {
+      // Simpan isi langkah aktif best-effort SEBELUM keluar — user yang
+      // mengetik isi surat lalu berhenti di tengah langkah tidak
+      // kehilangan tulisan terakhirnya.
+      await _saveActiveStepOnExit();
+      if (mounted) navigator.pop();
+    }
+  }
+
+  /// Simpan langkah aktif saat keluar wizard (best-effort, senyap).
+  ///
+  /// "Lanjut" adalah jalur simpan utama; tanpa ini, isi yang diketik di
+  /// langkah AKTIF yang belum di-Lanjut hilang saat keluar — padahal user
+  /// memang berencana melanjutkan drafnya nanti dari arsip. Kegagalan
+  /// simpan tidak menghalangi keluar: draf versi "Lanjut" terakhir tetap
+  /// tersedia.
+  Future<void> _saveActiveStepOnExit() async {
+    try {
+      switch (_step) {
+        case 1: // Formulir — hanya bila valid (perihal terisi).
+          if (_subjectController.text.trim().isNotEmpty) {
+            await _saveForm();
+          }
+        case 2: // Isi surat — kosong dilewati (tidak menimpa isi server).
+          await _saveBody(showFeedback: false);
+      }
+    } catch (_) {
+      // Best-effort: biarkan keluar tetap lanjut.
+    }
   }
 
   // ——— build ———
@@ -1225,10 +1412,15 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
       },
       child: AppPageScaffold(
         titleText: 'Buat Surat',
+        // Aksi "Simpan" isi surat cukup satu tempat: bar status di editor
+        // (muncul saat ada perubahan) — tombol AppBar duplikat dihapus.
         bodyPadding: EdgeInsets.zero,
+        bottomAction: _buildBottomBar(context, textTheme),
         body: SafeArea(
           top: true,
-          bottom: false,
+          // bottom: true — konten langkah berhenti di atas bar aksi bawah
+          // (bottomAction) & home indicator, bukan di belakangnya.
+          bottom: true,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _wideBreakpoint;
@@ -1256,7 +1448,6 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
                           )
                         : _buildStepContent(),
                   ),
-                  _buildBottomBar(context, textTheme),
                 ],
               );
             },
@@ -1357,12 +1548,61 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
             ],
           ),
         ),
-        LinearProgressIndicator(
-          value: (_step + 1) / _stepTitles.length,
-          minHeight: 3,
-          borderRadius: BorderRadius.circular(2),
-        ),
+        _buildStepDots(context),
       ],
+    );
+  }
+
+  /// Pelacak langkah 1–6 (ponsel): deretan lingkaran bernomor — lewat =
+  /// primer + centang, aktif = primer terisi, mendatang = redam; disambung
+  /// garis tipis. Menggantikan LinearProgressIndicator datar.
+  Widget _buildStepDots(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final total = _stepTitles.length;
+    return Padding(
+      padding: AppSpacing.paddingHorizontalMD.copyWith(bottom: AppSpacing.sm),
+      child: Row(
+        children: [
+          for (var i = 0; i < total; i++) ...[
+            if (i > 0)
+              Expanded(
+                child: Container(
+                  height: 1.5,
+                  color: i <= _step
+                      ? colorScheme.primary.withValues(alpha: 0.6)
+                      : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: i <= _step
+                    ? colorScheme.primary
+                    : colorScheme.surfaceContainerHighest,
+                border: i == _step
+                    ? Border.all(color: colorScheme.primary, width: 2)
+                    : null,
+              ),
+              child: Center(
+                child: i < _step
+                    ? Icon(Icons.check_rounded,
+                        size: 15, color: colorScheme.onPrimary)
+                    : Text(
+                        '${i + 1}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: i == _step
+                                  ? colorScheme.onPrimary
+                                  : colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1430,10 +1670,12 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           duplicating: _duplicating,
           onPickDuplicateSource: _duplicateFrom,
           onUploadOwnDocument: _uploadOwnDocument,
+          replyMode: widget.replyTo != null,
+          onCreateType: _createLetterType,
         );
       case 1:
-        final specific = _selectedType?.specificFields ??
-            const <LetterSpecificField>[];
+        final specific =
+            _selectedType?.specificFields ?? const <LetterSpecificField>[];
         return StepForm(
           unitController: _unitController,
           subjectController: _subjectController,
@@ -1442,7 +1684,11 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           subjectMissing: _subjectMissing,
           recipientNameController: _recipientNameController,
           recipientIdentityController: _recipientIdentityController,
+          recipientTitleController: _recipientTitleController,
           recipientAddressController: _recipientAddressController,
+          classification: _classification,
+          onClassificationChanged: (value) =>
+              setState(() => _classification = value),
           searchParties: (query) => _service.getParties(
             query: query.isEmpty ? null : query,
           ),
@@ -1452,8 +1698,7 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           specificControllers: _specificControllers,
           validityRelevant: _validityRelevant,
           validityMode: _validityMode,
-          onValidityModeChanged: (mode) =>
-              setState(() => _validityMode = mode),
+          onValidityModeChanged: (mode) => setState(() => _validityMode = mode),
           validityDate: _validityDate,
           onPickValidityDate: _pickValidityDate,
         );
@@ -1463,6 +1708,10 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           fromDuplicate: _editorFromDuplicate,
           templateUnsupported: _editorUnsupported,
           templateParseFailed: _editorParseFailed,
+          onSave: _draftId == null ? null : _saveBodyManually,
+          saving: _saving,
+          dirty: _bodyDirty,
+          lastSavedAt: _bodySavedAt,
         );
       case 3:
         return StepAttachments(
@@ -1497,8 +1746,6 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
           building: _building,
           buildError: _buildError,
           onBuild: _buildPreview,
-          finalizing: _finalizing,
-          onFinalize: _finalizeLetter,
           number: _reservedNumber,
         );
       default:
@@ -1513,21 +1760,31 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
     return name.isNotEmpty && name != _pickedPartyName;
   }
 
+  /// Bar aksi bawah via `AppPageScaffold.bottomAction` — inset sistem
+  /// bawah (home indicator) + dorong di atas keyboard ditangani
+  /// `SafeBottomBar` scaffold, pola halaman create lainnya.
+  ///
+  /// Desain: [Kembali outlined 1/3] [aksi utama filled 2/3]. Aksi utama
+  /// = "Lanjut"; pada langkah terakhir = "Terbitkan" (CTA persisten —
+  /// tombol terbit pindah dari isi langkah ke bar, pola wizard modern).
   Widget _buildBottomBar(BuildContext context, TextTheme textTheme) {
     final colorScheme = Theme.of(context).colorScheme;
     final blocked = _stepBlockedMessage;
+    final isLast = _isLastStep;
+
+    // Alasan nonaktif tambahan khusus langkah terakhir: pra-final wajib
+    // sudah dibuat sebelum menerbitkan.
+    final needPreview = isLast && _previewBytes == null && !_building;
+    final busy = isLast ? _finalizing || _building : _saving;
+    final canAct = blocked == null && !needPreview && !busy;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (blocked != null)
-          Container(
-            width: double.infinity,
-            color: colorScheme.errorContainer.withValues(alpha: 0.4),
-            padding: AppSpacing.paddingHorizontalMD.copyWith(
-              top: AppSpacing.xs,
-              bottom: AppSpacing.xs,
-            ),
+        if (blocked != null || needPreview) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: Row(
               children: [
                 Icon(Icons.info_outline_rounded,
@@ -1535,44 +1792,52 @@ class _DocumentCreateWizardState extends State<DocumentCreateWizard> {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    blocked,
-                    style: textTheme.bodySmall
-                        ?.copyWith(color: colorScheme.error),
+                    needPreview
+                        ? 'Buat pra-final dulu untuk memeriksa surat sebelum diterbitkan.'
+                        : blocked!,
+                    style:
+                        textTheme.bodySmall?.copyWith(color: colorScheme.error),
                   ),
                 ),
               ],
             ),
           ),
-        Padding(
-          padding: AppSpacing.paddingMD,
-          child: Row(
-            children: [
-              if (_step > 0)
-                TextButton(
-                  onPressed: _saving ? null : _goBack,
-                  child: const Text('Kembali'),
-                ),
-              const Spacer(),
-              // Flexible: label panjang ('Lanjut ke pratinjau') + Kembali
-              // melebihi lebar ponsel 360dp — tombol menyusut (label wrap),
-              // bukan overflow tersembunyi.
-              if (!_isLastStep)
-                Flexible(
-                  child: FilledButton.icon(
-                    onPressed: blocked == null && !_saving ? _goNext : null,
-                    style: AppButtonStyle.filled(),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.arrow_forward_rounded),
-                    label: Text(_step == 4 ? 'Lanjut ke pratinjau' : 'Lanjut'),
-                  ),
-                ),
+        ],
+        Row(
+          children: [
+            if (_step > 0) ...[
+              // TextButton intrinsik — OutlinedButton flex memaksa label
+              // wrap ("Kemb ali") di ponsel 360dp bersama aksi utama.
+              TextButton(
+                onPressed: busy ? null : _goBack,
+                child: const Text('Kembali'),
+              ),
+              const SizedBox(width: AppSpacing.sm),
             ],
-          ),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: canAct ? (isLast ? _finalizeLetter : _goNext) : null,
+                style: AppButtonStyle.filled(),
+                icon: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : isLast
+                        ? const Icon(Icons.send_rounded)
+                        : const Icon(Icons.arrow_forward_rounded),
+                label: Text(
+                  isLast
+                      ? 'Terbitkan'
+                      : _step == 4
+                          ? 'Lanjut ke pratinjau'
+                          : 'Lanjut',
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );

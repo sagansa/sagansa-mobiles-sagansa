@@ -197,6 +197,51 @@ class ProductionItem {
       );
 }
 
+/// Baris detail invoice pembelian yang masih tersedia (status '1') untuk
+/// dijadikan bahan baku produksi — definisi admin: produksi wajib dibuat
+/// berdasarkan invoice.
+class ProductionDetailInvoice {
+  final int id;
+  final int? productId;
+  final String productName;
+  final int? unitId;
+  final String unitName;
+  final double quantityProduct;
+  final int? invoicePurchaseId;
+  final String? invoiceDate;
+
+  const ProductionDetailInvoice({
+    required this.id,
+    this.productId,
+    required this.productName,
+    this.unitId,
+    this.unitName = '',
+    required this.quantityProduct,
+    this.invoicePurchaseId,
+    this.invoiceDate,
+  });
+
+  factory ProductionDetailInvoice.fromJson(Map<String, dynamic> j) =>
+      ProductionDetailInvoice(
+        id: (j['id'] as num).toInt(),
+        productId: (j['product_id'] as num?)?.toInt(),
+        productName: j['product_name'] as String? ?? '-',
+        unitId: (j['unit_id'] as num?)?.toInt(),
+        unitName: j['unit_name'] as String? ?? '',
+        quantityProduct: (j['quantity_product'] as num? ?? 0).toDouble(),
+        invoicePurchaseId: (j['invoice_purchase_id'] as num?)?.toInt(),
+        invoiceDate: j['invoice_date'] as String?,
+      );
+
+  /// Label ringkas ala admin: produk + qty + tanggal invoice.
+  String get label {
+    final qty = quantityProduct == quantityProduct.roundToDouble()
+        ? quantityProduct.toStringAsFixed(0)
+        : quantityProduct.toStringAsFixed(2);
+    return '$productName — $qty ${unitName.isEmpty ? '' : unitName}'.trim();
+  }
+}
+
 /// Store ringkas — nickname/name untuk display.
 class ProductionStore {
   final int id;

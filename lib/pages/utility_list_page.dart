@@ -8,11 +8,11 @@ import '../models/utility_model.dart';
 import '../services/utility_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_page_scaffold.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
 import 'utility_form_page.dart';
 
@@ -202,45 +202,69 @@ class _UtilityListPageState extends State<UtilityListPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Utility'),
-        actions: [
+    return AppPageScaffold(
+      titleText: 'Utility',
+      actions: [
+        BarButtonCluster(actions: [
           if (_hasActiveFilters)
-            IconButton(
-              icon: const Icon(Icons.filter_list_off),
-              onPressed: _clearFilters,
+            BarButtonSpec(
+              icon: Icons.filter_list_off,
               tooltip: 'Hapus Filter',
+              onTap: _clearFilters,
             ),
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
+          BarButtonSpec(
+            icon: Icons.tune,
+            tooltip: 'Filter',
+            badgeCount: _activeFilterCount,
             onTap: _openFilterSheet,
           ),
-        ],
-      ),
-      floatingActionButton: _isAdmin
-          ? AddFab(onPressed: () => _openForm())
-          : null,
+          if (_isAdmin)
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Utility',
+              onTap: () => _openForm(),
+            ),
+        ]),
+      ],
       bottomNavigationBar: ModernBottomNav(
-        currentIndex: 2, // Ops tab
+        currentIndex: 4, // Ops tab
         onTap: (index) {},
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? _buildError()
-                    : !_hasLoaded
-                        ? const Center(child: CircularProgressIndicator())
-                        : _filteredItems.isEmpty
-                            ? _buildEmpty()
-                            : _buildList(colorScheme, textTheme),
-          ),
-        ],
-      ),
+      isLoading: _isLoading || !_hasLoaded,
+      errorMessage: _errorMessage,
+      onRetry: _fetch,
+      isEmpty: _filteredItems.isEmpty,
+      emptyState: _buildEmpty(),
+      bodyPadding: EdgeInsets.zero,
+      body: _buildList(colorScheme, textTheme),
     );
+  }
+
+  IconData _categoryIcon(int? category) {
+    switch (category) {
+      case 1:
+        return Icons.bolt_rounded;
+      case 2:
+        return Icons.water_drop_rounded;
+      case 3:
+        return Icons.wifi_rounded;
+      default:
+        return Icons.electrical_services_rounded;
+    }
+  }
+
+  Color _categoryColor(int? category) {
+    switch (category) {
+      case 1:
+        return const Color(0xFFF59E0B);
+      case 2:
+        return const Color(0xFF0EA5E9);
+      case 3:
+        return const Color(0xFF8B5CF6);
+      default:
+        return AppColors.info;
+    }
   }
 
   Widget _buildList(ColorScheme colorScheme, TextTheme textTheme) {
@@ -248,8 +272,10 @@ class _UtilityListPageState extends State<UtilityListPage> {
     return RefreshIndicator(
       onRefresh: _fetch,
       child: ListView.builder(
-        padding: EdgeInsets.fromLTRB(
-            16, 12, 16, ModernBottomNav.height + context.systemBottomInset),
+        padding: AppSpacing.paddingMD.copyWith(
+          top: AppBarInsets.top(context) + 8,
+          bottom: ModernBottomNav.clearance(context) + 16,
+        ),
         itemCount: items.length,
         itemBuilder: (context, idx) => _buildCard(
           items[idx],
@@ -263,124 +289,167 @@ class _UtilityListPageState extends State<UtilityListPage> {
   Widget _buildCard(
       UtilityModel item, ColorScheme colorScheme, TextTheme textTheme) {
     final statusType = _statusType(item.status);
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm + AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
+    final catColor = _categoryColor(item.category);
+    final catIcon = _categoryIcon(item.category);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      shape: RoundedRectangleBorder(
         borderRadius: AppSpacing.borderRadiusLG,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
+      elevation: 0,
+      color: colorScheme.surface,
       child: Padding(
-        padding: AppSpacing.cardPadding,
+        padding: AppSpacing.paddingMD,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Row: Category Icon Avatar + Name & Number + Status Badge
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: catColor.withValues(alpha: 0.12),
+                    borderRadius: AppSpacing.borderRadiusMD,
+                  ),
+                  child: Icon(catIcon, color: catColor, size: 24),
+                ),
+                AppSpacing.gapHorizontalMD,
                 Expanded(
-                  child: InkWell(
-                    onTap: () => _copyNumber(item.number),
-                    child: Row(
-                      children: [
-                        Icon(Icons.numbers_rounded,
-                            size: 16, color: colorScheme.primary),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            item.number ?? '-',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.displayName,
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      InkWell(
+                        onTap: () => _copyNumber(item.number),
+                        borderRadius: AppSpacing.borderRadiusSM,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.number ?? '-',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.copy_rounded,
+                                size: 12,
+                                color: colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.7),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Icon(Icons.copy_rounded,
-                            size: 14, color: colorScheme.onSurfaceVariant),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                AppSpacing.gapHorizontalSM,
                 StatusBadge(
                   label: item.statusText,
                   type: statusType,
+                  size: BadgeSize.small,
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              item.displayName,
-              style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: AppSpacing.sm),
+
+            const SizedBox(height: 12),
+
+            // Metadata Chips
             Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 if (item.storeNickname != null)
-                  _Chip(
-                    icon: Icons.store_rounded,
+                  _MetaChip(
+                    icon: Icons.storefront_rounded,
                     label: item.storeNickname!,
                   ),
                 if (item.utilityProviderName != null)
-                  _Chip(
+                  _MetaChip(
                     icon: Icons.cable_rounded,
                     label: item.utilityProviderName!,
                   ),
                 if (item.unit != null)
-                  _Chip(
+                  _MetaChip(
                     icon: Icons.straighten_rounded,
                     label: item.unit!,
                   ),
-                _Chip(
+                _MetaChip(
+                  icon: catIcon,
                   label: item.categoryLabel,
-                  color: colorScheme.primaryContainer,
-                  textColor: colorScheme.primary,
+                  color: catColor.withValues(alpha: 0.1),
+                  textColor: catColor,
                 ),
                 if (item.prePost != null)
-                  _Chip(
+                  _MetaChip(
                     label: item.prePostLabel,
-                    color: AppColors.info.withValues(alpha: 0.12),
+                    color: AppColors.info.withValues(alpha: 0.1),
                     textColor: AppColors.info,
                   ),
               ],
             ),
+
+            // Admin Action Buttons
             if (_isAdmin) ...[
-              const SizedBox(height: AppSpacing.sm),
+              const Divider(height: 20),
               Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton.icon(
+                  OutlinedButton.icon(
                     onPressed: () => _openForm(utility: item),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    icon: const Icon(Icons.edit_outlined, size: 15),
                     label: const Text('Edit'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppSpacing.borderRadiusMD,
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  TextButton.icon(
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
                     onPressed: () => _toggleStatus(item),
                     icon: Icon(
                       item.status == 1
                           ? Icons.toggle_off_outlined
                           : Icons.toggle_on_outlined,
-                      size: 18,
+                      size: 16,
                     ),
                     label: Text(
                         item.status == 1 ? 'Nonaktifkan' : 'Aktifkan'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppSpacing.borderRadiusMD,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -391,52 +460,51 @@ class _UtilityListPageState extends State<UtilityListPage> {
     );
   }
 
-  Widget _buildError() {
-    return Center(
-      child: Padding(
-        padding: AppSpacing.paddingLG,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 48),
-            AppSpacing.gapVerticalMD,
-            Text(_errorMessage!, textAlign: TextAlign.center),
-            AppSpacing.gapVerticalMD,
-            ElevatedButton.icon(
-              onPressed: _fetch,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Coba Lagi'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmpty() {
-    return const Center(
-      child: Padding(
-        padding: AppSpacing.paddingLG,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.electrical_services_rounded, size: 48),
-            AppSpacing.gapVerticalMD,
-            Text('Belum ada data utility.'),
-          ],
-        ),
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppBarInsets.top(context) + 8,
+        AppSpacing.md,
+        ModernBottomNav.clearance(context) + 16,
       ),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.electrical_services_rounded,
+                size: 54,
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.5),
+              ),
+              AppSpacing.gapVerticalMD,
+              Text(
+                'Belum ada data utility.',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _Chip extends StatelessWidget {
+class _MetaChip extends StatelessWidget {
   final IconData? icon;
   final String label;
   final Color? color;
   final Color? textColor;
 
-  const _Chip({
+  const _MetaChip({
     this.icon,
     required this.label,
     this.color,
@@ -446,26 +514,32 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final fg = textColor ?? colorScheme.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color ?? colorScheme.surfaceContainerHighest,
+        color: color ??
+            colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         borderRadius: AppSpacing.borderRadiusSM,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+          width: 0.5,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon,
-                size: 13, color: textColor ?? colorScheme.onSurfaceVariant),
+            Icon(icon, size: 13, color: fg),
             const SizedBox(width: 4),
           ],
           Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: textColor ?? colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
+            style: textTheme.labelSmall?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

@@ -26,11 +26,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Invoice Pembelian Terkait'), findsOneWidget);
-    expect(find.textContaining('Belum ada invoice terkait'), findsOneWidget);
-    expect(find.text('Kaitkan Invoice Pembelian'), findsOneWidget);
+    expect(find.textContaining('Belum ada invoice'), findsOneWidget);
+    expect(find.text('Hubungkan Invoice Pembelian'), findsOneWidget);
   });
 
-  testWidgets('invoice draft menampilkan tombol Lepas, bukan draft tidak',
+  testWidgets('menampilkan daftar invoice dengan tombol lepas kaitan saat canEdit true',
       (tester) async {
     when(() => service.getPurchaseInvoices(1)).thenAnswer((_) async => const [
           InvoiceLinkCandidate(id: 1, supplierName: 'A', paymentStatus: '1'),
@@ -38,11 +38,25 @@ void main() {
         ]);
 
     await tester.pumpWidget(
-        wrap(PurchaseInvoiceLinkCard(orderId: 1, service: service)));
+        wrap(PurchaseInvoiceLinkCard(orderId: 1, canEdit: true, service: service)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Lepas'), findsOneWidget); // hanya milik invoice draft
+    expect(find.byTooltip('Lepas Kaitan'), findsNWidgets(2));
+    expect(find.textContaining('Belum Dibayar'), findsOneWidget);
     expect(find.textContaining('Sudah Dibayar'), findsOneWidget);
+  });
+
+  testWidgets('sembunyikan tombol lepas kaitan saat canEdit false',
+      (tester) async {
+    when(() => service.getPurchaseInvoices(1)).thenAnswer((_) async => const [
+          InvoiceLinkCandidate(id: 1, supplierName: 'A', paymentStatus: '2'),
+        ]);
+
+    await tester.pumpWidget(
+        wrap(PurchaseInvoiceLinkCard(orderId: 1, canEdit: false, service: service)));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Lepas Kaitan'), findsNothing);
   });
 
   testWidgets(

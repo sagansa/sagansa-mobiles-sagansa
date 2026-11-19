@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/image_service.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
 
 enum PhotoUploaderLayout { grid, horizontal, singleCard }
 
@@ -34,8 +33,7 @@ class _PhotoUploaderState extends State<PhotoUploader> {
   Future<void> _pickImage() async {
     final photo = await ImageService.selectAndPickImage(context);
     if (photo != null) {
-      final compressed = await ImageUtils.compressImage(photo.path);
-      final updated = List<File>.from(widget.photos)..add(compressed);
+      final updated = List<File>.from(widget.photos)..add(photo);
       widget.onChanged(updated);
     }
   }

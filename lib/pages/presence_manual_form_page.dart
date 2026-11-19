@@ -6,7 +6,9 @@ import '../services/presence_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_date_field.dart';
@@ -302,34 +304,40 @@ class _PresenceManualFormPageState extends State<PresenceManualFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isEditing ? 'Edit Presensi' : 'Input Presensi Manual'),
       ),
-      body: _isLoadingLookups
-          ? const Center(child: CircularProgressIndicator())
-          : _lookupError != null
-              ? _buildErrorState()
-              : Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: AppSpacing.paddingMD,
-                    children: [
-                      _buildEmployeeField(),
-                      AppSpacing.gapVerticalMD,
-                      _buildStoreField(),
-                      AppSpacing.gapVerticalMD,
-                      _buildShiftField(),
-                      AppSpacing.gapVerticalMD,
-                      _buildCheckInSection(),
-                      AppSpacing.gapVerticalMD,
-                      if (_selectedStore != null) ...[
+      body: Builder(
+        builder: (bodyContext) => _isLoadingLookups
+            ? const Center(child: CircularProgressIndicator())
+            : _lookupError != null
+                ? _buildErrorState()
+                : Form(
+                    key: _formKey,
+                    child: ListView(
+                      padding: AppSpacing.paddingMD.copyWith(
+                          top: AppBarInsets.top(bodyContext)),
+                      children: [
+                        _buildEmployeeField(),
                         AppSpacing.gapVerticalMD,
-                        _buildCoordinateInfo(),
+                        _buildStoreField(),
+                        AppSpacing.gapVerticalMD,
+                        _buildShiftField(),
+                        AppSpacing.gapVerticalMD,
+                        _buildCheckInSection(),
+                        AppSpacing.gapVerticalMD,
+                        if (_selectedStore != null) ...[
+                          AppSpacing.gapVerticalMD,
+                          _buildCoordinateInfo(),
+                        ],
+                        AppSpacing.gapVerticalXL,
                       ],
-                      AppSpacing.gapVerticalXL,
-                    ],
+                    ),
                   ),
-                ),
+      ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }

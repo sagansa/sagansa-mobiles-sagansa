@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/enums/order_mode.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/format_utils.dart';
 import '../../utils/status_mappers.dart';
 import '../../widgets/status_badge.dart';
 
@@ -56,6 +57,13 @@ class OrderListCard extends StatelessWidget {
               ],
               if (orderMode.isDirect) ..._buildDirectOrderDetails(colorScheme, textTheme),
               if (orderMode.isOnline) ..._buildOnlineOrderExtras(colorScheme, textTheme),
+              // Nominal hanya untuk admin — pola yang sama dengan detail
+              // (showPrice: isAdmin) agar user non-admin tetap tidak melihat
+              // nilai transaksi.
+              if (isAdmin) ...[
+                AppSpacing.gapVerticalXS,
+                _buildTotalRow(colorScheme, textTheme),
+              ],
             ],
           ),
         ),
@@ -144,6 +152,13 @@ class OrderListCard extends StatelessWidget {
       AppSpacing.gapVerticalXS,
       _buildAddressRow(colorScheme, textTheme),
     ]);
+    // Ongkir hanya untuk admin — pola nominal yang sama dengan total kartu.
+    if (isAdmin && order['shipping_cost'] != null) {
+      list.addAll([
+        AppSpacing.gapVerticalXS,
+        _buildShippingRow(colorScheme, textTheme),
+      ]);
+    }
     if (order['items'] != null && (order['items'] as List).isNotEmpty) {
       list.addAll([
         AppSpacing.gapVerticalXS,
@@ -151,6 +166,16 @@ class OrderListCard extends StatelessWidget {
       ]);
     }
     return list;
+  }
+
+  Widget _buildShippingRow(ColorScheme colorScheme, TextTheme textTheme) {
+    final shipping = int.tryParse(order['shipping_cost']?.toString() ?? '') ?? 0;
+    return _buildInfoRow(
+      Icons.local_shipping_outlined,
+      'Ongkir: ${FormatUtils.formatCurrency(shipping)}',
+      colorScheme,
+      textTheme,
+    );
   }
 
   Widget _buildAddressRow(ColorScheme colorScheme, TextTheme textTheme) {
@@ -195,16 +220,38 @@ class OrderListCard extends StatelessWidget {
           ),
           AppSpacing.gapVerticalXS,
           ...(order['items'] as List).map((item) {
+            // Nominal per harga satuan hanya untuk admin — data item dari
+            // server kadang berupa string, parse secara toleran.
+            final unitPrice = isAdmin
+                ? int.tryParse(item['unit_price']?.toString() ?? '')
+                : null;
+            final priceSuffix = unitPrice != null ? ' × ${FormatUtils.formatCurrency(unitPrice)}' : '';
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
               child: Text(
-                '• ${item['product_name']} (${item['quantity']} ${item['product_unit'] ?? ''})',
+                '• ${item['product_name']} (${item['quantity']} ${item['product_unit'] ?? ''})$priceSuffix',
                 style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
               ),
             );
           }),
         ],
       ),
+    );
+  }
+
+  Widget _buildTotalRow(ColorScheme colorScheme, TextTheme textTheme) {
+    final total = int.tryParse(order['total_price']?.toString() ?? '') ?? 0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Text(
+          FormatUtils.formatCurrency(total),
+          style: textTheme.titleSmall?.copyWith(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 

@@ -14,8 +14,11 @@ import '../../../services/document/incoming_models.dart';
 import '../../../services/document/incoming_service.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../utils/error_utils.dart';
+import '../../../widgets/app_bar_insets.dart';
 import '../../../widgets/app_page_scaffold.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../../../widgets/safe_bottom_bar.dart';
+import '../document_create_wizard.dart';
 import '../document_upload_page.dart' show PickedPdf, PickedPhoto;
 import 'incoming_detail_page.dart';
 
@@ -40,8 +43,8 @@ class ReplyToDocument {
   });
 }
 
-/// Form pendaftaran surat masuk (Task 9 fase 1b) — dibuka FAB "Daftar
-/// Surat Masuk" pada tab Masuk arsip surat.
+/// Form pendaftaran surat masuk (Task 9 fase 1b) — dibuka tombol "+" "Daftar
+/// Surat Masuk" di AppBar pada tab Masuk arsip surat.
 ///
 /// - Pengirim: pilih dari buku pihak (sheet pencarian, pola `_PartySheet`
 ///   wizard fase 1) ATAU ketik bebas — nama bebas otomatis ditawarkan
@@ -372,8 +375,7 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
           // JPEG → nama `.jpg` (OPNOTE Task 7: ekstensi sesuai isi);
           // ekstensi asal hanya dipakai jalur fallback.
           final compressed = await _compressImage(_photos[i].path);
-          final bytes =
-              compressed ?? await File(_photos[i].path).readAsBytes();
+          final bytes = compressed ?? await File(_photos[i].path).readAsBytes();
           scanImages.add(IncomingScanImage(
             bytes: bytes,
             fileName: compressed != null
@@ -403,8 +405,10 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
       await _showSuccessDialog(letter);
     } catch (e) {
       if (mounted) {
-        showErrorSnackBar(context,
-            ErrorUtils.sanitize(e, fallback: 'Gagal mendaftarkan surat masuk.'));
+        showErrorSnackBar(
+            context,
+            ErrorUtils.sanitize(e,
+                fallback: 'Gagal mendaftarkan surat masuk.'));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -417,46 +421,78 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
   }
 
   /// Dialog sukses: agenda number (di-generate backend) + jalan pintas
-  /// detail penuh (Task 10) atau selesai kembali ke buku agenda
-  /// (pemanggil me-refresh).
+  /// detail penuh (Task 10), buat balasan langsung, atau selesai kembali ke
+  /// buku agenda (pemanggil me-refresh).
   Future<void> _showSuccessDialog(IncomingLetterModel letter) async {
-    final viewDetail = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.mark_email_read_rounded, size: 40),
         title: const Text('Surat masuk terdaftar'),
-        content: Text(
-          'Nomor agenda: ${letter.agendaNumber}',
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Nomor agenda: ${letter.agendaNumber}',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Langkah berikutnya: buat surat balasan untuk surat ini, atau '
+              'buka detailnya dulu.',
+              textAlign: TextAlign.center,
+              style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
+            onPressed: () => Navigator.pop(dialogContext, 'done'),
             child: const Text('Selesai'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'detail'),
             child: const Text('Lihat detail'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, 'reply'),
+            icon: const Icon(Icons.reply_rounded, size: 18),
+            label: const Text('Buat balasan'),
           ),
         ],
       ),
     );
     if (!mounted) return;
-    if (viewDetail == true) {
-      // Detail penuh (Task 10) menggantikan form di tumpukan navigasi —
-      // kembali dari detail langsung ke buku agenda.
-      await Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => IncomingDetailPage(
-            letterId: letter.id,
-            service: _service,
+    switch (action) {
+      case 'reply':
+        // Wizard balasan menggantikan form — kembali dari wizard langsung
+        // ke buku agenda (pemanggil me-refresh).
+        await Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DocumentCreateWizard(
+              service: _documentService,
+              replyTo: letter,
+            ),
           ),
-        ),
-      );
-    } else {
-      Navigator.pop(context);
+        );
+      case 'detail':
+        // Detail penuh (Task 10) menggantikan form di tumpukan navigasi —
+        // kembali dari detail langsung ke buku agenda.
+        await Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => IncomingDetailPage(
+              letterId: letter.id,
+              service: _service,
+            ),
+          ),
+        );
+      default:
+        Navigator.pop(context);
     }
   }
 
@@ -492,13 +528,13 @@ class _IncomingFormPageState extends State<IncomingFormPage> {
       top: false,
       child: ListView(
         // Body menjorok di balik appbar kaca (extendBodyBehindAppBar) —
-        // padding atas = status bar + toolbar + jarak konten: baris pertama
-        // (judul seksi + tombol "Buku pihak") harus DI BAWAH appbar agar
-        // tidak tertutup kaca & tetap bisa di-tap; konten berikutnya tetap
-        // melewati balik kaca saat digulir.
+        // padding atas = inset appbar standar (AppBarInsets) + jarak
+        // konten: baris pertama (judul seksi + tombol "Buku pihak") harus
+        // DI BAWAH appbar agar tidak tertutup kaca & tetap bisa di-tap;
+        // konten berikutnya tetap melewati balik kaca saat digulir.
         padding: EdgeInsets.fromLTRB(
           AppSpacing.md,
-          MediaQuery.paddingOf(context).top + kToolbarHeight + AppSpacing.md,
+          AppBarInsets.top(context, bottom: AppSpacing.md),
           AppSpacing.md,
           AppSpacing.md,
         ),
@@ -936,7 +972,10 @@ class _SenderPartySheetState extends State<_SenderPartySheet> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      // Keyboard + inset sistem bawah (home indicator / gesture bar).
+      padding: EdgeInsets.only(
+        bottom: mediaQuery.viewInsets.bottom + context.systemBottomInset,
+      ),
       child: SizedBox(
         height: mediaQuery.size.height * _sheetHeightFactor,
         child: Column(
@@ -973,8 +1012,7 @@ class _SenderPartySheetState extends State<_SenderPartySheet> {
                                   subtitle: party.identityNo != null
                                       ? Text('NIK ${party.identityNo}')
                                       : null,
-                                  onTap: () =>
-                                      Navigator.of(context).pop(party),
+                                  onTap: () => Navigator.of(context).pop(party),
                                 );
                               },
                             ),

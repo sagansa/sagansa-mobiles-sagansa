@@ -7,6 +7,8 @@ import '../services/closing_store_service.dart';
 import '../services/leave_service.dart';
 import '../services/storage_stock_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 
 class CalendarPage extends StatefulWidget {
@@ -147,7 +149,7 @@ class CalendarPageState extends State<CalendarPage> {
           endTime: DateTime.parse(date).add(const Duration(hours: 1)),
           subject: 'Closing: $storeName',
           notes: 'Rp ${amount.toString()}',
-          color: const Color(0xFF8E24AA),
+          color: AppColors.secondary,
           isAllDay: false,
           resourceIds: ['closing'],
         ));
@@ -165,7 +167,7 @@ class CalendarPageState extends State<CalendarPage> {
           endTime: DateTime.parse(date).add(const Duration(hours: 1)),
           subject: 'Stok: $storeName',
           notes: 'Laporan stok gudang',
-          color: const Color(0xFF009688),
+          color: AppColors.success,
           isAllDay: false,
           resourceIds: ['stock'],
         ));
@@ -221,22 +223,27 @@ class CalendarPageState extends State<CalendarPage> {
 
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Kalender')),
+        appBar: GlassAppBar(title: const Text('Kalender')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Kalender'),
       ),
-      body: Column(
-        children: [
-          // Filter chips
-          _buildFilterChips(),
-          // Calendar
-          Expanded(
-            child: SfCalendar(
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
+          children: [
+            // Filter chips
+            _buildFilterChips(),
+            // Calendar
+            Expanded(
+              child: SfCalendar(
               view: CalendarView.month,
               dataSource: AppointmentDataSource(_filteredAppointments),
               monthViewSettings: MonthViewSettings(
@@ -272,7 +279,7 @@ class CalendarPageState extends State<CalendarPage> {
                     color: isDark
                         ? color.withValues(alpha: 0.2)
                         : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: AppSpacing.borderRadiusMD,
                     border: Border.all(
                       color: color.withValues(alpha: 0.5),
                       width: 1,
@@ -285,7 +292,7 @@ class CalendarPageState extends State<CalendarPage> {
                         height: 32,
                         decoration: BoxDecoration(
                           color: color,
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: AppSpacing.borderRadiusXS,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -322,14 +329,11 @@ class CalendarPageState extends State<CalendarPage> {
             ),
           ),
         ],
+        ),
       ),
       bottomNavigationBar: ModernBottomNav(
-        currentIndex: 2,
-        onTap: (index) {
-          if (index != 2) {
-            Navigator.pop(context);
-          }
-        },
+        currentIndex: 1,
+        onTap: (index) {},
         presences: widget.presences,
       ),
     );
@@ -351,7 +355,7 @@ class CalendarPageState extends State<CalendarPage> {
                 _applyFilters();
               },
             ),
-            const SizedBox(width: 8),
+            AppSpacing.gapHorizontalSM,
             _buildFilterChip(
               label: 'Cuti',
               color: AppColors.warning,
@@ -361,7 +365,7 @@ class CalendarPageState extends State<CalendarPage> {
                 _applyFilters();
               },
             ),
-            const SizedBox(width: 8),
+            AppSpacing.gapHorizontalSM,
             _buildFilterChip(
               label: 'Gaji',
               color: AppColors.info,
@@ -371,20 +375,20 @@ class CalendarPageState extends State<CalendarPage> {
                 _applyFilters();
               },
             ),
-            const SizedBox(width: 8),
+            AppSpacing.gapHorizontalSM,
             _buildFilterChip(
               label: 'Closing',
-              color: const Color(0xFF8E24AA),
+              color: AppColors.secondary,
               selected: _showClosing,
               onToggle: (value) {
                 setState(() => _showClosing = value);
                 _applyFilters();
               },
             ),
-            const SizedBox(width: 8),
+            AppSpacing.gapHorizontalSM,
             _buildFilterChip(
               label: 'Stok',
-              color: const Color(0xFF009688),
+              color: AppColors.success,
               selected: _showStock,
               onToggle: (value) {
                 setState(() => _showStock = value);
@@ -405,10 +409,9 @@ class CalendarPageState extends State<CalendarPage> {
   }) {
     return FilterChip(
       label: Text(label),
-      labelStyle: TextStyle(
+      labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
         color: selected ? Colors.white : color,
         fontWeight: FontWeight.w500,
-        fontSize: 12,
       ),
       selected: selected,
       onSelected: onToggle,

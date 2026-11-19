@@ -39,6 +39,7 @@ class _FakeWizardService extends DocumentService {
   Map<String, dynamic>? lastCreateMetadata;
   int updateDraftCalls = 0;
   String? lastUpdateBodyHtml;
+  String? lastUpdateSubject;
 
   @override
   Future<List<LetterTypeModel>> getLetterTypes() async => letterTypes;
@@ -122,6 +123,7 @@ class _FakeWizardService extends DocumentService {
   }) async {
     updateDraftCalls++;
     lastUpdateBodyHtml = bodyHtml;
+    lastUpdateSubject = subject;
     return DocumentModel(
       id: id,
       status: 'draft',
@@ -235,6 +237,14 @@ void main() {
 
     await tester.enterText(
         find.widgetWithText(TextField, 'Nama penerima'), 'Budi Santoso');
+    // Field khusus KUA di bawah lipat viewport (bar aksi bawah menyusutkan
+    // area konten) — gulir dulu sebelum mengisi.
+    await tester.dragUntilVisible(
+      find.text('Nama Penerima Kuasa'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     await tester.enterText(
         find.widgetWithText(TextField, 'Nama Penerima Kuasa'), 'Budi Santoso');
     await tester.pump();
@@ -304,6 +314,59 @@ void main() {
     expect(service.updateDraftCalls, 1);
     expect(service.lastUpdateBodyHtml, isNotNull);
     expect(service.lastUpdateBodyHtml, contains('Isi template'));
+  });
+
+  testWidgets('keluar wizard di tengah langkah menyimpan perubahan langkah '
+      'aktif (tanpa Lanjut) — draf bisa dilanjutkan nanti', (tester) async {
+    final service = _FakeWizardService(
+      letterTypes: const [_kuaType],
+      templatesPerType: const {
+        'KUA': [
+          TemplateModel(
+            id: 7,
+            name: 'Template KUA Standar',
+            letterTypeCode: 'KUA',
+            bodyHtml: '<p>Isi template</p>',
+            isDefault: true,
+          ),
+        ],
+      },
+    );
+
+    await _pumpWizard(tester, service);
+    await tester.tap(find.text('Surat Kuasa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Perihal *'), 'Kuasa pengurusan pajak');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lanjut'));
+    await tester.pumpAndSettle();
+    // Snackbar "Draf tersimpan." melayang di atas tombol — tunggu hilang.
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(service.updateDraftCalls, 0); // create, belum PATCH.
+    expect(service.lastCreateSubject, 'Kuasa pengurusan pajak');
+
+    // Mundur ke Formulir, ubah perihal, lalu LANGSUNG keluar (tanpa
+    // Lanjut) — sebelumnya perubahan ini hilang.
+    await tester.tap(find.text('Kembali'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Perihal *'),
+        'Kuasa pengurusan pajak revisi');
+    await tester.pump();
+
+    await tester.binding.handlePopRoute(); // back sistem → PopScope.
+    await tester.pumpAndSettle();
+    expect(find.text('Keluar dari wizard?'), findsOneWidget);
+    await tester.tap(find.text('Keluar'));
+    await tester.pumpAndSettle();
+
+    // Wizard tertutup dan perubahan langkah aktif tersimpan best-effort.
+    expect(find.text('Langkah 2 dari 6 — Formulir'), findsNothing);
+    expect(service.updateDraftCalls, 1);
+    expect(service.lastUpdateSubject, 'Kuasa pengurusan pajak revisi');
   });
 
   testWidgets('Fix C1 langkah 6: reserveNumber dipanggil sebelum pra-final '

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/safe_bottom_bar.dart';
+import 'modern_picker_sheet.dart';
+import 'safe_bottom_bar.dart';
 
 /// Komponen Dropdown Modern menggantikan DropdownButtonFormField standar.
 /// Menampilkan trigger box yang sleek dan membuka Bottom Sheet pilihan
@@ -19,6 +20,8 @@ class ModernDropdown<T> extends StatelessWidget {
   final bool enabled;
   final bool? searchable;
   final String? Function(T?)? validator;
+  final bool isDense;
+  final EdgeInsetsGeometry? contentPadding;
 
   const ModernDropdown({
     super.key,
@@ -35,23 +38,23 @@ class ModernDropdown<T> extends StatelessWidget {
     this.enabled = true,
     this.searchable,
     this.validator,
+    this.isDense = true,
+    this.contentPadding,
   });
 
   void _showSelectionSheet(BuildContext context, FormFieldState<T> state) {
     FocusScope.of(context).unfocus();
-    showModalBottomSheet<T>(
+    ModernPickerSheet.show<T>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DropdownSelectionSheet<T>(
-        title: labelText ?? hint,
-        items: items,
-        selectedItem: value,
-        getLabel: getLabel,
-        getSubtitle: getSubtitle,
-        itemLeading: itemLeading,
-        searchable: searchable ?? (items.length > 5),
-      ),
+      title: labelText ?? hint,
+      items: items.map((item) => ModernPickerItem<T>(
+        value: item,
+        label: getLabel(item),
+        subtitle: getSubtitle?.call(item),
+        leading: itemLeading?.call(item),
+      )).toList(),
+      selectedItem: value,
+      searchable: searchable ?? (items.length > 5),
     ).then((selected) {
       if (selected != null) {
         state.didChange(selected);
@@ -87,6 +90,11 @@ class ModernDropdown<T> extends StatelessWidget {
           child: InputDecorator(
             isEmpty: !hasValue,
             decoration: InputDecoration(
+              isDense: isDense,
+              contentPadding: contentPadding ??
+                  (isDense
+                      ? const EdgeInsets.symmetric(horizontal: 12, vertical: 11)
+                      : null),
               labelText: effectiveLabel,
               hintText: effectiveLabel != null ? hint : null,
               prefixIcon: prefixIcon,

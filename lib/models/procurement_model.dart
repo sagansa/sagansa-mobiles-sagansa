@@ -1,4 +1,5 @@
 import '../services/image_service.dart';
+import '../utils/supplier_name.dart';
 import 'enums/procurement_item_status.dart';
 
 /// Parse nilai numerik yang bisa datang sebagai `int`, `double`, maupun
@@ -84,7 +85,8 @@ class DetailRequestItem {
     return DetailRequestItem(
       id: _toInt(json['id']),
       productId: _toInt(json['product_id']),
-      quantityPlan: double.tryParse(json['quantity_plan']?.toString() ?? '0') ?? 0.0,
+      quantityPlan:
+          double.tryParse(json['quantity_plan']?.toString() ?? '0') ?? 0.0,
       status: json['status']?.toString() ?? '1',
       paymentTypeId: _toIntOrNull(json['payment_type_id']),
       productName: (json['product']?['name'] ?? '').toString(),
@@ -96,8 +98,7 @@ class DetailRequestItem {
 /// Extension untuk mapping `DetailRequestItem.status` (String) ke enum.
 extension DetailRequestItemStatusX on DetailRequestItem {
   /// Status sebagai enum ter-type-safe.
-  ProcurementItemStatus get statusEnum =>
-      ProcurementItemStatus.fromApi(status);
+  ProcurementItemStatus get statusEnum => ProcurementItemStatus.fromApi(status);
 }
 
 class DetailInvoiceItem {
@@ -165,7 +166,8 @@ class DetailInvoiceItem {
     final prices = rawPrices is List
         ? rawPrices
             .whereType<Map>()
-            .map((e) => LastPurchasePrice.fromJson(Map<String, dynamic>.from(e)))
+            .map(
+                (e) => LastPurchasePrice.fromJson(Map<String, dynamic>.from(e)))
             .where((e) => e.hasData)
             .toList()
         : rawPrices is Map
@@ -176,11 +178,13 @@ class DetailInvoiceItem {
       id: _toInt(json['id']),
       invoicePurchaseId: _toInt(json['invoice_purchase_id']),
       detailRequestId: _toIntOrNull(json['detail_request_id']),
-      quantityProduct: double.tryParse(json['quantity_product']?.toString() ?? '0') ?? 0.0,
+      quantityProduct:
+          double.tryParse(json['quantity_product']?.toString() ?? '0') ?? 0.0,
       quantityInvoice: json['quantity_invoice'] != null
           ? double.tryParse(json['quantity_invoice'].toString())
           : null,
-      subtotalInvoice: double.tryParse(json['subtotal_invoice']?.toString() ?? '0') ?? 0.0,
+      subtotalInvoice:
+          double.tryParse(json['subtotal_invoice']?.toString() ?? '0') ?? 0.0,
       status: json['status']?.toString(),
       productName: productName,
       unitName: unitName,
@@ -207,8 +211,12 @@ class LastPurchasePrice {
     if (json == null) return const LastPurchasePrice(unitPrice: 0);
     return LastPurchasePrice(
       unitPrice: _toInt(json['unit_price']),
-      supplierName: json['supplier_name']?.toString(),
-      date: json['date'] != null ? DateTime.tryParse(json['date'].toString()) : null,
+      supplierName: json['supplier_name'] == null
+          ? null
+          : formatSupplierName(json['supplier_name'].toString()),
+      date: json['date'] != null
+          ? DateTime.tryParse(json['date'].toString())
+          : null,
     );
   }
 
@@ -326,7 +334,8 @@ class InvoicePurchase {
 
   factory InvoicePurchase.fromJson(Map<String, dynamic> json) {
     final list = json['detail_invoices'] as List? ?? [];
-    final List<DetailInvoiceItem> items = list.map((i) => DetailInvoiceItem.fromJson(i)).toList();
+    final List<DetailInvoiceItem> items =
+        list.map((i) => DetailInvoiceItem.fromJson(i)).toList();
 
     return InvoicePurchase(
       id: _toInt(json['id']),
@@ -341,13 +350,15 @@ class InvoicePurchase {
       createdById: _toInt(json['created_by_id']),
       paymentStatus: json['payment_status']?.toString() ?? '1',
       orderStatus: json['order_status']?.toString() ?? '1',
-      storeName: (json['store']?['nickname'] ?? json['store']?['name'] ?? 'Toko').toString(),
-      supplierName: json['supplier']?['name']?.toString(),
-      supplierHasQris:
-          (json['supplier']?['qris']?.toString() ?? '').isNotEmpty,
+      storeName:
+          (json['store']?['nickname'] ?? json['store']?['name'] ?? 'Toko')
+              .toString(),
+      supplierName: json['supplier']?['name'] == null
+          ? null
+          : formatSupplierName(json['supplier']!['name'].toString()),
+      supplierHasQris: (json['supplier']?['qris']?.toString() ?? '').isNotEmpty,
       supplierBankName: json['supplier']?['bank']?['name']?.toString(),
-      supplierBankAccountNo:
-          json['supplier']?['bank_account_no']?.toString(),
+      supplierBankAccountNo: json['supplier']?['bank_account_no']?.toString(),
       supplierBankAccountName:
           json['supplier']?['bank_account_name']?.toString(),
       createdByName: (json['created_by']?['name'] ?? '').toString(),
@@ -374,6 +385,11 @@ class RequestPurchase {
   final String userName;
   final List<DetailRequestItem> detailRequests;
 
+  /// Jumlah item request yang sudah memiliki DetailInvoice (dari
+  /// withCount endpoint show). Dipakai untuk menonaktifkan aksi hapus
+  /// request yang sudah menjadi invoice (guard backend destroyRequest).
+  final int invoicedItemsCount;
+
   RequestPurchase({
     required this.id,
     required this.storeId,
@@ -382,7 +398,11 @@ class RequestPurchase {
     required this.userId,
     required this.userName,
     required this.detailRequests,
+    this.invoicedItemsCount = 0,
   });
+
+  /// True bila minimal satu item request sudah masuk ke invoice pembelian.
+  bool get hasInvoices => invoicedItemsCount > 0;
 
   String get overallStatusText {
     if (detailRequests.isEmpty) return 'No Items';
@@ -403,16 +423,20 @@ class RequestPurchase {
 
   factory RequestPurchase.fromJson(Map<String, dynamic> json) {
     final list = json['detail_requests'] as List? ?? [];
-    final List<DetailRequestItem> items = list.map((i) => DetailRequestItem.fromJson(i)).toList();
+    final List<DetailRequestItem> items =
+        list.map((i) => DetailRequestItem.fromJson(i)).toList();
 
     return RequestPurchase(
       id: _toInt(json['id']),
       storeId: _toInt(json['store_id']),
-      storeName: (json['store']?['nickname'] ?? json['store']?['name'] ?? 'Toko').toString(),
+      storeName:
+          (json['store']?['nickname'] ?? json['store']?['name'] ?? 'Toko')
+              .toString(),
       date: (json['date'] ?? '').toString(),
       userId: _toInt(json['user_id']),
       userName: (json['user']?['name'] ?? '').toString(),
       detailRequests: items,
+      invoicedItemsCount: _toInt(json['invoiced_items_count']),
     );
   }
 }
@@ -470,15 +494,18 @@ class PaymentReceipt {
 
   factory PaymentReceipt.fromJson(Map<String, dynamic> json) {
     final list = json['invoice_purchases'] as List? ?? [];
-    final List<InvoicePurchase> invoices = list.map((i) => InvoicePurchase.fromJson(i)).toList();
+    final List<InvoicePurchase> invoices =
+        list.map((i) => InvoicePurchase.fromJson(i)).toList();
 
     final fuelList = json['fuel_services'] as List? ?? [];
-    final List<FuelServiceItem> fuelServices =
-        fuelList.map((i) => FuelServiceItem.fromJson(i as Map<String, dynamic>)).toList();
+    final List<FuelServiceItem> fuelServices = fuelList
+        .map((i) => FuelServiceItem.fromJson(i as Map<String, dynamic>))
+        .toList();
 
     final salaryList = json['daily_salaries'] as List? ?? [];
-    final List<DailySalaryReceiptItem> dailySalaries =
-        salaryList.map((i) => DailySalaryReceiptItem.fromJson(i as Map<String, dynamic>)).toList();
+    final List<DailySalaryReceiptItem> dailySalaries = salaryList
+        .map((i) => DailySalaryReceiptItem.fromJson(i as Map<String, dynamic>))
+        .toList();
 
     return PaymentReceipt(
       id: _toInt(json['id']),
@@ -490,7 +517,9 @@ class PaymentReceipt {
       image: json['image']?.toString(),
       imageAdjust: json['image_adjust']?.toString(),
       createdAt: (json['created_at'] ?? '').toString(),
-      supplierName: json['supplier']?['name']?.toString(),
+      supplierName: json['supplier']?['name'] == null
+          ? null
+          : formatSupplierName(json['supplier']!['name'].toString()),
       invoicePurchases: invoices,
       fuelServices: fuelServices,
       dailySalaries: dailySalaries,
@@ -509,6 +538,12 @@ class FuelServiceItem {
   final String? vehicleRegister;
   final String km;
   final String? createdByName;
+  final int? supplierId;
+  final String? supplierName;
+  final String? supplierBankName;
+  final String? supplierBankAccountNo;
+  final String? supplierBankAccountName;
+  final String? supplierQris;
 
   FuelServiceItem({
     required this.id,
@@ -518,6 +553,12 @@ class FuelServiceItem {
     this.vehicleRegister,
     this.km = '',
     this.createdByName,
+    this.supplierId,
+    this.supplierName,
+    this.supplierBankName,
+    this.supplierBankAccountNo,
+    this.supplierBankAccountName,
+    this.supplierQris,
   });
 
   String get typeLabel => fuelService == 1 ? 'Fuel' : 'Service';
@@ -531,6 +572,15 @@ class FuelServiceItem {
       vehicleRegister: json['vehicle']?['no_register']?.toString(),
       km: json['km']?.toString() ?? '',
       createdByName: json['created_by']?['name']?.toString(),
+      supplierId: _toIntOrNull(json['supplier']?['id']),
+      supplierName: json['supplier']?['name'] == null
+          ? null
+          : formatSupplierName(json['supplier']!['name'].toString()),
+      supplierBankName: json['supplier']?['bank']?['name']?.toString(),
+      supplierBankAccountNo: json['supplier']?['bank_account_no']?.toString(),
+      supplierBankAccountName:
+          json['supplier']?['bank_account_name']?.toString(),
+      supplierQris: json['supplier']?['qris']?.toString(),
     );
   }
 }
@@ -689,11 +739,262 @@ class InvoiceLinkCandidate {
   factory InvoiceLinkCandidate.fromJson(Map<String, dynamic> json) {
     return InvoiceLinkCandidate(
       id: int.tryParse('${json['id']}') ?? 0,
-      supplierName: (json['supplier_name'] ?? '-').toString(),
+      supplierName:
+          formatSupplierName((json['supplier_name'] ?? '-').toString()),
       totalPrice: int.tryParse('${json['total_price'] ?? 0}') ?? 0,
       paymentStatus: (json['payment_status'] ?? '1').toString(),
       orderStatus: (json['order_status'] ?? '1').toString(),
       date: json['date']?.toString(),
+    );
+  }
+}
+
+/// Pembelian terakhir sebuah bahan baku — per store saat filter toko aktif,
+/// lintas store saat mode "Semua Toko" (storeName terisi).
+class ProductLastPurchase {
+  final DateTime? date;
+  final double quantity;
+  final int unitPrice;
+  final String? supplierName;
+  final int? storeId;
+  final String? storeName;
+
+  const ProductLastPurchase({
+    this.date,
+    this.quantity = 0,
+    required this.unitPrice,
+    this.supplierName,
+    this.storeId,
+    this.storeName,
+  });
+
+  factory ProductLastPurchase.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const ProductLastPurchase(unitPrice: 0);
+    return ProductLastPurchase(
+      date: json['date'] != null
+          ? DateTime.tryParse(json['date'].toString())
+          : null,
+      quantity: double.tryParse('${json['quantity'] ?? 0}') ?? 0,
+      unitPrice: _toInt(json['unit_price']),
+      supplierName: json['supplier_name'] == null
+          ? null
+          : formatSupplierName(json['supplier_name'].toString()),
+      storeId: _toIntOrNull(json['store_id']),
+      storeName: json['store_name']?.toString(),
+    );
+  }
+
+  bool get hasData => unitPrice > 0;
+}
+
+/// Bahan baku yang sedang terikat di invoice belum lunas
+/// (payment_status '1') untuk store terpilih / semua toko.
+class ProductInProcess {
+  final double quantity;
+  final int invoiceCount;
+  final DateTime? oldestInvoiceDate;
+
+  const ProductInProcess({
+    required this.quantity,
+    required this.invoiceCount,
+    this.oldestInvoiceDate,
+  });
+
+  factory ProductInProcess.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const ProductInProcess(quantity: 0, invoiceCount: 0);
+    return ProductInProcess(
+      quantity: double.tryParse('${json['quantity'] ?? 0}') ?? 0,
+      invoiceCount: _toInt(json['invoice_count']),
+      oldestInvoiceDate: json['oldest_invoice_date'] != null
+          ? DateTime.tryParse(json['oldest_invoice_date'].toString())
+          : null,
+    );
+  }
+
+  bool get hasData => invoiceCount > 0;
+}
+
+/// Baris data halaman "Info Beli Bahan Baku" (admin): bahan baku +
+/// pembelian terakhir + qty dalam invoice belum lunas.
+class ProductPurchaseInfo {
+  final int id;
+  final String name;
+  final String unitName;
+  final ProductLastPurchase? lastPurchase;
+
+  /// Hingga 5 pembelian terbaru (terbaru dulu) — ditampilkan di kartu list.
+  final List<ProductLastPurchase> recentPurchases;
+  final ProductInProcess? inProcess;
+
+  const ProductPurchaseInfo({
+    required this.id,
+    required this.name,
+    required this.unitName,
+    this.lastPurchase,
+    this.recentPurchases = const [],
+    this.inProcess,
+  });
+
+  factory ProductPurchaseInfo.fromJson(Map<String, dynamic> json) {
+    return ProductPurchaseInfo(
+      id: _toInt(json['id']),
+      name: (json['name'] ?? '').toString(),
+      unitName: (json['unit']?['unit'] ?? '').toString(),
+      lastPurchase: json['last_purchase'] == null
+          ? null
+          : ProductLastPurchase.fromJson(
+              Map<String, dynamic>.from(json['last_purchase'])),
+      recentPurchases: (json['recent_purchases'] as List<dynamic>? ?? [])
+          .map((e) => ProductLastPurchase.fromJson(
+              Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      inProcess: json['in_process'] == null
+          ? null
+          : ProductInProcess.fromJson(
+              Map<String, dynamic>.from(json['in_process'])),
+    );
+  }
+}
+
+/// Baris riwayat pembelian satu bahan baku (endpoint detail).
+class ProductPurchaseHistoryItem {
+  final int invoiceId;
+  final DateTime? date;
+  final double quantity;
+  final int unitPrice;
+  final int subtotal;
+  final String? supplierName;
+  final int? storeId;
+  final String? storeName;
+  final String paymentStatus;
+  final String orderStatus;
+
+  const ProductPurchaseHistoryItem({
+    required this.invoiceId,
+    this.date,
+    required this.quantity,
+    required this.unitPrice,
+    required this.subtotal,
+    this.supplierName,
+    this.storeId,
+    this.storeName,
+    this.paymentStatus = '1',
+    this.orderStatus = '1',
+  });
+
+  String get paymentLabel => switch (paymentStatus) {
+        '1' => 'Belum Dibayar',
+        '2' => 'Lunas',
+        '3' => 'Tidak Valid',
+        _ => '-',
+      };
+
+  factory ProductPurchaseHistoryItem.fromJson(Map<String, dynamic> json) {
+    return ProductPurchaseHistoryItem(
+      invoiceId: _toInt(json['invoice_id']),
+      date: json['date'] != null
+          ? DateTime.tryParse(json['date'].toString())
+          : null,
+      quantity: double.tryParse('${json['quantity'] ?? 0}') ?? 0,
+      unitPrice: _toInt(json['unit_price']),
+      subtotal: _toInt(json['subtotal']),
+      supplierName: json['supplier_name'] == null
+          ? null
+          : formatSupplierName(json['supplier_name'].toString()),
+      storeId: _toIntOrNull(json['store_id']),
+      storeName: json['store_name']?.toString(),
+      paymentStatus: (json['payment_status'] ?? '1').toString(),
+      orderStatus: (json['order_status'] ?? '1').toString(),
+    );
+  }
+}
+
+/// Ringkasan statistik pembelian satu bahan baku untuk analisa.
+class ProductPurchaseSummary {
+  final int totalInvoices;
+  final double totalQuantity;
+  final int totalValue;
+  final int minUnitPrice;
+  final int maxUnitPrice;
+  final int avgUnitPrice;
+  final DateTime? firstDate;
+  final DateTime? lastDate;
+
+  const ProductPurchaseSummary({
+    required this.totalInvoices,
+    required this.totalQuantity,
+    required this.totalValue,
+    required this.minUnitPrice,
+    required this.maxUnitPrice,
+    required this.avgUnitPrice,
+    this.firstDate,
+    this.lastDate,
+  });
+
+  factory ProductPurchaseSummary.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const ProductPurchaseSummary(
+        totalInvoices: 0,
+        totalQuantity: 0,
+        totalValue: 0,
+        minUnitPrice: 0,
+        maxUnitPrice: 0,
+        avgUnitPrice: 0,
+      );
+    }
+    return ProductPurchaseSummary(
+      totalInvoices: _toInt(json['total_invoices']),
+      totalQuantity: double.tryParse('${json['total_quantity'] ?? 0}') ?? 0,
+      totalValue: _toInt(json['total_value']),
+      minUnitPrice: _toInt(json['min_unit_price']),
+      maxUnitPrice: _toInt(json['max_unit_price']),
+      avgUnitPrice: _toInt(json['avg_unit_price']),
+      firstDate: json['first_date'] != null
+          ? DateTime.tryParse(json['first_date'].toString())
+          : null,
+      lastDate: json['last_date'] != null
+          ? DateTime.tryParse(json['last_date'].toString())
+          : null,
+    );
+  }
+}
+
+/// Response endpoint detail riwayat pembelian satu bahan baku.
+class ProductPurchaseDetail {
+  final int id;
+  final String name;
+  final String unitName;
+  final ProductPurchaseSummary summary;
+  final List<ProductPurchaseHistoryItem> history;
+  final List<int> availableYears;
+
+  const ProductPurchaseDetail({
+    required this.id,
+    required this.name,
+    required this.unitName,
+    required this.summary,
+    required this.history,
+    this.availableYears = const [],
+  });
+
+  factory ProductPurchaseDetail.fromJson(Map<String, dynamic> json) {
+    final product = json['product'] ?? const {};
+    return ProductPurchaseDetail(
+      id: _toInt(product['id']),
+      name: (product['name'] ?? '').toString(),
+      unitName: (product['unit']?['unit'] ?? '').toString(),
+      summary: ProductPurchaseSummary.fromJson(
+        json['summary'] == null
+            ? null
+            : Map<String, dynamic>.from(json['summary']),
+      ),
+      history: (json['history'] as List<dynamic>? ?? [])
+          .map((e) => ProductPurchaseHistoryItem.fromJson(e))
+          .toList(),
+      availableYears: (json['available_years'] as List<dynamic>? ?? [])
+          .map((e) => _toInt(e))
+          .where((y) => y > 0)
+          .toList(),
     );
   }
 }

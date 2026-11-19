@@ -10,6 +10,8 @@ import '../../services/image_service.dart';
 import '../../services/procurement_service.dart';
 import '../../services/supplier_service.dart';
 import '../../theme/app_spacing.dart';
+import '../utils/format_utils.dart';
+import '../utils/text_formatters.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 import '../widgets/supplier_payment_info_card.dart';
@@ -50,14 +52,15 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
     _selectedSupplierId = widget.invoice.supplierId;
     _selectedSupplierName = widget.invoice.supplierName ?? '';
     _paymentTypeId = widget.invoice.paymentTypeId ?? 2;
-    _taxesController.text = widget.invoice.taxes.toString();
-    _discountsController.text = widget.invoice.discounts.toString();
+    _taxesController.text = FormatUtils.formatAmount(widget.invoice.taxes);
+    _discountsController.text =
+        FormatUtils.formatAmount(widget.invoice.discounts);
     _notesController.text = widget.invoice.notes ?? '';
     _itemStates = widget.invoice.detailInvoices.map((item) {
       return {
         'detailInvoice': item,
         'priceController': TextEditingController(
-          text: item.subtotalInvoice.toStringAsFixed(0),
+          text: FormatUtils.formatAmount(item.subtotalInvoice),
         ),
         'qtyController': TextEditingController(
           text: item.quantityProduct.toStringAsFixed(
@@ -125,13 +128,12 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
   int get _totalPrice {
     int total = 0;
     for (var state in _itemStates) {
-      final price = int.tryParse(
-              (state['priceController'] as TextEditingController).text) ??
-          0;
+      final price = parseAmountInt(
+          (state['priceController'] as TextEditingController).text);
       total += price;
     }
-    final taxes = int.tryParse(_taxesController.text) ?? 0;
-    final discounts = int.tryParse(_discountsController.text) ?? 0;
+    final taxes = parseAmountInt(_taxesController.text);
+    final discounts = parseAmountInt(_discountsController.text);
     return total + taxes - discounts;
   }
 
@@ -216,13 +218,13 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
         widget.invoice.id,
         supplierId: _selectedSupplierId,
         paymentTypeId: _paymentTypeId,
-        taxes: int.tryParse(_taxesController.text) ?? 0,
-        discounts: int.tryParse(_discountsController.text) ?? 0,
+        taxes: parseAmountInt(_taxesController.text),
+        discounts: parseAmountInt(_discountsController.text),
         notes: _notesController.text.isNotEmpty ? _notesController.text : null,
         image: _imageFile,
         items: _itemStates.map((s) {
           final detail = s['detailInvoice'] as DetailInvoiceItem;
-          final total = double.tryParse(
+          final total = parseAmount(
                   (s['priceController'] as TextEditingController).text) ??
               0;
           final qty = double.tryParse(
@@ -365,6 +367,7 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
                                           isDense: true,
                                         ),
                                         keyboardType: TextInputType.number,
+                                        inputFormatters: rupiahInputFormatters,
                                         onChanged: (_) => setState(() {}),
                                       ),
                                     ),
@@ -373,7 +376,7 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
                                 Builder(
                                   builder: (_) {
                                     final totalPrice =
-                                        double.tryParse(priceCtrl.text) ?? 0;
+                                        parseAmount(priceCtrl.text) ?? 0;
                                     final qty =
                                         double.tryParse(qtyCtrl.text) ?? 0;
                                     final unitPrice =
@@ -424,6 +427,7 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
                           prefixText: 'Rp ',
                         ),
                         keyboardType: TextInputType.number,
+                        inputFormatters: rupiahInputFormatters,
                         onChanged: (_) => setState(() {}),
                       ),
                       AppSpacing.gapVerticalSM,
@@ -434,6 +438,7 @@ class _EditInvoicePageState extends State<EditInvoicePage> {
                           prefixText: 'Rp ',
                         ),
                         keyboardType: TextInputType.number,
+                        inputFormatters: rupiahInputFormatters,
                         onChanged: (_) => setState(() {}),
                       ),
                       AppSpacing.gapVerticalSM,

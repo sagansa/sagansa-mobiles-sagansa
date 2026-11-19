@@ -14,14 +14,17 @@ import '../providers/fuel_service_payment_provider.dart';
 import '../services/fuel_service_service.dart';
 import '../services/image_service.dart';
 import '../services/procurement_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/fuel_service_payment_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/ios_segmented_control.dart';
 import '../widgets/list_thumbnail.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/payment_receipt_card.dart';
@@ -35,9 +38,8 @@ class FuelServicePage extends StatefulWidget {
   State<FuelServicePage> createState() => _FuelServicePageState();
 }
 
-class _FuelServicePageState extends State<FuelServicePage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _FuelServicePageState extends State<FuelServicePage> {
+  int _activeTab = 0;
 
   final FuelServiceService _service = FuelServiceService();
   final ScrollController _scrollController = ScrollController();
@@ -73,15 +75,6 @@ class _FuelServicePageState extends State<FuelServicePage>
   @override
   void initState() {
     super.initState();
-    // Fixed length of 2 matches the always-present TabBar tabs below.
-    // Non-admins see a locked placeholder in tab 2 instead of a different
-    // controller length — disposing/recreating a live TabController while the
-    // TabBar holds it causes a null indicator paint crash (length/tab-count
-    // drift during the async role load).
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) setState(() {});
-    });
     _loadAdminRole();
     _fetch();
     _scrollController.addListener(_onScroll);
@@ -90,7 +83,6 @@ class _FuelServicePageState extends State<FuelServicePage>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _receiptScrollController.removeListener(_onReceiptScroll);
@@ -364,62 +356,75 @@ class _FuelServicePageState extends State<FuelServicePage>
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: Text(
             _paymentMode ? 'Pilih untuk Bayar Transfer' : 'Bensin & Servis'),
         actions: [
-          if (_tabController.index == 0 && !_paymentMode) ...[
-            FilterAppBarAction(
-              activeCount: _activeFilterCount,
-              onTap: _openFilterSheet,
-            ),
-            IconButton(
-              icon: const Icon(Icons.payment),
-              tooltip: 'Bayar Transfer',
-              onPressed: () {
-                setState(() => _paymentMode = !_paymentMode);
-                if (!_paymentMode) {
+          BarButtonCluster(actions: [
+            if (_activeTab == 0 && !_paymentMode) ...[
+              BarButtonSpec(
+                icon: Icons.tune,
+                tooltip: 'Filter',
+                badgeCount: _activeFilterCount,
+                onTap: _openFilterSheet,
+              ),
+              BarButtonSpec(
+                icon: Icons.payment,
+                tooltip: 'Bayar Transfer',
+                onTap: () {
+                  setState(() => _paymentMode = !_paymentMode);
+                  if (!_paymentMode) {
+                    context
+                        .read<FuelServicePaymentProvider>()
+                        .clearSelection();
+                  }
+                },
+              ),
+            ],
+            if (_paymentMode)
+              BarButtonSpec(
+                icon: Icons.close,
+                tooltip: 'Batal',
+                onTap: () {
+                  setState(() => _paymentMode = false);
                   context.read<FuelServicePaymentProvider>().clearSelection();
-                }
-              },
+                },
+              ),
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Bensin & Servis',
+              onTap: _openFuelServiceForm,
             ),
-          ],
-          if (_paymentMode)
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Batal',
-              onPressed: () {
-                setState(() => _paymentMode = false);
-                context.read<FuelServicePaymentProvider>().clearSelection();
-              },
-            ),
+          ]),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: TabBar(
-            controller: _tabController,
-            indicatorColor: cs.primary,
-            labelColor: cs.primary,
-            unselectedLabelColor: cs.onSurfaceVariant,
-            tabs: const [
-              Tab(text: 'Bensin & Servis'),
-              Tab(text: 'Pembayaran'),
-            ],
+          preferredSize: const Size.fromHeight(52),
+          child: IosSegmentedControl<int>(
+            segments: const {
+              0: 'Bensin & Servis',
+              1: 'Pembayaran',
+            },
+            groupValue: _activeTab,
+            onValueChanged: (v) => setState(() {
+              _activeTab = v;
+              if (_paymentMode) {
+                _paymentMode = false;
+                context.read<FuelServicePaymentProvider>().clearSelection();
+              }
+            }),
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: IndexedStack(
+        index: _activeTab,
         children: [
           _buildFuelServiceTab(),
           _isAdmin ? _buildPaymentReceiptTab() : _buildAdminOnlyWidget(),
         ],
-      ),
-      floatingActionButton: AddFab(
-        onPressed: _openFuelServiceForm,
       ),
       bottomNavigationBar: _paymentMode &&
               context.watch<FuelServicePaymentProvider>().selectedCount > 0
@@ -448,11 +453,15 @@ class _FuelServicePageState extends State<FuelServicePage>
       return const Center(child: CircularProgressIndicator());
     }
 
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
+
     return RefreshIndicator(
       onRefresh: _fetch,
       child: _errorMessage != null
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
               children: [
                 SizedBox(height: MediaQuery.of(context).size.height * 0.2),
                 Padding(
@@ -480,6 +489,7 @@ class _FuelServicePageState extends State<FuelServicePage>
             )
           : _services.isEmpty
               ? ListView(
+                  padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     SizedBox(height: MediaQuery.of(context).size.height * 0.25),
@@ -506,7 +516,9 @@ class _FuelServicePageState extends State<FuelServicePage>
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: _services.length + (_hasMore ? 1 : 0),
-                  padding: AppSpacing.paddingMD,
+                  padding: AppSpacing.paddingMD.copyWith(
+                      top: topPadding,
+                      bottom: bottomPadding),
                   itemBuilder: (context, index) {
                     if (index == _services.length) {
                       return const Padding(
@@ -553,12 +565,31 @@ class _FuelServicePageState extends State<FuelServicePage>
                                     final amount = double.tryParse(
                                             fs['amount'].toString()) ??
                                         0;
-                                    context
+                                    final supplier = fs['supplier'];
+                                    final error = context
                                         .read<FuelServicePaymentProvider>()
                                         .toggleSelection(
                                           fs['id'] as int,
                                           amount: amount.round(),
+                                          // 1 = bensin (reimbursement ke
+                                          // rekening pembuat, supplier
+                                          // bebas), 2 = servis (wajib satu
+                                          // supplier sama).
+                                          fuelServiceType: isFuel ? 1 : 2,
+                                          supplierId: supplier != null
+                                              ? (supplier['id'] as num?)?.toInt()
+                                              : null,
+                                          supplierName: supplier?['name']?.toString(),
+                                          bankName: supplier?['bank']?['name']?.toString(),
+                                          bankAccountNo: supplier?['bank_account_no']?.toString(),
+                                          bankAccountName: supplier?['bank_account_name']?.toString(),
+                                          qris: supplier?['qris']?.toString(),
                                         );
+                                    if (error != null && mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(error)),
+                                      );
+                                    }
                                   },
                                 ),
                               ),
@@ -616,7 +647,8 @@ class _FuelServicePageState extends State<FuelServicePage>
                                   ),
                                   AppSpacing.gapVerticalXS,
                                   Text(
-                                    'Tanggal: $date | Oleh: $creatorName',
+                                    'Tanggal: $date | Oleh: $creatorName'
+                                    '${fs['supplier']?['name'] != null ? ' | Supplier: ${fs['supplier']['name']}' : ''}',
                                     style: textTheme.bodySmall?.copyWith(
                                         color: colorScheme.onSurfaceVariant),
                                   ),
@@ -682,7 +714,7 @@ class _FuelServicePageState extends State<FuelServicePage>
         children: [
           Icon(Icons.lock_outline,
               size: 64, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
+          AppSpacing.gapVerticalMD,
           const Text('Hanya dapat diakses oleh admin.'),
         ],
       ),
@@ -693,15 +725,27 @@ class _FuelServicePageState extends State<FuelServicePage>
     if (_isLoadingReceipts) {
       return const Center(child: CircularProgressIndicator());
     }
+    final topPadding = AppBarInsets.top(context, bottom: 52) + 8;
+    final bottomPadding = ModernBottomNav.clearance(context) + 16;
     if (_receipts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _fetchReceipts,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
           children: [
-            Icon(Icons.receipt_long_outlined,
-                size: 64, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text('Belum ada pembayaran bensin & servis.'),
+            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long_outlined,
+                      size: 64, color: Theme.of(context).colorScheme.outline),
+                  AppSpacing.gapVerticalMD,
+                  const Text('Belum ada pembayaran bensin & servis.'),
+                ],
+              ),
+            ),
           ],
         ),
       );
@@ -710,12 +754,15 @@ class _FuelServicePageState extends State<FuelServicePage>
       onRefresh: _fetchReceipts,
       child: ListView.builder(
         controller: _receiptScrollController,
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.paddingMD.copyWith(
+          top: topPadding,
+          bottom: bottomPadding,
+        ),
         itemCount: _receipts.length + (_hasMoreReceipts ? 1 : 0),
         itemBuilder: (context, idx) {
           if (idx == _receipts.length) {
             return const Padding(
-              padding: EdgeInsets.all(16),
+              padding: AppSpacing.paddingMD,
               child: Center(child: CircularProgressIndicator()),
             );
           }
@@ -743,9 +790,9 @@ class _FuelServicePageState extends State<FuelServicePage>
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
+          appBar: GlassAppBar(
             backgroundColor: colorScheme.onSurface.withValues(alpha: 0.87),
-            iconTheme: IconThemeData(color: colorScheme.surface),
+            foregroundColor: colorScheme.surface,
             title: Text('Bukti Bensin & Servis',
                 style: TextStyle(color: colorScheme.surface)),
           ),
@@ -812,17 +859,19 @@ class _FuelServicePageState extends State<FuelServicePage>
               ],
             ),
           ),
-          ElevatedButton.icon(
-            onPressed: () async {
-              final success = await FuelServicePaymentBottomSheet.show(context);
-              if (success == true) {
-                setState(() => _paymentMode = false);
-                _fetch();
-              }
-            },
+            ElevatedButton.icon(
+              onPressed: () async {
+                final success = await FuelServicePaymentBottomSheet.show(context);
+                if (success == true) {
+                  setState(() => _paymentMode = false);
+                  _fetch();
+                  // Refresh tab Pembayaran agar receipt baru langsung muncul.
+                  if (_isAdmin) _fetchReceipts();
+                }
+              },
             icon: const Icon(Icons.payment),
             label: const Text('Bayar'),
-            style: ElevatedButton.styleFrom(
+            style: AppButtonStyle.elevated(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.gold,
             ),

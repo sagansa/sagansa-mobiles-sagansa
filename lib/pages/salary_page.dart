@@ -7,8 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/salary_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_dropdown.dart';
 import 'salary_detail_page.dart';
 
@@ -536,50 +537,57 @@ class _SalaryPageState extends State<SalaryPage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: Text(_isSelectionMode
             ? '${_selectedIds.length} dipilih'
             : 'Riwayat Gaji'),
         actions: [
-          if (_isAdmin) ...[
-            if (_isSelectionMode) ...[
-              IconButton(
-                icon: const Icon(Icons.check_circle),
-                onPressed: _bulkApprove,
-                tooltip: 'Bulk Approve',
-              ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _toggleSelectionMode,
-              ),
-            ] else ...[
-              IconButton(
-                icon: const Icon(Icons.auto_graph),
-                onPressed: _showGenerateDialog,
-                tooltip: 'Generate Payroll',
-              ),
-              IconButton(
-                icon: const Icon(Icons.checklist),
-                onPressed: _toggleSelectionMode,
-                tooltip: 'Pilih untuk Bulk Approve',
-              ),
+          BarButtonCluster(
+            actions: [
+              if (_isAdmin) ...[
+                if (_isSelectionMode) ...[
+                  BarButtonSpec(
+                    icon: Icons.check_circle,
+                    tooltip: 'Bulk Approve',
+                    onTap: _bulkApprove,
+                  ),
+                  BarButtonSpec(
+                    icon: Icons.close,
+                    tooltip: 'Tutup',
+                    onTap: _toggleSelectionMode,
+                  ),
+                ] else ...[
+                  BarButtonSpec(
+                    icon: Icons.auto_graph,
+                    tooltip: 'Generate Payroll',
+                    onTap: _showGenerateDialog,
+                  ),
+                  BarButtonSpec(
+                    icon: Icons.checklist,
+                    tooltip: 'Pilih untuk Bulk Approve',
+                    onTap: _toggleSelectionMode,
+                  ),
+                ],
+              ],
+              if (_isAdmin && !_isSelectionMode)
+                BarButtonSpec(
+                  icon: Icons.tune,
+                  tooltip: 'Filter',
+                  badgeCount: _activeFilterCount,
+                  onTap: _openFilterSheet,
+                ),
             ],
-          ],
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Muat Ulang',
           ),
-          if (_isAdmin && !_isSelectionMode)
-            FilterAppBarAction(
-              activeCount: _activeFilterCount,
-              onTap: _openFilterSheet,
-            ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,
-        child: Column(
+        child: SafeArea(
+          top: true,
+          bottom: false,
+          child: Column(
           children: [
             if (!_isAdmin)
               Container(
@@ -602,6 +610,7 @@ class _SalaryPageState extends State<SalaryPage> {
               child: _buildBody(colorScheme, textTheme),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -204,7 +204,23 @@ class DocumentApiClient {
     if (response.statusCode == 401) {
       _onUnauthorized();
     }
-    final json = jsonDecode(response.body);
+
+    // Body non-JSON (halaman HTML gateway / server versi lama) jangan
+    // melempar FormatException kriptik — sampaikan status + petunjuk.
+    final dynamic json;
+    try {
+      json = jsonDecode(response.body);
+    } catch (_) {
+      throw ApiException(
+        message: response.statusCode >= 200 && response.statusCode < 300
+            ? 'Format respons tidak dikenali.'
+            : response.statusCode == 404
+                ? 'Aksi tidak tersedia di server (404) — service document '
+                    'perlu diperbarui ke versi terbaru.'
+                : 'Server gagal memproses (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (json is Map<String, dynamic> && json['success'] == true) {

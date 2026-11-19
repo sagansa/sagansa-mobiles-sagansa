@@ -99,7 +99,8 @@ class _SigningTaskPageState extends State<SigningTaskPage> {
       bodyPadding: EdgeInsets.zero,
       body: SafeArea(
         top: true,
-        bottom: false,
+        // bottom: true — kartu terakhir tidak tertutup home indicator.
+        bottom: true,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
@@ -197,8 +198,8 @@ class _SigningTaskPageState extends State<SigningTaskPage> {
                             request.requestedAt != null
                                 ? 'Diminta ${_dateFormatter.format(request.requestedAt!.toLocal())}'
                                 : 'Diminta',
-                            style: textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant),
+                            style: textTheme.bodySmall
+                                ?.copyWith(color: colorScheme.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -291,8 +292,8 @@ class _SigningTaskActionPageState extends State<_SigningTaskActionPage> {
       setState(() => _previewBytes = bytes);
     } catch (e) {
       if (!mounted) return;
-      setState(() =>
-          _buildError = ErrorUtils.sanitize(e, fallback: 'Gagal memuat pratinjau.'));
+      setState(() => _buildError =
+          ErrorUtils.sanitize(e, fallback: 'Gagal memuat pratinjau.'));
     } finally {
       if (mounted) setState(() => _building = false);
     }
@@ -302,16 +303,17 @@ class _SigningTaskActionPageState extends State<_SigningTaskActionPage> {
     if (_acting) return;
     setState(() => _acting = true);
     try {
-      final note =
-          _noteController.text.trim().isEmpty ? null : _noteController.text.trim();
+      final note = _noteController.text.trim().isEmpty
+          ? null
+          : _noteController.text.trim();
       if (approve) {
         await widget.service.approveSigning(widget.request.id, note: note);
       } else {
         await widget.service.rejectSigning(widget.request.id, note: note);
       }
       if (!mounted) return;
-      showSuccessSnackBar(
-          context, approve ? 'Tanda tangan disetujui.' : 'Tanda tangan ditolak.');
+      showSuccessSnackBar(context,
+          approve ? 'Tanda tangan disetujui.' : 'Tanda tangan ditolak.');
       Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
@@ -329,9 +331,59 @@ class _SigningTaskActionPageState extends State<_SigningTaskActionPage> {
     return AppPageScaffold(
       titleText: 'Tugas Tanda Tangan',
       bodyPadding: EdgeInsets.zero,
+      // Catatan + Setujui/Tolak di bar bawah via bottomAction — inset
+      // sistem bawah (home indicator) & dorong di atas keyboard
+      // ditangani SafeBottomBar scaffold.
+      bottomAction: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _noteController,
+            maxLines: 1,
+            maxLength: 255,
+            enabled: !_acting,
+            decoration: const InputDecoration(
+              hintText: 'Catatan (opsional)',
+              isDense: true,
+              prefixIcon: Icon(Icons.sticky_note_2_outlined),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _acting ? null : () => _decide(approve: false),
+                  style: AppButtonStyle.outlined(),
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Tolak'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _acting ? null : () => _decide(approve: true),
+                  style: AppButtonStyle.filled(),
+                  icon: _acting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_rounded),
+                  label: const Text('Setujui'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: SafeArea(
         top: true,
-        bottom: false,
+        // bottom: true — area pratinjau berhenti di atas bar aksi bawah
+        // (bottomAction) & home indicator.
+        bottom: true,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -342,9 +394,8 @@ class _SigningTaskActionPageState extends State<_SigningTaskActionPage> {
                 children: [
                   Text(
                     document?.number ?? 'Belum bernomor',
-                    style:
-                        textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold),
+                    style: textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
@@ -356,55 +407,6 @@ class _SigningTaskActionPageState extends State<_SigningTaskActionPage> {
               ),
             ),
             Expanded(child: _buildPreviewArea(context)),
-            Padding(
-              padding: AppSpacing.paddingMD,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _noteController,
-                    maxLines: 1,
-                    maxLength: 255,
-                    enabled: !_acting,
-                    decoration: const InputDecoration(
-                      hintText: 'Catatan (opsional)',
-                      isDense: true,
-                      prefixIcon: Icon(Icons.sticky_note_2_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _acting ? null : () => _decide(approve: false),
-                          style: AppButtonStyle.outlined(),
-                          icon: const Icon(Icons.close_rounded),
-                          label: const Text('Tolak'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _acting ? null : () => _decide(approve: true),
-                          style: AppButtonStyle.filled(),
-                          icon: _acting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : const Icon(Icons.check_rounded),
-                          label: const Text('Setujui'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),

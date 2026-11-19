@@ -1,17 +1,22 @@
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 
 import '../models/procurement_model.dart';
 import '../services/closing_store_service.dart';
 import '../services/image_service.dart';
 import '../services/procurement_service.dart';
 import '../services/supplier_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 import '../widgets/supplier_payment_info_card.dart';
@@ -80,6 +85,12 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
     _isDailySalaryMode =
         widget.dailySalaries != null && widget.dailySalaries!.isNotEmpty;
 
+    // Rebuild kartu QRIS supplier saat nominal transfer berubah
+    // (QRIS dinamis menyisipkan nominal).
+    _transferAmountController.addListener(() {
+      if (mounted) setState(() {});
+    });
+
     if (_isDailySalaryMode) {
       _selectedDailySalaries = List.from(widget.dailySalaries!);
       _recalculateTotal();
@@ -105,11 +116,15 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
     if (_selectedSupplierId == null) return;
     try {
       final list = await _supplierService.getSuppliers();
-      final match = list.firstWhere(
-        (s) => s.id == _selectedSupplierId,
-        orElse: () => list.first,
-      );
+      final match = list.where((s) => s.id == _selectedSupplierId).firstOrNull;
       if (!mounted) return;
+      if (match == null) {
+        setState(() {
+          _selectedSupplier = null;
+          _selectedSupplierName = 'Supplier tidak ditemukan';
+        });
+        return;
+      }
       setState(() {
         _selectedSupplier = {
           'id': match.id,
@@ -123,8 +138,12 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
         };
         _selectedSupplierName = match.name;
       });
-    } catch (_) {
-      // Ignore — supplier info akan kosong, user tetap bisa submit.
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _selectedSupplier = null;
+        _selectedSupplierName = 'Gagal memuat data supplier';
+      });
     }
   }
 
@@ -235,7 +254,13 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
           return StatefulBuilder(
             builder: (ctx, setSheetState) {
               return Padding(
-                padding: const EdgeInsets.all(20),
+                // + inset sistem bawah (home indicator / gesture bar).
+                padding: EdgeInsets.only(
+                  left: 20,
+                  top: 20,
+                  right: 20,
+                  bottom: 20 + ctx.systemBottomInset,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,24 +483,19 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
       await _service.createPaymentReceipt(data, imageFile: _selectedImage);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment receipt berhasil dibuat.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Payment receipt berhasil dibuat.',
+        background: AppColors.success,
       );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       final cs = Theme.of(context).colorScheme;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceAll('Exception: ', ''),
-            style: const TextStyle(color: Colors.white),
-          ),
-          backgroundColor: cs.error,
-        ),
+      showAppSnackBar(
+        context,
+        e.toString().replaceAll('Exception: ', ''),
+        background: cs.error,
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -490,7 +510,10 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
     final totalNominal = int.tryParse(_transferAmountController.text) ?? 0;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isDailySalaryMode
             ? 'Buat Payment Receipt Gaji'
             : 'Buat Payment Receipt'),
@@ -515,7 +538,8 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: AppSpacing.paddingMD,
+                padding: AppSpacing.paddingMD
+                    .copyWith(top: AppBarInsets.top(context)),
                 children: [
                   if (_isDailySalaryMode)
                     _buildDailySalarySection(isDark, theme)
@@ -535,7 +559,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                           AppSpacing.gapVerticalSM,
                           InkWell(
                             onTap: _pickSupplier,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: AppSpacing.borderRadiusSM,
                             child: InputDecorator(
                               decoration: const InputDecoration(
                                 labelText: 'Pilih Supplier *',
@@ -555,7 +579,11 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                           if (_selectedSupplier != null) ...[
                             AppSpacing.gapVerticalSM,
                             SupplierPaymentInfoCard(
-                                selectedSupplier: _selectedSupplier),
+                              selectedSupplier: _selectedSupplier,
+                              // QRIS dinamis: nominal ikut total transfer.
+                              amount:
+                                  int.tryParse(_transferAmountController.text),
+                            ),
                           ],
                         ],
                       ),
@@ -577,18 +605,11 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                                 style: theme.textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
-                              TextButton.icon(
+                              FormAddButton(
+                                label: 'Pilih Invoice',
                                 onPressed:
                                     _isLoadingInvoices ? null : _pickInvoices,
-                                icon: _isLoadingInvoices
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.add, size: 18),
-                                label: const Text('Pilih Invoice'),
+                                isLoading: _isLoadingInvoices,
                               ),
                             ],
                           ),
@@ -618,16 +639,14 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                                         children: [
                                           Text(
                                             'Invoice #${inv.id} • ${inv.storeName}',
-                                            style: const TextStyle(
-                                              fontSize: 13,
+                                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
                                           Text(
                                             currencyFormatter
                                                 .format(inv.totalPrice),
-                                            style: TextStyle(
-                                              fontSize: 12,
+                                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                               color: isDark
                                                   ? AppColors.gold
                                                   : AppColors.primary,
@@ -675,22 +694,20 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                                 : AppColors.secondaryContainer
                                     .withValues(alpha: 0.3),
                             borderRadius:
-                                BorderRadius.circular(AppSpacing.radiusSM),
+                                AppSpacing.borderRadiusSM,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
+                              Text(
                                 'Total Transfer:',
-                                style: TextStyle(
-                                  fontSize: 13,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               Text(
                                 FormatUtils.formatCurrency(totalNominal),
-                                style: TextStyle(
-                                  fontSize: 18,
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: isDark
                                       ? AppColors.gold
@@ -715,8 +732,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                         // Bukti Pembayaran label
                         Text(
                           'Bukti Pembayaran (Opsional)',
-                          style: TextStyle(
-                            fontSize: 13,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSurface,
                           ),
@@ -727,7 +743,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                             children: [
                               ClipRRect(
                                 borderRadius:
-                                    BorderRadius.circular(AppSpacing.radiusMD),
+                                    AppSpacing.borderRadiusMD,
                                 child: kIsWeb
                                     ? Image.network(
                                         _selectedImage!.path,
@@ -750,6 +766,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                                       Colors.black.withValues(alpha: 0.6),
                                   radius: 18,
                                   child: IconButton(
+                                    tooltip: 'Hapus',
                                     icon: const Icon(Icons.close_rounded,
                                         size: 18, color: Colors.white),
                                     onPressed: () =>
@@ -777,7 +794,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                                   ? 'Unggah Bukti Transfer'
                                   : 'Ganti Foto Bukti',
                             ),
-                            style: OutlinedButton.styleFrom(
+                            style: AppButtonStyle.outlined(
                               foregroundColor:
                                   isDark ? AppColors.gold : AppColors.primary,
                               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -845,15 +862,13 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
                         children: [
                           Text(
                             '$employeeName • $storeName',
-                            style: const TextStyle(
-                              fontSize: 13,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             '$date • ${currencyFormatter.format(amount)}',
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
                               color:
                                   isDark ? AppColors.gold : AppColors.primary,
                               fontWeight: FontWeight.w600,
@@ -887,7 +902,7 @@ class _CreatePaymentReceiptPageState extends State<CreatePaymentReceiptPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12

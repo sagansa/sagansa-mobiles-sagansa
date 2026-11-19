@@ -5,19 +5,29 @@ import '../../providers/delivery_provider.dart';
 import '../../services/sales_order_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/format_utils.dart';
+import '../../utils/text_formatters.dart';
 import '../../widgets/modern_dropdown.dart';
+import '../app_snackbar.dart';
+import '../safe_bottom_bar.dart';
 
 /// Bottom sheet untuk admin mengubah rincian produk sebuah order:
-/// ganti produk, jumlah, harga satuan, tambah/hapus item. Menggantikan
-/// pesan lama "hubungi admin backend untuk mengubah jenis produk".
+/// ganti produk, jumlah, harga satuan, tambah/hapus item, plus ongkos
+/// kirim (ikut terkirim ke server; total = barang + ongkos kirim).
+/// Menggantikan pesan lama "hubungi admin backend untuk mengubah jenis
+/// produk".
 class EditOrderItemsSheet extends StatefulWidget {
   final Map<String, dynamic> order;
   final DeliveryProvider provider;
+
+  /// Injectable untuk test; default service produksi.
+  final SalesOrderService? salesOrderService;
 
   const EditOrderItemsSheet({
     super.key,
     required this.order,
     required this.provider,
+    this.salesOrderService,
   });
 
   static Future<void> show(
@@ -38,10 +48,11 @@ class EditOrderItemsSheet extends StatefulWidget {
 }
 
 class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
-  final SalesOrderService _salesOrderService = SalesOrderService();
+  late final SalesOrderService _salesOrderService;
 
   List<SalesOrderOnlineProduct> _products = [];
   final List<_EditItemState> _items = [];
+  late final TextEditingController _shippingController;
   bool _isLoadingProducts = true;
   bool _isSaving = false;
   String? _loadError;
@@ -49,6 +60,10 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
   @override
   void initState() {
     super.initState();
+    _salesOrderService = widget.salesOrderService ?? SalesOrderService();
+    _shippingController = TextEditingController(
+      text: _toMoneyText(widget.order['shipping_cost']),
+    );
     _seedFromOrder();
     _loadProducts();
   }
@@ -59,12 +74,18 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
       for (final raw in items) {
         if (raw is Map<String, dynamic>) {
           _items.add(_EditItemState(
-            productId: raw['product_id'] as int?,
+            productId: raw['product_id'] == null
+                ? null
+                : int.tryParse('${raw['product_id']}'),
+            productOnlineGroupId: raw['product_online_group_id'] == null
+                ? null
+                : int.tryParse('${raw['product_online_group_id']}'),
+            groupName: raw['product_name']?.toString(),
             qtyController: TextEditingController(
               text: _toText(raw['quantity'], fallback: '1'),
             ),
             priceController: TextEditingController(
-              text: _toText(raw['unit_price']),
+              text: _toMoneyText(raw['unit_price']),
             ),
           ));
         }
@@ -80,11 +101,16 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
     final parsed = int.tryParse(value.toString());
     if (parsed == null) {
       final parsedDouble = double.tryParse(value.toString());
-      return parsedDouble == null
-          ? fallback
-          : parsedDouble.round().toString();
+      return parsedDouble == null ? fallback : parsedDouble.round().toString();
     }
     return parsed.toString();
+  }
+
+  static String _toMoneyText(dynamic value) {
+    if (value == null) return '0';
+    final parsed =
+        value is num ? value : double.tryParse(value.toString()) ?? 0;
+    return FormatUtils.formatAmount(parsed);
   }
 
   Future<void> _loadProducts() async {
@@ -125,7 +151,7 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
     });
   }
 
-  int get _total {
+  int get _itemsTotal {
     int total = 0;
     for (final item in _items) {
       total += item.subtotal;
@@ -133,13 +159,19 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
     return total;
   }
 
+  /// Ongkos kirim yang akan dikirim ke server — selalu terkirim (0 bila
+  /// dikosongkan) supaya admin bisa menghapus ongkos kirim yang salah.
+  int get _shippingCost => parseAmountInt(_shippingController.text);
+
+  int get _grandTotal => _itemsTotal + _shippingCost;
+
   Future<void> _save() async {
     if (_items.isEmpty) {
       _showSnack('Minimal harus ada 1 item.');
       return;
     }
     for (final item in _items) {
-      if (item.productId == null) {
+      if (!item.isGroupItem && item.productId == null) {
         _showSnack('Ada item yang belum dipilih produknya.');
         return;
       }
@@ -151,21 +183,25 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
 
     setState(() => _isSaving = true);
     try {
-      await widget.provider.updateOrderItems([
-        for (final item in _items)
-          {
-            'product_id': item.productId,
-            'quantity': item.quantity,
-            'unit_price': item.unitPrice,
-          },
-      ]);
+      await widget.provider.updateOrderItems(
+        [
+          for (final item in _items)
+            {
+              'product_id': item.isGroupItem ? null : item.productId,
+              if (item.isGroupItem)
+                'product_online_group_id': item.productOnlineGroupId,
+              'quantity': item.quantity,
+              'unit_price': item.unitPrice,
+            },
+        ],
+        shippingCost: _shippingCost,
+      );
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Rincian produk berhasil diperbarui.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Rincian produk berhasil diperbarui.',
+        background: AppColors.success,
       );
     } catch (e) {
       if (!mounted) return;
@@ -175,9 +211,7 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
-    );
+    showAppSnackBar(context, message, background: AppColors.error);
   }
 
   @override
@@ -185,6 +219,7 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
     for (final item in _items) {
       item.dispose();
     }
+    _shippingController.dispose();
     super.dispose();
   }
 
@@ -192,7 +227,8 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom +
+        context.systemBottomInset;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
@@ -259,6 +295,38 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
                   ),
                 if (!_isLoadingProducts && _loadError == null) ...[
                   const Divider(height: 24),
+                  // Ongkos kirim — selalu tampil supaya admin bisa menaikkan/
+                  // menurunkan/menghapus nilai; total akhir = barang + ongkir.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _shippingController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: rupiahInputFormatters,
+                          decoration: const InputDecoration(
+                            labelText: 'Ongkos Kirim',
+                            prefixText: 'Rp ',
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      AppSpacing.gapHorizontalMD,
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Barang: Rp ${FormatUtils.formatAmount(_itemsTotal)}',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  AppSpacing.gapVerticalSM,
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -266,7 +334,7 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
                           style: textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.bold)),
                       Text(
-                        'Rp ${_total.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
+                        'Rp ${_grandTotal.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
                         style: textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.primary,
@@ -292,8 +360,8 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.save_outlined, size: 18),
                           label: const Text('Simpan'),
@@ -316,6 +384,10 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
+      // Kunci per baris supaya Element tidak dicocokkan by posisi saat
+      // baris dihapus/bergeser — state TextFormField (nama paket read-only)
+      // tidak pindah antar baris.
+      key: ObjectKey(item),
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: AppSpacing.paddingMD,
@@ -340,23 +412,32 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
                   ),
               ],
             ),
-            ModernDropdown<int>(
-              value: item.productId,
-              hint: 'Pilih produk',
-              labelText: 'Produk',
-              items: [for (final p in _products) p.id],
-              getLabel: (id) => _products
-                  .firstWhere(
-                    (p) => p.id == id,
-                    orElse: () => SalesOrderOnlineProduct(
-                        id: id, name: 'Produk #$id', unit: ''),
-                  )
-                  .name,
-              searchable: true,
-              isRequired: true,
-              onChanged: (value) =>
-                  setState(() => item.productId = value),
-            ),
+            if (item.isGroupItem)
+              TextFormField(
+                initialValue: item.groupName ?? 'Paket #${item.productOnlineGroupId}',
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nama Paket (tetap)',
+                  isDense: true,
+                ),
+              )
+            else
+              ModernDropdown<int>(
+                value: item.productId,
+                hint: 'Pilih produk',
+                labelText: 'Produk',
+                items: [for (final p in _products) p.id],
+                getLabel: (id) => _products
+                    .firstWhere(
+                      (p) => p.id == id,
+                      orElse: () => SalesOrderOnlineProduct(
+                          id: id, name: 'Produk #$id', unit: ''),
+                    )
+                    .name,
+                searchable: true,
+                isRequired: true,
+                onChanged: (value) => setState(() => item.productId = value),
+              ),
             AppSpacing.gapVerticalMD,
             Row(
               children: [
@@ -376,6 +457,7 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
                   child: TextField(
                     controller: item.priceController,
                     keyboardType: TextInputType.number,
+                    inputFormatters: rupiahInputFormatters,
                     decoration: const InputDecoration(
                       labelText: 'Harga Satuan',
                       prefixText: 'Rp ',
@@ -391,8 +473,8 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
               alignment: Alignment.centerRight,
               child: Text(
                 'Subtotal: Rp ${item.subtotal.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m.group(1)}.')}',
-                style: textTheme.bodySmall
-                    ?.copyWith(color: colorScheme.primary),
+                style:
+                    textTheme.bodySmall?.copyWith(color: colorScheme.primary),
               ),
             ),
           ],
@@ -404,6 +486,10 @@ class _EditOrderItemsSheetState extends State<EditOrderItemsSheet> {
 
 class _EditItemState {
   int? productId;
+  int? productOnlineGroupId;
+
+  /// Nama grup/produk dari server — baris grup tampil read-only.
+  final String? groupName;
   final TextEditingController qtyController;
   final TextEditingController priceController;
 
@@ -411,10 +497,14 @@ class _EditItemState {
     required this.productId,
     required this.qtyController,
     required this.priceController,
+    this.productOnlineGroupId,
+    this.groupName,
   });
 
+  bool get isGroupItem => productOnlineGroupId != null;
+
   int get quantity => int.tryParse(qtyController.text) ?? 0;
-  int get unitPrice => int.tryParse(priceController.text) ?? 0;
+  int get unitPrice => parseAmountInt(priceController.text);
   int get subtotal => quantity * unitPrice;
 
   void dispose() {

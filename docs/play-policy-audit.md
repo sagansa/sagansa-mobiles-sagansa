@@ -27,6 +27,13 @@ untuk meminimalkan risiko penolakan saat submit.
 |---|---|---|
 | `ACCESS_BACKGROUND_LOCATION` | Kategori paling ketat di Play. Butuh prominent disclosure kompleks + manual review. | Saat modul "lokasi on-demand karyawan" dirilis |
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_LOCATION` | Berpasangan dengan background location. | Saat modul lokasi karyawan |
+
+> **Catatan (jebakan manifest merger):** plugin `geolocator` mendeklarasikan
+> `FOREGROUND_SERVICE_LOCATION` + `GeolocatorLocationService` di manifest
+> library-nya, yang otomatis ter-merge ke AAB final walau app tidak
+> menjalankannya — Play Console tetap mewajibkan deklarasi FGS + video demo
+> karena mendeteksi permission di manifest hasil merge. Keduanya dilepas via
+> `tools:node="remove"` di `android/app/src/main/AndroidManifest.xml`.
 | `com.google.android.gms.permission.AD_ID` | **Tidak ada SDK iklan** di app. Deklarasi tanpa penggunaan = auto-reject/flag. | Hanya jika integrasi SDK iklan (tidak direncanakan) |
 
 ---
@@ -146,6 +153,9 @@ Saat modul "lokasi on-demand karyawan" diaktifkan kembali, persiapkan:
 1. **Aktifkan kembali permission di manifest:**
    - `ACCESS_BACKGROUND_LOCATION`
    - `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_LOCATION`
+   - Hapus entri `tools:node="remove"` untuk `FOREGROUND_SERVICE_LOCATION`
+     dan `GeolocatorLocationService` di `android/app/src/main/AndroidManifest.xml`
+     (lihat catatan manifest merger di bagian 1)
 2. **Setup Firebase:**
    - Taruh `google-services.json` di `android/app/`
    - Uncomment plugin `com.google.gms.google-services` di `settings.gradle` & `app/build.gradle`

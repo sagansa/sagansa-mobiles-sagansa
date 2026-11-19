@@ -1,0 +1,100 @@
+{
+  "title": "Pilih struktur form Tambah/Edit Supplier",
+  "question": "Dunia visual sudah tetap (Midnight & Gold). Dadu mengocok tiga struktur dari tujuh kandidat — Tiga Langkah memimpin. Kunci satu, beri arahan, atau kocok ulang. Build berjalan code-led (tidak ada image generation di mesin ini).",
+  "options": [
+    {
+      "id": "langkah",
+      "label": "Tiga Langkah",
+      "kicker": "THE ROLL",
+      "lineage": "stepper satu-urusan-per-layar; stub koupon yang tak pernah hilang",
+      "thesis": "Satu layar, satu urusan — Identitas → Lokasi → Pembayaran — dan langkah yang selesai melipat jadi stub ringkas yang tetap terlihat.",
+      "palette": ["#262626", "#E6C687", "#F2EEE9", "#8C7B4A"],
+      "materials": ["kartu Material 3 radius 16", "field outline radius 12", "app bar kaca iOS", "grid 8 px"],
+      "viewport": "Di bawah app bar kaca: tiga segmen progres sejajar, segmen aktif terisi penuh charcoal (emas di dark). Langkah 1 memenuhi layar — pivot Domestik/Luar Negeri (admin) paling atas, lalu foto, nama, telepon. Di bawah konten, Lokasi dan Pembayaran mengintip sebagai dua baris stub kosong. Tombol 'Lanjut' menempel di bawah; di edit, langkah terisi tampil sebagai stub ✓ yang bisa diketuk langsung.",
+      "risk": "Admin yang menyalin dari invoice mengetuk lebih banyak; koreksi satu field saat edit harus bisa lompat langsung ke langkahnya, bukan melewati tiga layar.",
+      "raised": [
+        {
+          "from": "challenger-ticket-wallet",
+          "raise": "Langkah selesai tidak hilang: melipat jadi stub ringkas bertanda ✓ yang bisa diketuk kembali; header selalu menunjukkan apa yang tersisa."
+        },
+        {
+          "from": "challenger-metro-tiles",
+          "raise": "Segmen aktif ditandai fill penuh, bukan outline tipis."
+        }
+      ],
+      "wireframe": {
+        "cols": 12,
+        "rows": 24,
+        "regions": [
+          { "label": "app bar · Tambah Supplier", "x": 0, "y": 0, "w": 12, "h": 2 },
+          { "label": "1 Identitas", "x": 0, "y": 2, "w": 4, "h": 1, "accent": true },
+          { "label": "2 Lokasi", "x": 4, "y": 2, "w": 4, "h": 1 },
+          { "label": "3 Pembayaran", "x": 8, "y": 2, "w": 4, "h": 1 },
+          { "label": "Domestik | Luar Negeri", "x": 0, "y": 4, "w": 12, "h": 1 },
+          { "label": "foto supplier", "x": 0, "y": 6, "w": 12, "h": 4 },
+          { "label": "Nama Supplier *", "x": 0, "y": 11, "w": 12, "h": 1 },
+          { "label": "No. Telepon", "x": 0, "y": 13, "w": 12, "h": 1 },
+          { "label": "stub · Lokasi (belum)", "x": 0, "y": 16, "w": 12, "h": 1 },
+          { "label": "stub · Pembayaran (belum)", "x": 0, "y": 18, "w": 12, "h": 1 },
+          { "label": "Lanjut →", "x": 0, "y": 22, "w": 12, "h": 2, "accent": true }
+        ]
+      },
+      "comp": ".impeccable/mocks/decision/langkah.webp"
+    },
+    {
+      "id": "dua-fase",
+      "label": "Dua Fase",
+      "lineage": "inti dulu, pelengkap kemudian — dua zona kontras dalam satu scroll",
+      "thesis": "Simpan inti dulu (identitas + lokasi); pembayaran adalah fase kedua yang jujur ditandai 'bisa dilengkapi nanti' — supplier bisa dipakai lebih cepat.",
+      "palette": ["#262626", "#E6C687", "#F2EEE9", "#8C7B4A"],
+      "materials": ["kartu Material 3 radius 16", "kartu tonal bergaris putus untuk zona tertunda", "field outline radius 12", "grid 8 px"],
+      "viewport": "Satu scroll, dua zona yang jelas berbeda bobot. Zona INTI di kartu putih penuh: pivot asal, foto, nama, telepon, alamat. Di bawahnya zona PEMBAYARAN sebagai kartu tonal bergaris putus berjudul 'Pembayaran — bisa dilengkapi nanti', bank/QRIS terlipat dengan tombol 'Isi sekarang'. Tombol simpan menyebut keadaan: 'Simpan tanpa pembayaran' berubah 'Simpan lengkap' saat pembayaran diisi.",
+      "risk": "Pembayaran mudah terlupa sampai ada tagihan; agar fase dua benar-benar terjadi, list/detail supplier perlu penanda 'pembayaran belum lengkap' — itu di luar surface ini.",
+      "wireframe": {
+        "cols": 12,
+        "rows": 24,
+        "regions": [
+          { "label": "app bar · Tambah Supplier", "x": 0, "y": 0, "w": 12, "h": 2 },
+          { "label": "Domestik | Luar Negeri", "x": 0, "y": 2, "w": 12, "h": 1 },
+          { "label": "foto supplier", "x": 0, "y": 4, "w": 12, "h": 3 },
+          { "label": "Nama Supplier *", "x": 0, "y": 8, "w": 12, "h": 1 },
+          { "label": "No. Telepon", "x": 0, "y": 10, "w": 12, "h": 1 },
+          { "label": "Alamat · provinsi → kota → …", "x": 0, "y": 12, "w": 12, "h": 4 },
+          { "label": "Pembayaran — bisa dilengkapi nanti  [Isi sekarang]", "x": 0, "y": 17, "w": 12, "h": 4 },
+          { "label": "Simpan tanpa pembayaran", "x": 0, "y": 22, "w": 12, "h": 2, "accent": true }
+        ]
+      },
+      "comp": ".impeccable/mocks/decision/dua-fase.webp"
+    },
+    {
+      "id": "akordeon",
+      "label": "Akordeon Progres",
+      "lineage": "peta seksi selalu terlihat; satu terbuka, sisanya baris berjudul dengan hitungan",
+      "thesis": "Semua seksi terlihat sekaligus sebagai baris berjudul dengan hitungan kelengkapan; hanya satu yang terbuka — form panjang terasa pendek tanpa menyembunyikan petanya.",
+      "palette": ["#262626", "#E6C687", "#F2EEE9", "#8C7B4A"],
+      "materials": ["kartu Material 3 radius 16 sebagai header akordeon", "field outline radius 12", "animasi tinggi 200 ms", "grid 8 px"],
+      "viewport": "Pivot asal paling atas. Di bawahnya empat baris akordeon: Identitas (terbuka: foto, nama, telepon), Alamat · 0/2 wajib, Rekening · opsional, QRIS · belum (domestik). Tiap header: ikon, judul, hitungan terisi di kanan, ✓ saat wajibnya lengkap. Mengetuk header membuka seksi itu dan melipat yang lain; tombol simpan menempel di bawah.",
+      "risk": "Hitungan bisa terbaca sebagai kewajiban padahal kecamatan/kelurahan/bank opsional — label harus membedakan wajib vs opsional; akordeon menambah tap untuk koreksi lintas-seksi saat edit.",
+      "wireframe": {
+        "cols": 12,
+        "rows": 24,
+        "regions": [
+          { "label": "app bar · Tambah Supplier", "x": 0, "y": 0, "w": 12, "h": 2 },
+          { "label": "Domestik | Luar Negeri", "x": 0, "y": 2, "w": 12, "h": 1 },
+          { "label": "▾ Identitas · terbuka", "x": 0, "y": 4, "w": 12, "h": 1, "accent": true },
+          { "label": "foto supplier", "x": 0, "y": 5, "w": 12, "h": 3 },
+          { "label": "Nama Supplier *", "x": 0, "y": 9, "w": 12, "h": 1 },
+          { "label": "No. Telepon", "x": 0, "y": 11, "w": 12, "h": 1 },
+          { "label": "▸ Alamat · 0/2 wajib", "x": 0, "y": 13, "w": 12, "h": 1 },
+          { "label": "▸ Rekening Bank · opsional", "x": 0, "y": 15, "w": 12, "h": 1 },
+          { "label": "▸ QRIS · belum", "x": 0, "y": 17, "w": 12, "h": 1 },
+          { "label": "Tambah Supplier", "x": 0, "y": 22, "w": 12, "h": 2, "accent": true }
+        ]
+      },
+      "comp": ".impeccable/mocks/decision/akordeon.webp"
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": { "value": "code" }
+}

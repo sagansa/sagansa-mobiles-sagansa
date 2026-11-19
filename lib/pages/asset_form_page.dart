@@ -1,16 +1,19 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 import 'package:provider/provider.dart';
+
 
 import '../models/asset_category_model.dart';
 import '../models/store_model.dart';
 import '../providers/asset_provider.dart';
+import '../services/image_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_dropdown.dart';
 
 /// Form catat aset manual (off-catalog). Penambahan aset dari produk
@@ -41,7 +44,6 @@ class _AssetFormPageState extends State<AssetFormPage> {
   int? _selectedStoreId;
   int _selectedCondition = 1; // default: baik
   int _selectedStatus = 1; // default: aktif
-  final ImagePicker _picker = ImagePicker();
   File? _photo;
 
   @override
@@ -84,25 +86,18 @@ class _AssetFormPageState extends State<AssetFormPage> {
   }
 
   Future<void> _pickPhoto() async {
-    final picked = await _picker.pickImage(
+    final photo = await ImageService.pickAndResizeImage(
       source: ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1024,
     );
-    if (picked != null) {
-      final compressed = await ImageUtils.compressImage(picked.path);
-      if (mounted) setState(() => _photo = compressed);
-    }
+    if (photo != null && mounted) setState(() => _photo = photo);
   }
 
   void _showError(String msg) {
     if (!mounted) return;
-    final cs = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: cs.error,
-      ),
+    showAppSnackBar(
+      context,
+      msg,
+      background: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -146,17 +141,23 @@ class _AssetFormPageState extends State<AssetFormPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(widget.assetId == null ? 'Catat Aset (Manual)' : 'Edit Aset'),
 
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
+              top: false,
+              bottom: false,
               child: Form(
                 key: _formKey,
                 child: ListView(
-                  padding: AppSpacing.screenPadding,
+                  padding: AppSpacing.screenPadding.copyWith(
+                    top: AppBarInsets.top(context),
+                  ),
                   children: [
                     // Banner info: utamakan product-driven.
                     Container(

@@ -11,11 +11,17 @@ import '../../models/procurement_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/procurement_service.dart';
 import '../../services/user_service.dart';
+import '../../theme/app_button_style.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/constants.dart';
 import '../../utils/format_utils.dart';
+import '../../widgets/app_bar_insets.dart';
 import '../../widgets/ticket_card_container.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/detail/detail_image_view.dart';
+import '../widgets/glass_app_bar.dart';
 import 'edit_payment_receipt_page.dart';
 
 class PaymentReceiptDetailPage extends StatefulWidget {
@@ -100,7 +106,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
             child: const Text('Batal'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
+            style: AppButtonStyle.filled(
                 backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Hapus'),
@@ -113,12 +119,10 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
     try {
       await _procurementService.deletePaymentReceipt(receipt.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Payment receipt dihapus. Status gaji dikembalikan.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Payment receipt dihapus. Status gaji dikembalikan.',
+        background: AppColors.success,
       );
       Navigator.pop(context, true);
     } catch (e) {
@@ -165,20 +169,21 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       context,
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(
+          appBar: GlassAppBar(
             backgroundColor: colorScheme.onSurface.withValues(alpha: 0.9),
-            iconTheme: IconThemeData(color: colorScheme.surface),
+            foregroundColor: colorScheme.surface,
             title: Text(
               'Bukti Pembayaran',
               style: TextStyle(color: colorScheme.surface),
             ),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.share_rounded),
-                onPressed: () => _shareImage(url),
-                color: colorScheme.surface,
-                tooltip: 'Bagikan',
-              ),
+              BarButtonCluster(actions: [
+                BarButtonSpec(
+                  icon: Icons.share_rounded,
+                  tooltip: 'Bagikan',
+                  onTap: () => _shareImage(url),
+                ),
+              ]),
             ],
           ),
           body: Container(
@@ -252,41 +257,45 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Detail Payment Receipt'),
         elevation: 0,
         actions: [
-          // Tombol Edit untuk admin & receipt fuel service / gaji harian.
-          if (_isAdmin &&
-              (_receipt?.paymentFor == '1' || _receipt?.paymentFor == '2'))
-            IconButton(
-              icon: const Icon(Icons.edit_rounded),
-              tooltip: 'Edit',
-              onPressed: () async {
-                final updated = await Navigator.push<PaymentReceipt>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditPaymentReceiptPage(receipt: _receipt!),
-                  ),
-                );
-                if (updated != null && mounted) {
-                  setState(() => _receipt = updated);
-                }
-              },
-            ),
-          // Hapus (hanya receipt gaji harian) — status gaji dikembalikan.
-          if (_isAdmin && _receipt?.paymentFor == '2')
-            IconButton(
-              icon: const Icon(Icons.delete_rounded),
-              tooltip: 'Hapus',
-              onPressed: _confirmDelete,
-            ),
-          if (_receipt?.image != null && _receipt!.image!.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.share_rounded),
-              tooltip: 'Bagikan Bukti',
-              onPressed: () => _shareImage(_imageUrl(_receipt!.image)),
-            ),
+          BarButtonCluster(actions: [
+            // Tombol Edit untuk admin (semua jenis payment receipt).
+            if (_isAdmin && _receipt != null)
+              BarButtonSpec(
+                icon: Icons.edit_rounded,
+                tooltip: 'Edit',
+                onTap: () async {
+                  final updated = await Navigator.push<PaymentReceipt>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          EditPaymentReceiptPage(receipt: _receipt!),
+                    ),
+                  );
+                  if (updated != null && mounted) {
+                    setState(() => _receipt = updated);
+                  }
+                },
+              ),
+            // Hapus (hanya receipt gaji harian) — status gaji dikembalikan.
+            if (_isAdmin && _receipt?.paymentFor == '2')
+              BarButtonSpec(
+                icon: Icons.delete_rounded,
+                tooltip: 'Hapus',
+                onTap: _confirmDelete,
+              ),
+            if (_receipt?.image != null && _receipt!.image!.isNotEmpty)
+              BarButtonSpec(
+                icon: Icons.share_rounded,
+                tooltip: 'Bagikan Bukti',
+                onTap: () => _shareImage(_imageUrl(_receipt!.image)),
+              ),
+          ]),
         ],
       ),
       body: _isLoading
@@ -317,7 +326,8 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                     onRefresh: _fetchDetail,
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md)
+                          .copyWith(top: AppBarInsets.top(context)),
                       child: Column(
                       children: [
                         // Ticket Receipt Main Header Container
@@ -328,8 +338,12 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                           _buildImageCard(theme, isDark),
 
                         // QRIS Section (bukan untuk receipt gaji harian —
-                        // transfer gaji langsung ke rekening pegawai).
-                        if (!_isStaff && _receipt!.paymentFor != '2')
+                        // transfer gaji langsung ke rekening pegawai) dan
+                        // hanya jika receipt punya supplier (QRIS tergantung
+                        // ketersediaan data supplier).
+                        if (!_isStaff &&
+                            _receipt!.paymentFor != '2' &&
+                            _receipt!.supplierId != null)
                           _buildQrisCard(theme, isDark),
 
                         // Catatan Card
@@ -351,7 +365,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                               children: [
                                 const Icon(Icons.local_gas_station_outlined,
                                     size: 18, color: AppColors.secondary),
-                                const SizedBox(width: 8),
+                                AppSpacing.gapHorizontalSM,
                                 Text(
                                   'Item Bensin & Servis (${_receipt!.fuelServices.length})',
                                   style: theme.textTheme.titleMedium?.copyWith(
@@ -380,7 +394,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                               children: [
                                 const Icon(Icons.payments_outlined,
                                     size: 18, color: AppColors.secondary),
-                                const SizedBox(width: 8),
+                                AppSpacing.gapHorizontalSM,
                                 Text(
                                   'Item Gaji Harian (${_receipt!.dailySalaries.length})',
                                   style: theme.textTheme.titleMedium?.copyWith(
@@ -412,7 +426,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                               children: [
                                 const Icon(Icons.inventory_2_outlined,
                                     size: 18, color: AppColors.secondary),
-                                const SizedBox(width: 8),
+                                AppSpacing.gapHorizontalSM,
                                 Text(
                                   'Invoice Terkait (${_receipt!.invoicePurchases.length})',
                                   style: theme.textTheme.titleMedium?.copyWith(
@@ -455,8 +469,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                 children: [
                   Text(
                     'BUKTI PEMBAYARAN',
-                    style: TextStyle(
-                      fontSize: 10,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                       color: isDark ? AppColors.gold : AppColors.secondary,
@@ -465,8 +478,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                   const SizedBox(height: 2),
                   Text(
                     '#REC-${_receipt!.id}',
-                    style: TextStyle(
-                      fontSize: 18,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.onSurface,
                     ),
@@ -477,21 +489,20 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.success.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: AppSpacing.borderRadiusXL,
                   border: Border.all(
                     color: AppColors.success.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
                     Icon(Icons.check_circle_rounded,
                         size: 14, color: AppColors.success),
-                    SizedBox(width: 4),
+                    AppSpacing.gapHorizontalXS,
                     Text(
                       'Terdata',
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: AppColors.success,
                       ),
@@ -509,17 +520,15 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           // Nominal Transfer Highlight
           Text(
             'TOTAL TRANSFER',
-            style: TextStyle(
-              fontSize: 11,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 4),
+          AppSpacing.gapVerticalXS,
           Text(
             _formatAmount(_receipt!.transferAmount),
-            style: TextStyle(
-              fontSize: 28,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
               color: isDark ? AppColors.gold : AppColors.primary,
             ),
@@ -562,15 +571,13 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           Text(
             value,
-            style: TextStyle(
-              fontSize: 13,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
@@ -591,7 +598,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -602,60 +609,23 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.image_outlined,
-                      size: 20, color: AppColors.info),
-                  AppSpacing.gapHorizontalSM,
-                  Text(
-                    'Bukti Transfer Gambar',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              TextButton.icon(
-                onPressed: () => _showImageFullscreen(url),
-                icon: const Icon(Icons.fullscreen_rounded, size: 16),
-                label: const Text('Perbesar'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.gold,
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
+              const Icon(Icons.image_outlined,
+                  size: 20, color: AppColors.info),
+              AppSpacing.gapHorizontalSM,
+              Text(
+                'Bukti Transfer Gambar',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          GestureDetector(
+          DetailImageView(
+            imageUrl: url,
+            // Viewer custom dipertahankan karena punya tombol bagikan.
             onTap: () => _showImageFullscreen(url),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
-              child: Image.network(
-                url,
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 180,
-                  color: isDark ? Colors.white10 : Colors.black12,
-                  child: const Center(
-                    child: Icon(Icons.broken_image_rounded, size: 48),
-                  ),
-                ),
-                loadingBuilder: (_, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    height: 180,
-                    color: isDark ? Colors.white10 : Colors.black12,
-                    child: const Center(child: CircularProgressIndicator()),
-                  );
-                },
-              ),
-            ),
           ),
         ],
       ),
@@ -671,7 +641,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -714,11 +684,12 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
             ),
             const SizedBox(height: AppSpacing.sm),
             _qrRow('Merchant', _qrisData!['merchant_name'] as String?, theme),
+            _qrRow('NMID', _qrisData!['merchant_nmid']?.toString(), theme),
             _qrRow(
                 'Nominal QRIS',
                 _formatAmount(_qrisData!['amount'] as int),
                 theme),
-            const SizedBox(height: 8),
+            AppSpacing.gapVerticalSM,
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -737,14 +708,17 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           ] else if (_qrisLoading) ...[
             const Center(
               child: Padding(
-                padding: EdgeInsets.all(16),
+                padding: AppSpacing.paddingMD,
                 child: CircularProgressIndicator(),
               ),
             ),
           ] else if (_qrisError != null) ...[
             Text(
               _qrisError!,
-              style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
             ),
           ] else ...[
             SizedBox(
@@ -772,7 +746,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -799,7 +773,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           if (_bankLoading)
             const Center(
               child: Padding(
-                padding: EdgeInsets.all(16),
+                padding: AppSpacing.paddingMD,
                 child: CircularProgressIndicator(),
               ),
             )
@@ -809,7 +783,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                 _employeeBank!['bank_account_number']?.toString(), theme),
             _qrRow('Atas Nama',
                 _employeeBank!['bank_account_name']?.toString(), theme),
-            const SizedBox(height: 8),
+            AppSpacing.gapVerticalSM,
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -829,10 +803,10 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           ] else ...[
             Text(
               'Rekening pegawai belum tersedia di profil.',
-              style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 8),
+            AppSpacing.gapVerticalSM,
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -854,10 +828,12 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12)),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
           Text(val,
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -873,7 +849,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -887,7 +863,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
             children: [
               const Icon(Icons.notes_rounded,
                   size: 18, color: AppColors.secondary),
-              const SizedBox(width: 8),
+              AppSpacing.gapHorizontalSM,
               Text(
                 'Catatan Pembayaran',
                 style: theme.textTheme.titleSmall?.copyWith(
@@ -899,8 +875,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           const SizedBox(height: 6),
           Text(
             FormatUtils.stripHtml(_receipt!.notes!),
-            style: TextStyle(
-              fontSize: 13,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -923,7 +898,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -944,7 +919,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                           horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
                       decoration: BoxDecoration(
                         color: typeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppSpacing.radiusSM),
+                        borderRadius: AppSpacing.borderRadiusSM,
                       ),
                       child: Text(
                         fs.typeLabel,
@@ -969,8 +944,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
               ),
               Text(
                 _formatAmount(fs.amount),
-                style: const TextStyle(
-                  fontSize: 14,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.success,
                 ),
@@ -979,9 +953,10 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            'Tgl: ${fs.date}${fs.createdByName != null && fs.createdByName!.isNotEmpty ? ' | Oleh: ${fs.createdByName}' : ''}',
-            style: TextStyle(
-              fontSize: 11,
+            'Tgl: ${fs.date}'
+            '${fs.supplierName != null && fs.supplierName!.isNotEmpty ? ' | Supplier: ${fs.supplierName}' : ''}'
+            '${fs.createdByName != null && fs.createdByName!.isNotEmpty ? ' | Oleh: ${fs.createdByName}' : ''}',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -1005,7 +980,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -1029,8 +1004,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
               ),
               Text(
                 _formatAmount(ds.amount),
-                style: const TextStyle(
-                  fontSize: 14,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.success,
                 ),
@@ -1040,8 +1014,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           const SizedBox(height: 2),
           Text(
             'Tgl: ${ds.date}',
-            style: TextStyle(
-              fontSize: 11,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -1060,7 +1033,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? theme.cardColor : AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: isDark
               ? Colors.white12
@@ -1076,16 +1049,14 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
               Expanded(
                 child: Text(
                   inv.storeName,
-                  style: const TextStyle(
-                    fontSize: 14,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               Text(
                 _formatAmount(inv.totalPrice),
-                style: const TextStyle(
-                  fontSize: 14,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.success,
                 ),
@@ -1095,24 +1066,22 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
           const SizedBox(height: 2),
           Text(
             'Tgl: ${inv.date}',
-            style: TextStyle(
-              fontSize: 11,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           if (inv.detailInvoices.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            AppSpacing.gapVerticalSM,
             const Divider(height: 1),
-            const SizedBox(height: 8),
+            AppSpacing.gapVerticalSM,
             // Header row untuk tabel item
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Produk',
-                    style: TextStyle(
-                      fontSize: 11,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.secondary,
                     ),
@@ -1123,8 +1092,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                   child: Text(
                     'Qty',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 11,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.secondary,
                     ),
@@ -1135,8 +1103,7 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                   child: Text(
                     'Subtotal',
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 11,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.secondary,
                     ),
@@ -1167,10 +1134,12 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                               Expanded(
                                 child: Text(
                                   item.productName,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1180,9 +1149,12 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                                 child: Text(
                                   '${item.quantityProduct.toStringAsFixed(0)} ${item.unitName}',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.colorScheme.onSurfaceVariant,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                    color:
+                                        theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -1191,18 +1163,22 @@ class _PaymentReceiptDetailPageState extends State<PaymentReceiptDetailPage> {
                                 child: Text(
                                   'Rp $subtotalStr',
                                   textAlign: TextAlign.right,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                 ),
                               ),
                             ],
                           ),
                           Text(
                             'Rp $priceStr /${item.unitName}',
-                            style: TextStyle(
-                              fontSize: 11,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                             ),
                           ),

@@ -106,10 +106,26 @@ class PagedBodyView<T> extends StatelessWidget {
         controller: controller,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          if (sliverHeader != null) sliverHeader!,
+          if (sliverHeader != null)
+            if (padding != null)
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  top: padding!.top,
+                  left: padding!.left,
+                  right: padding!.right,
+                ),
+                sliver: sliverHeader!,
+              )
+            else
+              sliverHeader!,
           if (padding != null)
             SliverPadding(
-              padding: padding!,
+              padding: EdgeInsets.only(
+                top: sliverHeader != null ? 0 : padding!.top,
+                bottom: padding!.bottom,
+                left: padding!.left,
+                right: padding!.right,
+              ),
               sliver: _buildContentSliver(isEmpty),
             )
           else

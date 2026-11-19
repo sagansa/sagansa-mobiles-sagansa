@@ -116,7 +116,14 @@ void main() {
     final service = _FakeEntryService(letterTypes: const [_kua]);
     await _pumpWizard(tester, service, homeMarker: 'HOME-MARKER');
 
-    expect(find.text('Upload dokumen sendiri (PDF)'), findsOneWidget);
+    // Langkah 1 kini memuat pencarian + grid + template — tombol upload
+    // di bawah lipat viewport; gulir dulu.
+    await tester.dragUntilVisible(
+      find.text('Upload dokumen sendiri (PDF)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Upload dokumen sendiri (PDF)'));
     await tester.pumpAndSettle();
 
@@ -152,6 +159,13 @@ void main() {
     // tombol tampil & tidak crash sebelum draft.
     final service = _FakeEntryService(letterTypes: const [_kua]);
     await _pumpWizard(tester, service, homeMarker: 'HOME-MARKER');
+    // Di bawah lipat viewport — gulir dulu.
+    await tester.dragUntilVisible(
+      find.text('Upload dokumen sendiri (PDF)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
     expect(find.widgetWithText(OutlinedButton, 'Upload dokumen sendiri (PDF)'),
         findsOneWidget);
   });

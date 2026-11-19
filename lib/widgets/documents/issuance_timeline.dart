@@ -20,7 +20,8 @@ class IssuanceTimeline extends StatelessWidget {
   /// [IssuanceModel.methodLabelText] sebagai subtitle.
   const IssuanceTimeline({super.key, required this.issuances});
 
-  static final DateFormat _dateFormat = DateFormat('d MMM yyyy, HH:mm', 'id_ID');
+  static final DateFormat _dateFormat =
+      DateFormat('d MMM yyyy, HH:mm', 'id_ID');
 
   List<IssuanceModel> get _sorted {
     final list = issuances.toList()
@@ -69,7 +70,8 @@ class _IssuanceTile extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     final hash = issuance.fileSha256;
-    final hashShort = hash == null || hash.length < 8 ? null : hash.substring(0, 8);
+    final hashShort =
+        hash == null || hash.length < 8 ? null : hash.substring(0, 8);
 
     return IntrinsicHeight(
       child: Row(
@@ -113,7 +115,8 @@ class _IssuanceTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           issuance.finalizedAt != null
-                              ? dateFormat.format(issuance.finalizedAt!.toLocal())
+                              ? dateFormat
+                                  .format(issuance.finalizedAt!.toLocal())
                               : 'Tanggal terbit tidak diketahui',
                           style: textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.bold),

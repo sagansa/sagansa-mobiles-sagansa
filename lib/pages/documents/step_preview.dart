@@ -6,8 +6,9 @@ import 'package:pdfrx/pdfrx.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/empty_state.dart';
 
-/// Langkah 6 wizard — pra-final (render PDF server, tampil via pdfrx)
-/// lalu terbitkan (finalize metode a) dengan dialog sukses di wizard.
+/// Langkah 6 wizard — pra-final (render PDF server, tampil via pdfrx).
+/// Tombol "Terbitkan" hidup di bar aksi bawah wizard (CTA persisten),
+/// bukan di dalam langkah ini.
 ///
 /// [number] nomor surat yang sudah dipesan (reserveNumber) sebelum
 /// pra-final pertama — Fix C1: nomor tampil di header pratinjau agar
@@ -18,9 +19,6 @@ class StepPreview extends StatelessWidget {
   final String? buildError;
   final VoidCallback onBuild;
 
-  final bool finalizing;
-  final VoidCallback onFinalize;
-
   final String? number;
 
   const StepPreview({
@@ -29,8 +27,6 @@ class StepPreview extends StatelessWidget {
     required this.building,
     required this.buildError,
     required this.onBuild,
-    required this.finalizing,
-    required this.onFinalize,
     this.number,
   });
 
@@ -47,33 +43,11 @@ class StepPreview extends StatelessWidget {
             AppSpacing.md,
             0,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: building || finalizing ? null : onBuild,
-                  icon: const Icon(Icons.picture_as_pdf_rounded),
-                  label: Text(previewBytes == null
-                      ? 'Buat pra-final'
-                      : 'Perbarui pra-final'),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed:
-                      finalizing || previewBytes == null ? null : onFinalize,
-                  icon: finalizing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send_rounded),
-                  label: const Text('Terbitkan'),
-                ),
-              ),
-            ],
+          child: OutlinedButton.icon(
+            onPressed: building ? null : onBuild,
+            icon: const Icon(Icons.picture_as_pdf_rounded),
+            label: Text(
+                previewBytes == null ? 'Buat pra-final' : 'Perbarui pra-final'),
           ),
         ),
         Padding(

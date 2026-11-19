@@ -9,10 +9,11 @@ import '../../services/procurement_service.dart';
 import '../../services/store_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/add_fab.dart';
-import '../../widgets/filter_app_bar_action.dart';
+import '../../widgets/app_bar_insets.dart';
 import '../../widgets/filter_bottom_sheet.dart';
 import '../../widgets/modern_bottom_nav.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import 'create_procurement_page.dart';
 import 'procurement_detail_page.dart';
 
@@ -204,19 +205,41 @@ class _ProcurementDashboardPageState extends State<ProcurementDashboardPage> wit
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Request & Purchase'),
         actions: [
-          if (_hasActiveFilter)
-            IconButton(
-              icon: const Icon(Icons.filter_list_off),
-              onPressed: _clearFilters,
-              tooltip: 'Hapus Filter',
+          BarButtonCluster(actions: [
+            if (_hasActiveFilter)
+              BarButtonSpec(
+                icon: Icons.filter_list_off,
+                tooltip: 'Hapus Filter',
+                onTap: _clearFilters,
+              ),
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _selectedStoreId != null ? 1 : 0,
+              onTap: _openFilterSheet,
             ),
-          FilterAppBarAction(
-            activeCount: _selectedStoreId != null ? 1 : 0,
-            onTap: _openFilterSheet,
-          ),
+            BarButtonSpec(
+              icon: Icons.add_rounded,
+              iconSize: 22,
+              tooltip: 'Tambah Request',
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CreateProcurementPage(),
+                  ),
+                );
+                if (result == true) {
+                  _fetchRequests();
+                }
+              },
+            ),
+          ]),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -234,55 +257,59 @@ class _ProcurementDashboardPageState extends State<ProcurementDashboardPage> wit
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: AppSpacing.paddingLG,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_errorMessage!, style: TextStyle(color: colorScheme.error)),
-                        AppSpacing.gapVerticalMD,
-                        ElevatedButton(
-                          onPressed: _fetchRequests,
-                          child: const Text('Coba Lagi'),
-                        ),
-                      ],
+      body: Builder(
+        builder: (bodyContext) => _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+                ? Center(
+                    child: Padding(
+                      padding: AppSpacing.paddingLG,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(_errorMessage!,
+                              style: TextStyle(color: colorScheme.error)),
+                          AppSpacing.gapVerticalMD,
+                          ElevatedButton(
+                            onPressed: _fetchRequests,
+                            child: const Text('Coba Lagi'),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                )
-              : TabBarView(
-                  controller: _tabController,
-                  children: List.generate(5, (index) {
-                    final requests = _getFilteredRequests(index);
-                    if (requests.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.shopping_cart_outlined,
-                              size: 48,
-                              color: AppColors.info,
-                            ),
-                            AppSpacing.gapVerticalMD,
-                            Text(
-                              'Tidak ada data request belanja.',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                  )
+                : TabBarView(
+                    controller: _tabController,
+                    children: List.generate(5, (index) {
+                      final requests = _getFilteredRequests(index);
+                      if (requests.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 48,
+                                color: AppColors.info,
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return RefreshIndicator(
-                      onRefresh: _fetchRequests,
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        padding: AppSpacing.paddingMD,
+                              AppSpacing.gapVerticalMD,
+                              Text(
+                                'Tidak ada data request belanja.',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return RefreshIndicator(
+                        onRefresh: _fetchRequests,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: AppSpacing.paddingMD.copyWith(
+                              top: AppBarInsets.top(bodyContext),
+                              bottom: ModernBottomNav.clearance(context)),
                         itemCount: requests.length + (_hasMore ? 1 : 0),
                         itemBuilder: (context, idx) {
                           if (idx == requests.length) {
@@ -401,18 +428,6 @@ class _ProcurementDashboardPageState extends State<ProcurementDashboardPage> wit
                       ),
                     );
                   })),
-      floatingActionButton: AddFab(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CreateProcurementPage(),
-            ),
-          );
-          if (result == true) {
-            _fetchRequests();
-          }
-        },
       ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 3,

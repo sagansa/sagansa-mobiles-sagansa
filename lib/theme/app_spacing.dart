@@ -119,6 +119,8 @@ class AppSpacing {
       BorderRadius.all(Radius.circular(radiusXL));
   static const BorderRadius borderRadiusXXL =
       BorderRadius.all(Radius.circular(radiusXXL));
+  static const BorderRadius borderRadiusFull =
+      BorderRadius.all(Radius.circular(9999));
 }
 
 /// Elevation system following Material Design 3

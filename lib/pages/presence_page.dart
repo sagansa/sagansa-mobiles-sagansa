@@ -3,21 +3,28 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show CameraDevice, ImageSource;
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/shift_store_model.dart';
 import '../models/store_model.dart';
+import '../pages/closing_store_page.dart';
 import '../pages/home_page.dart';
 import '../pages/hygiene_page.dart';
 import '../pages/readiness_page.dart';
 import '../providers/presence_provider.dart';
 import '../services/hygiene_service.dart';
+import '../services/image_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
+import '../utils/format_utils.dart';
 import '../utils/snackbar_utils.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 
@@ -43,13 +50,13 @@ class PresencePageState extends State<PresencePage> {
   bool isTimeValid = true;
 
   File? _imageFile;
-  final ImagePicker _picker = ImagePicker();
 
   /// Toko yang sudah memiliki laporan kebersihan hari ini (boleh presensi).
   /// Cukup satu laporan per toko per hari, boleh oleh user lain.
   final Set<int> _storeHygieneDone = {};
 
-  final TextEditingController _salaryAmountController = TextEditingController(text: '50000');
+  final TextEditingController _salaryAmountController =
+      TextEditingController(text: '50.000');
   int? _selectedPaymentTypeId = 2; // Default Tunai (2)
 
   @override
@@ -110,7 +117,8 @@ class PresencePageState extends State<PresencePage> {
           isLocationValid = shortestDistance <= picked.radius;
 
           if (!widget.isCheckIn) {
-            _salaryAmountController.text = picked.dailySalaryAmount;
+            _salaryAmountController.text = FormatUtils.formatAmount(
+                double.tryParse(picked.dailySalaryAmount) ?? 0);
           }
 
           final String message = isLocationValid
@@ -170,8 +178,7 @@ class PresencePageState extends State<PresencePage> {
       // Status sudah dicek saat memilih toko (_ensureStoreHygiene), cukup
       // verifikasi di sini bahwa toko terpilih sudah tercatat melakukan
       // kebersihan hari ini. Backend tetap menjadi penjaga final.
-      if (widget.isCheckIn &&
-          !_storeHygieneDone.contains(selectedStore!.id)) {
+      if (widget.isCheckIn && !_storeHygieneDone.contains(selectedStore!.id)) {
         if (!mounted) return;
         setState(() => isLoading = false);
         SnackbarUtils.warning(
@@ -189,8 +196,11 @@ class PresencePageState extends State<PresencePage> {
         selectedStore: selectedStore!,
         selectedShiftStore: selectedShiftStore,
         imageFile: _imageFile!,
-        dailySalaryAmount: widget.isCheckIn ? null : _salaryAmountController.text,
-        dailySalaryPaymentTypeId: widget.isCheckIn ? null : _selectedPaymentTypeId.toString(),
+        dailySalaryAmount: widget.isCheckIn
+            ? null
+            : parseAmountInt(_salaryAmountController.text).toString(),
+        dailySalaryPaymentTypeId:
+            widget.isCheckIn ? null : _selectedPaymentTypeId.toString(),
       );
 
       if (!mounted) return;
@@ -217,6 +227,17 @@ class PresencePageState extends State<PresencePage> {
             context,
             MaterialPageRoute(builder: (context) => const HygienePage()),
           );
+        } else if (errorCode == 'CLOSING_STORE_REQUIRED') {
+          // Invoice tunai buatan user belum masuk Tutup Shift — buka
+          // langsung form Tutup Shift agar bisa diselesaikan.
+          SnackbarUtils.warning(context, message);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (context) => const ClosingStorePage(
+                      autoStartDraft: true,
+                    )),
+          );
         } else {
           SnackbarUtils.error(context, message);
         }
@@ -238,8 +259,7 @@ class PresencePageState extends State<PresencePage> {
 
     bool hasHygiene;
     try {
-      hasHygiene =
-          await HygieneService().checkTodayStatus(storeId: store.id);
+      hasHygiene = await HygieneService().checkTodayStatus(storeId: store.id);
     } catch (e) {
       if (!mounted) return;
       SnackbarUtils.error(context, 'Gagal mengecek laporan kebersihan: $e');
@@ -315,20 +335,15 @@ class PresencePageState extends State<PresencePage> {
 
   Future<void> _takePhoto() async {
     try {
-      final XFile? photo = await _picker.pickImage(
+      final photo = await ImageService.pickAndResizeImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
-        imageQuality: 75,
-        maxWidth: 1024,
       );
 
-      if (photo != null) {
-        final compressed = await ImageUtils.compressImage(photo.path);
-        if (mounted) {
-          setState(() {
-            _imageFile = compressed;
-          });
-        }
+      if (photo != null && mounted) {
+        setState(() {
+          _imageFile = photo;
+        });
       }
     } catch (e) {
       if (!mounted) return;
@@ -344,9 +359,8 @@ class PresencePageState extends State<PresencePage> {
     // Checkout memakai toko terdekat dari GPS tanpa batasan radius (user tetap
     // bisa check-out meski sedang di luar radius). Check-in tetap divalidasi
     // radius agar tidak bisa presensi masuk dari jarak jauh.
-    bool isButtonEnabled = selectedStore != null &&
-        currentPosition != null &&
-        _imageFile != null;
+    bool isButtonEnabled =
+        selectedStore != null && currentPosition != null && _imageFile != null;
 
     if (widget.isCheckIn) {
       isButtonEnabled = isButtonEnabled &&
@@ -358,25 +372,43 @@ class PresencePageState extends State<PresencePage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(widget.isCheckIn ? 'Check In' : 'Check Out'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            onPressed: _getCurrentLocation,
-          ),
+          BarButtonCluster(actions: [
+            BarButtonSpec(
+              icon: Icons.my_location,
+              tooltip: 'Lokasi saya',
+              onTap: _getCurrentLocation,
+            ),
+          ]),
         ],
       ),
       body: SafeArea(
+        top: false,
+        bottom: true,
         child: Column(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: AppSpacing.paddingMD,
+              child: Builder(
+                builder: (bodyContext) => SingleChildScrollView(
+                  padding: AppSpacing.paddingMD
+                      .copyWith(top: AppBarInsets.top(bodyContext)),
                   child: Column(
                     children: [
                       Card(
+                        elevation: 0,
+                        color: colorScheme.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppSpacing.borderRadiusLG,
+                          side: BorderSide(
+                            color: colorScheme.outlineVariant
+                                .withValues(alpha: 0.5),
+                            width: 1,
+                          ),
+                        ),
                         child: Padding(
                           padding: AppSpacing.paddingMD,
                           child: Column(
@@ -399,7 +431,7 @@ class PresencePageState extends State<PresencePage> {
                                 label: Text(_imageFile == null
                                     ? 'Ambil Foto Selfie'
                                     : 'Ambil Ulang Foto'),
-                                style: ElevatedButton.styleFrom(
+                                style: AppButtonStyle.elevated(
                                   minimumSize: const Size(double.infinity, 45),
                                 ),
                               ),
@@ -413,9 +445,10 @@ class PresencePageState extends State<PresencePage> {
                           value: selectedStore,
                           hint: 'Pilih Toko',
                           items: stores,
-                          getLabel: (store) => _storeHygieneDone.contains(store.id)
-                              ? '${store.nickname}  •  sudah kebersihan'
-                              : store.nickname,
+                          getLabel: (store) =>
+                              _storeHygieneDone.contains(store.id)
+                                  ? '${store.nickname}  •  sudah kebersihan'
+                                  : store.nickname,
                           onChanged: (value) async {
                             setState(() {
                               selectedStore = value;
@@ -423,7 +456,8 @@ class PresencePageState extends State<PresencePage> {
                             });
 
                             if (value != null && currentPosition != null) {
-                              final double distance = Geolocator.distanceBetween(
+                              final double distance =
+                                  Geolocator.distanceBetween(
                                 currentPosition!.latitude,
                                 currentPosition!.longitude,
                                 value.latitude,
@@ -493,9 +527,10 @@ class PresencePageState extends State<PresencePage> {
                                       CircleMarker(
                                         point: LatLng(selectedStore!.latitude,
                                             selectedStore!.longitude),
-                                        radius: selectedStore!.radius
-                                            .toDouble(),
-                                        color: colorScheme.primary.withValues(alpha: 0.2),
+                                        radius:
+                                            selectedStore!.radius.toDouble(),
+                                        color: colorScheme.primary
+                                            .withValues(alpha: 0.2),
                                         borderColor: colorScheme.primary,
                                         borderStrokeWidth: 2,
                                       ),
@@ -507,8 +542,7 @@ class PresencePageState extends State<PresencePage> {
                                       Marker(
                                         point: LatLng(currentPosition!.latitude,
                                             currentPosition!.longitude),
-                                        child: Icon(
-                                            Icons.person_pin_circle,
+                                        child: Icon(Icons.person_pin_circle,
                                             color: colorScheme.error,
                                             size: 40.0),
                                       ),
@@ -517,7 +551,8 @@ class PresencePageState extends State<PresencePage> {
                                         point: LatLng(selectedStore!.latitude,
                                             selectedStore!.longitude),
                                         child: Icon(Icons.store,
-                                            color: colorScheme.primary, size: 40.0),
+                                            color: colorScheme.primary,
+                                            size: 40.0),
                                       ),
                                   ],
                                 ),
@@ -547,6 +582,16 @@ class PresencePageState extends State<PresencePage> {
                       AppSpacing.gapVerticalMD,
                       if (selectedStore != null)
                         Card(
+                          elevation: 0,
+                          color: colorScheme.surface,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppSpacing.borderRadiusLG,
+                            side: BorderSide(
+                              color: colorScheme.outlineVariant
+                                  .withValues(alpha: 0.5),
+                              width: 1,
+                            ),
+                          ),
                           child: Padding(
                             padding: AppSpacing.cardPadding,
                             child: Column(
@@ -554,7 +599,8 @@ class PresencePageState extends State<PresencePage> {
                               children: [
                                 Text(
                                   'Lokasi Toko:',
-                                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                                  style: textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                                 AppSpacing.gapVerticalSM,
                                 Row(
@@ -620,80 +666,90 @@ class PresencePageState extends State<PresencePage> {
                   ),
                 ),
               ),
-              ),
-              if (!widget.isCheckIn) ...[
-                AppSpacing.gapVerticalMD,
-                Card(
-                  child: Padding(
-                    padding: AppSpacing.cardPadding,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Daily Salary',
-                          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        SizedBox(height: AppSpacing.sectionGap),
-                        TextField(
-                          controller: _salaryAmountController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Amount (Rp)',
-
-                            prefixText: 'Rp ',
-                          ),
-                        ),
-                        SizedBox(height: AppSpacing.sectionGap),
-                        ModernDropdown<int>(
-                          value: _selectedPaymentTypeId,
-                          labelText: 'Payment Type',
-                          hint: 'Pilih tipe pembayaran...',
-                          items: const [1, 2],
-                          getLabel: (v) => v == 1 ? 'Transfer' : 'Tunai',
-                          onChanged: (value) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) {
-                                setState(() {
-                                  _selectedPaymentTypeId = value;
-                                });
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ),
+            ),
+            if (!widget.isCheckIn) ...[
+              AppSpacing.gapVerticalMD,
+              Card(
+                elevation: 0,
+                color: colorScheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppSpacing.borderRadiusLG,
+                  side: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    width: 1,
                   ),
                 ),
-              ],
-              Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  border: Border(
-                    top: BorderSide(
-                      color: colorScheme.primary.withValues(alpha: 0.18),
-                    ),
+                child: Padding(
+                  padding: AppSpacing.cardPadding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Daily Salary',
+                        style: textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: AppSpacing.sectionGap),
+                      TextField(
+                        controller: _salaryAmountController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: rupiahInputFormatters,
+                        decoration: const InputDecoration(
+                          labelText: 'Amount (Rp)',
+                          prefixText: 'Rp ',
+                        ),
+                      ),
+                      SizedBox(height: AppSpacing.sectionGap),
+                      ModernDropdown<int>(
+                        value: _selectedPaymentTypeId,
+                        labelText: 'Payment Type',
+                        hint: 'Pilih tipe pembayaran...',
+                        items: const [1, 2],
+                        getLabel: (v) => v == 1 ? 'Transfer' : 'Tunai',
+                        onChanged: (value) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              setState(() {
+                                _selectedPaymentTypeId = value;
+                              });
+                            }
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: colorScheme.onSurface.withValues(alpha: 0.35),
-                      spreadRadius: 0,
-                      blurRadius: 12,
-                      offset: const Offset(0, -5),
-                    ),
-                  ],
-                ),
-                padding: AppSpacing.paddingMD,
-                child: ModernButton(
-                  text: widget.isCheckIn ? 'Check In' : 'Check Out',
-                  onPressed: isButtonEnabled ? _validateAndSubmitPresence : null,
-                  isLoading: isLoading,
-                  backgroundColor: widget.isCheckIn ? null : Colors.redAccent,
-                  foregroundColor: widget.isCheckIn ? null : Colors.white,
                 ),
               ),
             ],
-          ),
+            Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: colorScheme.primary.withValues(alpha: 0.18),
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.onSurface.withValues(alpha: 0.35),
+                    spreadRadius: 0,
+                    blurRadius: 12,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              padding: AppSpacing.paddingMD,
+              child: ModernButton(
+                text: widget.isCheckIn ? 'Check In' : 'Check Out',
+                onPressed: isButtonEnabled ? _validateAndSubmitPresence : null,
+                isLoading: isLoading,
+                backgroundColor: widget.isCheckIn ? null : Colors.redAccent,
+                foregroundColor: widget.isCheckIn ? null : Colors.white,
+              ),
+            ),
+          ],
         ),
+      ),
     );
   }
 }

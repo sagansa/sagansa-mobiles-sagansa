@@ -6,7 +6,9 @@ import '../models/asset_model.dart';
 import '../providers/asset_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/add_fab.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import 'asset_check_form_page.dart';
 import 'asset_detail_page.dart';
@@ -70,13 +72,27 @@ class _AssetDashboardPageState extends State<AssetDashboardPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Manajemen Aset'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loadData,
-            tooltip: 'Muat ulang',
+          BarButtonCluster(
+            actions: [
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Aset',
+                onTap: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AssetFromProductPage()),
+                  );
+                  if (result == true) _loadData();
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -90,7 +106,9 @@ class _AssetDashboardPageState extends State<AssetDashboardPage> {
               : RefreshIndicator(
                   onRefresh: _loadData,
                   child: ListView(
-                    padding: AppSpacing.screenPadding,
+                    padding: AppSpacing.screenPadding.copyWith(
+                        top: AppBarInsets.top(context),
+                        bottom: ModernBottomNav.clearance(context)),
                     children: [
                       _buildSummaryGrid(theme, colorScheme),
                       SizedBox(height: AppSpacing.sectionGap),
@@ -102,13 +120,6 @@ class _AssetDashboardPageState extends State<AssetDashboardPage> {
                     ],
                   ),
                 ),
-      floatingActionButton: AddFab(onPressed: () async {
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AssetFromProductPage()),
-        );
-        if (result == true) _loadData();
-      }),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 2,
         onTap: (index) {

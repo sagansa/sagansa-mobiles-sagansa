@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../services/asset_service.dart';
+import '../services/document/document_access.dart';
 import '../services/hygiene_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/dashboard_scaffold.dart';
+import 'documents/document_list_page.dart';
 import 'hygiene_list_page.dart';
 import 'readiness_list_page.dart';
+import 'sop_list_page.dart';
 import 'utility_bill_list_page.dart';
 import 'utility_list_page.dart';
 import 'utility_usage_list_page.dart';
@@ -24,10 +27,19 @@ class _OperationalDashboardPageState extends State<OperationalDashboardPage> {
   bool _hasHygieneToday = false;
   bool _isLoadingHygiene = false;
 
+  /// Gate Surat Perusahaan — HANYA untuk user dengan signer aktif di
+  /// service document (direktur/komisaris/pemegang saham). Hasil cek
+  /// di-cache per sesi login oleh [DocumentAccess]; menu dirender setelah
+  /// future selesai (false saat offline — fail-closed).
+  bool _canAccessDocuments = false;
+
   @override
   void initState() {
     super.initState();
     _checkHygiene();
+    DocumentAccess.instance.canAccess().then((allowed) {
+      if (mounted) setState(() => _canAccessDocuments = allowed);
+    });
   }
 
   Future<void> _checkHygiene() async {
@@ -52,8 +64,23 @@ class _OperationalDashboardPageState extends State<OperationalDashboardPage> {
     return DashboardScaffold(
       currentIndex: 4,
       title: 'Menu Operasional',
-      subtitle: 'Kelola kebersihan toko, kesiapan diri, dan closing store.',
+      subtitle:
+          'Kelola surat perusahaan, kebersihan toko, kesiapan diri, dan closing store.',
       menuItems: [
+        if (_canAccessDocuments)
+          DashboardMenuItem(
+            icon: Icons.history_edu_outlined,
+            title: 'Surat Perusahaan',
+            subtitle:
+                'Arsip surat keluar & masuk, tanda tangan, dan verifikasi.',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const DocumentListPage()),
+              );
+            },
+          ),
         DashboardMenuItem(
           icon: Icons.checkroom_outlined,
           title: 'Kesiapan Diri',
@@ -63,6 +90,19 @@ class _OperationalDashboardPageState extends State<OperationalDashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (context) => const ReadinessListPage(),
+              ),
+            );
+          },
+        ),
+        DashboardMenuItem(
+          icon: Icons.menu_book_outlined,
+          title: 'Panduan SOP',
+          subtitle: 'Prosedur operasional langkah demi langkah.',
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const SopListPage(),
               ),
             );
           },

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/home_dashboard_provider.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
+import '../../safe_bottom_bar.dart';
 
 /// Membuka bottom sheet daftar presensi hari ini (admin).
 ///
@@ -52,7 +53,9 @@ Future<void> showTodayPresencesSheet(BuildContext context) async {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    '${presences.length} karyawan telah presensi',
+                    adminPresence.lateCount > 0
+                        ? '${presences.length} karyawan telah presensi • ${adminPresence.lateCount} terlambat'
+                        : '${presences.length} karyawan telah presensi',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -74,7 +77,12 @@ Future<void> showTodayPresencesSheet(BuildContext context) async {
                           )
                         : ListView.builder(
                             controller: scrollController,
-                            padding: AppSpacing.paddingMD,
+                            // + inset sistem bawah agar item terakhir tidak
+                            // tertutup home indicator / gesture bar.
+                            padding: AppSpacing.paddingMD.copyWith(
+                              bottom: AppSpacing.md +
+                                  sheetContext.systemBottomInset,
+                            ),
                             itemCount: presences.length,
                             itemBuilder: (itemContext, idx) {
                               final presence =

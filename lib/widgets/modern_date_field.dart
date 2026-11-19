@@ -9,6 +9,10 @@ class ModernDateField extends StatelessWidget {
   final DateTime? lastDate;
   final String? errorText;
   final bool enabled;
+  final bool isDense;
+  final EdgeInsetsGeometry? contentPadding;
+  final bool isRequired;
+  final String? Function(DateTime?)? validator;
 
   const ModernDateField({
     super.key,
@@ -19,21 +23,37 @@ class ModernDateField extends StatelessWidget {
     this.lastDate,
     this.errorText,
     this.enabled = true,
+    this.isDense = true,
+    this.contentPadding,
+    this.isRequired = false,
+    this.validator,
   });
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: TextEditingController(
-        text: value == null ? '' : DateFormat('dd MMM yyyy').format(value!),
-      ),
-      decoration: InputDecoration(
-        labelText: labelText,
-        prefixIcon: const Icon(Icons.calendar_today),
-        errorText: errorText,
-      ),
-      readOnly: true,
-      enabled: enabled,
+    final effectiveLabel = isRequired ? '$labelText *' : labelText;
+    return FormField<DateTime>(
+      initialValue: value,
+      validator: validator,
+      builder: (state) {
+        final hasError = state.hasError || errorText != null;
+        final errorMsg = errorText ?? state.errorText;
+
+        return TextFormField(
+          key: ValueKey(value),
+          initialValue: value == null ? '' : DateFormat('dd/MM/yyyy').format(value!),
+          decoration: InputDecoration(
+            isDense: isDense,
+            contentPadding: contentPadding ??
+                (isDense
+                    ? const EdgeInsets.symmetric(horizontal: 12, vertical: 11)
+                    : null),
+            labelText: effectiveLabel,
+            prefixIcon: const Icon(Icons.calendar_today, size: 20),
+            errorText: hasError ? errorMsg : null,
+          ),
+          readOnly: true,
+          enabled: enabled,
       onTap: enabled
           ? () async {
               final effectiveFirstDate = firstDate ?? DateTime.now();
@@ -52,10 +72,13 @@ class ModernDateField extends StatelessWidget {
                 lastDate: effectiveLastDate,
               );
               if (date != null) {
+                state.didChange(date);
                 onChanged(date);
               }
             }
           : null,
+        );
+      },
     );
   }
 }

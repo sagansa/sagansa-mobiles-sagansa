@@ -49,12 +49,15 @@ Map<String, dynamic> directOrder({int deliveryStatus = 4}) => {
 
 Future<DeliveryProvider> makeProvider({
   required bool isAdmin,
+  bool canEditDeliveryPhotos = false,
   Map<String, dynamic> Function()? onUpdateDeliveryStatus,
 }) async {
   final presence = _MockPresence();
   final repo = _MockRepository();
   when(() => repo.loadAdminRole()).thenAnswer((_) async => isAdmin);
   when(() => repo.loadCanManageSalesLink()).thenAnswer((_) async => false);
+  when(() => repo.loadDeliveryPhotoEditRole())
+      .thenAnswer((_) async => canEditDeliveryPhotos);
   when(() => repo.loadPrintedStickers()).thenAnswer((_) async => {});
   when(() => presence.getSalesOrders(
         page: any(named: 'page'),
@@ -183,6 +186,58 @@ void main() {
     expect(find.text('Refund gagal disimulasikan'), findsOneWidget);
   });
 
+  testWidgets('markReadyToShip sukses menampilkan snackbar sukses',
+      (tester) async {
+    final presence = _MockPresence();
+    final repo = _MockRepository();
+    when(() => repo.loadAdminRole()).thenAnswer((_) async => false);
+    when(() => repo.loadCanManageSalesLink()).thenAnswer((_) async => false);
+    when(() => repo.loadDeliveryPhotoEditRole())
+        .thenAnswer((_) async => false);
+    when(() => repo.loadPrintedStickers()).thenAnswer((_) async => {});
+    when(() => presence.getSalesOrders(
+          page: any(named: 'page'),
+          perPage: any(named: 'perPage'),
+          deliveryStatus: any(named: 'deliveryStatus'),
+          hasPaymentProof: any(named: 'hasPaymentProof'),
+          paymentProofPrinted: any(named: 'paymentProofPrinted'),
+          orderFor: any(named: 'orderFor'),
+        )).thenAnswer((_) async =>
+        {'success': true, 'data': [], 'meta': {'last_page': 1}});
+    when(() => presence.markReadyToShip(
+          orderId: any(named: 'orderId'),
+          orderFor: any(named: 'orderFor'),
+        )).thenAnswer((_) async => {
+              'success': true,
+              'data': {'delivery_status': 4},
+            });
+
+    final provider = DeliveryProvider(
+      orderMode: OrderMode.direct,
+      presenceService: presence,
+      repository: repo,
+      pdfService: _MockPdf(),
+      stickerOrchestrator: _MockSticker(),
+    );
+    await provider.initialize();
+
+    final order = directOrder(deliveryStatus: 1);
+    await pumpDetail(
+      tester,
+      provider: provider,
+      order: order,
+      status: DeliveryStatus.pending,
+    );
+
+    await tester.ensureVisible(find.text('Tandai Siap Dikirim'));
+    await tester.tap(find.text('Tandai Siap Dikirim'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Order berhasil ditandai siap dikirim.'),
+        findsOneWidget);
+  });
+
   testWidgets('admin melihat harga per item dan Total Harga', (tester) async {
     final provider = await makeProvider(isAdmin: true);
     await pumpDetail(
@@ -192,8 +247,11 @@ void main() {
       status: DeliveryStatus.ready,
     );
 
-    expect(find.text('Total Harga'), findsOneWidget);
-    expect(find.text('Rp 55.000 x 2 = Rp 110.000'), findsOneWidget);
+    expect(find.text('Total Nilai Order'), findsOneWidget);
+    expect(find.text('Rp 55.000'), findsOneWidget); // harga satuan item 1
+    expect(find.text('Rp 110.000'), findsOneWidget); // subtotal item 1
+    // Item 2: harga satuan & subtotal sama-sama Rp 300.000.
+    expect(find.text('Rp 300.000'), findsNWidgets(2));
     expect(find.text('Rp 410.000'), findsOneWidget);
   });
 
@@ -207,7 +265,187 @@ void main() {
       status: DeliveryStatus.ready,
     );
 
-    expect(find.text('Total Harga'), findsNothing);
-    expect(find.textContaining('x 2 = Rp 110.000'), findsNothing);
+    expect(find.text('Total Nilai Order'), findsNothing);
+    expect(find.text('Rp 55.000'), findsNothing);
+  });
+
+  group('kartu foto bukti pengiriman', () {
+    testWidgets('multi-foto: judul berhitung dan semua thumbnail tampil',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: false);
+      final order = directOrder(deliveryStatus: 3)
+        ..remove('image_delivery_url')
+        ..['image_delivery_urls'] = [
+          'https://example.com/a.jpg',
+          'https://example.com/b.jpg',
+        ];
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.text('Foto Bukti Pengiriman (2)'), findsOneWidget);
+    });
+
+    testWidgets('fallback singular: hanya image_delivery_url tetap tampil',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: false);
+      final order = directOrder(deliveryStatus: 3)
+        ..['image_delivery_url'] = 'https://example.com/single.jpg';
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.text('Foto Bukti Pengiriman'), findsOneWidget);
+    });
+
+    testWidgets('boleh edit foto: icon edit tampil walau status terkirim',
+        (tester) async {
+      final provider =
+          await makeProvider(isAdmin: true, canEditDeliveryPhotos: true);
+      final order = directOrder(deliveryStatus: 3)
+        ..['image_delivery_url'] = 'https://example.com/single.jpg';
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.byTooltip('Ganti foto bukti pengiriman'), findsOneWidget);
+    });
+
+    testWidgets('tidak berhak edit: icon edit tidak tampil', (tester) async {
+      final provider = await makeProvider(isAdmin: false);
+      final order = directOrder(deliveryStatus: 3)
+        ..['image_delivery_url'] = 'https://example.com/single.jpg';
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.byTooltip('Ganti foto bukti pengiriman'), findsNothing);
+    });
+
+    testWidgets('foto kosong tapi boleh edit: kartu tampil dengan placeholder',
+        (tester) async {
+      final provider =
+          await makeProvider(isAdmin: true, canEditDeliveryPhotos: true);
+      final order = directOrder(deliveryStatus: 3);
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.text('Belum ada foto bukti pengiriman'), findsOneWidget);
+    });
+  });
+
+  group('ringkasan nilai order tanpa item', () {
+    testWidgets('admin tetap melihat Total Nilai Order dan Ongkos Kirim',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: true);
+      final order = {
+        ...directOrder(deliveryStatus: 4),
+        'items': <Map<String, dynamic>>[],
+        'shipping_cost': 25000,
+      };
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.ready,
+      );
+
+      expect(find.text('Tidak ada rincian produk.'), findsOneWidget);
+      expect(find.text('Ongkos Kirim'), findsOneWidget);
+      expect(find.text('Rp 25.000'), findsOneWidget);
+      expect(find.text('Total Nilai Order'), findsOneWidget);
+    });
+
+    testWidgets('tanpa shipping_cost: total tampil, baris ongkir tidak',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: true);
+      final order = {
+        ...directOrder(deliveryStatus: 4),
+        'items': <Map<String, dynamic>>[],
+      };
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.ready,
+      );
+
+      expect(find.text('Total Nilai Order'), findsOneWidget);
+      expect(find.text('Ongkos Kirim'), findsNothing);
+    });
+  });
+
+  group('titik edit satu per kartu', () {
+    testWidgets('admin + belum terkunci: pencil produk & assignment tampil',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: true);
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: directOrder(deliveryStatus: 1),
+        status: DeliveryStatus.pending,
+      );
+
+      expect(find.byTooltip('Ubah rincian produk'), findsOneWidget);
+      expect(find.byTooltip('Ubah toko & status bayar'), findsOneWidget);
+      expect(find.text('Ubah Rincian Produk'), findsNothing); // tombol lama hilang
+    });
+
+    testWidgets('non-admin: tidak ada pencil edit', (tester) async {
+      final provider = await makeProvider(isAdmin: false);
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: directOrder(deliveryStatus: 1),
+        status: DeliveryStatus.pending,
+      );
+
+      expect(find.byTooltip('Ubah rincian produk'), findsNothing);
+      expect(find.byTooltip('Ubah toko & status bayar'), findsNothing);
+    });
+
+    testWidgets('admin + order terkirim & dibayar: pencil assignment hilang',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: true);
+      final order = directOrder(deliveryStatus: 3)
+        ..['payment_status'] = '2';
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: order,
+        status: DeliveryStatus.delivered,
+      );
+
+      expect(find.byTooltip('Ubah toko & status bayar'), findsNothing);
+    });
+
+    testWidgets('admin + status valid (terkunci): pencil produk hilang',
+        (tester) async {
+      final provider = await makeProvider(isAdmin: true);
+      await pumpDetail(
+        tester,
+        provider: provider,
+        order: directOrder(deliveryStatus: 2),
+        status: DeliveryStatus.valid,
+      );
+
+      expect(find.byTooltip('Ubah rincian produk'), findsNothing);
+    });
   });
 }

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../bar_button_cluster.dart';
+import '../glass_app_bar.dart';
+
+
 class BarcodeScannerPage extends StatefulWidget {
   const BarcodeScannerPage({super.key});
 
@@ -37,24 +41,31 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Scan Resi / Barcode / QR'),
+        foregroundColor: Colors.white,
+        opacity: 0.4,
         actions: [
           ValueListenableBuilder(
             valueListenable: _controller!,
             builder: (context, state, child) {
-              return IconButton(
-                icon: Icon(
-                  state.torchState == TorchState.on
-                      ? Icons.flash_on
-                      : Icons.flash_off,
-                ),
-                onPressed: () => _controller!.toggleTorch(),
+              return BarButtonCluster(
+                actions: [
+                  BarButtonSpec(
+                    icon: state.torchState == TorchState.on
+                        ? Icons.flash_on
+                        : Icons.flash_off,
+                    tooltip: 'Senter',
+                    onTap: () => _controller!.toggleTorch(),
+                  ),
+                ],
               );
             },
           ),
         ],
       ),
+
       body: Stack(
         children: [
           MobileScanner(

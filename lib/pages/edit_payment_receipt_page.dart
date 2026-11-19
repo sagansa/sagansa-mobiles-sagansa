@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../models/procurement_model.dart';
 import '../services/closing_store_service.dart';
 import '../services/fuel_service_service.dart';
@@ -8,6 +10,11 @@ import '../services/procurement_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/safe_bottom_bar.dart';
 import '../widgets/ticket_card_container.dart' show DashedDivider;
@@ -30,7 +37,7 @@ class _EditableItem {
   });
 }
 
-/// Halaman edit payment receipt (fuel & service ATAU daily salary).
+/// Halaman edit payment receipt (fuel & service, daily salary, ATAU invoice purchase).
 ///
 /// Edit: daftar item (add/remove), transfer_amount, notes, image.
 /// total_amount computed (read-only). Item add/remove sinkron status
@@ -52,6 +59,8 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
   final _notesController = TextEditingController();
 
   bool get _isDailySalary => widget.receipt.paymentFor == '2';
+  bool get _isFuelService => widget.receipt.paymentFor == '1';
+  bool get _isInvoicePurchase => !_isDailySalary && !_isFuelService;
 
   /// Snapshot item ter-attach (editable: bisa di-remove / ditambah).
   late List<_EditableItem> _items;
@@ -60,6 +69,10 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
   /// menyaring kandidat item tambahan (aturan "satu karyawan").
   int? _salaryEmployeeId;
   String? _salaryEmployeeName;
+
+  /// Receipt invoice scoped per supplier.
+  int? _supplierId;
+  String? _supplierName;
 
   File? _imageFile;
   bool _isSaving = false;
@@ -82,22 +95,37 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                 badge: 'Gaji',
               ))
           .toList();
-    } else {
+    } else if (_isFuelService) {
       _items = widget.receipt.fuelServices
           .map((fs) => _EditableItem(
                 id: fs.id,
                 amount: fs.amount,
-                title:
-                    '${fs.vehicleRegister ?? "Kendaraan"} (KM: ${fs.km})',
+                title: '${fs.vehicleRegister ?? "Kendaraan"} (KM: ${fs.km})',
                 subtitle:
                     '${fs.typeLabel} • ${fs.date} • ${FormatUtils.formatCurrency(fs.amount)}',
                 badge: fs.typeLabel,
               ))
           .toList();
+    } else {
+      _supplierId = widget.receipt.supplierId ??
+          widget.receipt.invoicePurchases.firstOrNull?.supplierId;
+      _supplierName = widget.receipt.supplierName ??
+          widget.receipt.invoicePurchases.firstOrNull?.supplierName;
+      _items = widget.receipt.invoicePurchases
+          .map((inv) => _EditableItem(
+                id: inv.id,
+                amount: inv.totalPrice,
+                title: 'Invoice #${inv.id} (${inv.date})',
+                subtitle:
+                    '${inv.storeName} • ${FormatUtils.formatCurrency(inv.totalPrice)}',
+                badge: 'Invoice',
+              ))
+          .toList();
     }
-    _transferAmountController.text = widget.receipt.transferAmount.toString();
+    _transferAmountController.text =
+        FormatUtils.formatAmount(widget.receipt.transferAmount);
     _notesController.text = widget.receipt.notes ?? '';
-    if (!_isDailySalary) {
+    if (_isFuelService) {
       _loadUsers();
     }
   }
@@ -126,15 +154,15 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
       final List<_EditableItem> available;
       if (_isDailySalary) {
         // Kandidat hanya milik karyawan yang sama (aturan satu karyawan).
-        final candidates = await _closingStoreService.getDailySalariesForPayment(
+        final candidates =
+            await _closingStoreService.getDailySalariesForPayment(
           userId: _salaryEmployeeId,
         );
         final candidateItems = candidates
             .map((c) => c as Map<String, dynamic>)
             .map((c) => _EditableItem(
                   id: (c['id'] as int).toInt(),
-                  amount:
-                      double.tryParse('${c['amount'] ?? 0}')?.toInt() ?? 0,
+                  amount: double.tryParse('${c['amount'] ?? 0}')?.toInt() ?? 0,
                   title: c['date']?.toString() ?? '',
                   subtitle: FormatUtils.formatCurrency(
                       double.tryParse('${c['amount'] ?? 0}')?.toInt() ?? 0),
@@ -144,7 +172,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
         final existingIds = _items.map((i) => i.id).toSet();
         available =
             candidateItems.where((i) => !existingIds.contains(i.id)).toList();
-      } else {
+      } else if (_isFuelService) {
         final candidates = await _fuelServiceService.getFuelServicesForPayment(
           createdById: _userFilter,
         );
@@ -153,14 +181,34 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
             .map((fs) => _EditableItem(
                   id: fs.id,
                   amount: fs.amount,
-                  title:
-                      '${fs.vehicleRegister ?? "Kendaraan"} (KM: ${fs.km})',
+                  title: '${fs.vehicleRegister ?? "Kendaraan"} (KM: ${fs.km})',
                   subtitle:
                       '${fs.typeLabel} • ${fs.date} • ${FormatUtils.formatCurrency(fs.amount)}',
                   badge: fs.typeLabel,
                 ))
             .toList();
         // Skip yang sudah ada di _items.
+        final existingIds = _items.map((i) => i.id).toSet();
+        available =
+            candidateItems.where((i) => !existingIds.contains(i.id)).toList();
+      } else {
+        // Mode Invoice: ambil invoice berstatus 1 (belum dibayar) untuk supplier yang sama
+        final result = await _procurementService.getInvoices(
+          paymentStatus: '1',
+          supplierId: _supplierId,
+          perPage: 50,
+        );
+        final candidateItems = result.items
+            .where((inv) => inv.paymentTypeId == 1 || inv.paymentTypeId == null)
+            .map((inv) => _EditableItem(
+                  id: inv.id,
+                  amount: inv.totalPrice,
+                  title: 'Invoice #${inv.id} (${inv.date})',
+                  subtitle:
+                      '${inv.storeName} • ${FormatUtils.formatCurrency(inv.totalPrice)}',
+                  badge: 'Invoice',
+                ))
+            .toList();
         final existingIds = _items.map((i) => i.id).toSet();
         available =
             candidateItems.where((i) => !existingIds.contains(i.id)).toList();
@@ -199,6 +247,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                                   ?.copyWith(fontWeight: FontWeight.bold)),
                           const Spacer(),
                           IconButton(
+                            tooltip: 'Tutup',
                             icon: const Icon(Icons.close),
                             onPressed: () => Navigator.pop(ctx),
                           ),
@@ -206,7 +255,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                       ),
                     ),
                     // Filter user (admin) — hanya mode fuel & service.
-                    if (!_isDailySalary && _users.isNotEmpty)
+                    if (_isFuelService && _users.isNotEmpty)
                       Padding(
                         padding: AppSpacing.paddingHorizontalMD,
                         child: DropdownButtonFormField<int?>(
@@ -244,10 +293,22 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                           ),
                         ),
                       ),
+                    // Mode invoice: info supplier.
+                    if (_isInvoicePurchase && _supplierName != null)
+                      Padding(
+                        padding: AppSpacing.paddingHorizontalMD,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Supplier: $_supplierName',
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                        ),
+                      ),
                     const Divider(),
                     if (available.isEmpty)
                       const Padding(
-                        padding: EdgeInsets.all(24),
+                        padding: AppSpacing.paddingLG,
                         child: Text('Tidak ada item yang bisa ditambahkan.'),
                       )
                     else
@@ -340,7 +401,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
       );
       return;
     }
-    final transferAmount = int.tryParse(_transferAmountController.text) ?? 0;
+    final transferAmount = parseAmountInt(_transferAmountController.text);
     if (transferAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nominal transfer harus lebih dari 0.')),
@@ -355,15 +416,26 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
           receiptId: widget.receipt.id,
           dailySalaryIds: _items.map((i) => i.id).toList(),
           transferAmount: transferAmount,
-          notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+          notes:
+              _notesController.text.isNotEmpty ? _notesController.text : null,
           image: _imageFile,
         );
-      } else {
+      } else if (_isFuelService) {
         await _procurementService.updateFuelServicePaymentReceipt(
           receiptId: widget.receipt.id,
           fuelServiceIds: _items.map((i) => i.id).toList(),
           transferAmount: transferAmount,
-          notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+          notes:
+              _notesController.text.isNotEmpty ? _notesController.text : null,
+          image: _imageFile,
+        );
+      } else {
+        await _procurementService.updateInvoicePaymentReceipt(
+          receiptId: widget.receipt.id,
+          invoiceIds: _items.map((i) => i.id).toList(),
+          transferAmount: transferAmount,
+          notes:
+              _notesController.text.isNotEmpty ? _notesController.text : null,
           image: _imageFile,
         );
       }
@@ -371,11 +443,10 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
       final updated =
           await _procurementService.getPaymentReceiptDetail(widget.receipt.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment receipt berhasil diperbarui.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Payment receipt berhasil diperbarui.',
+        background: AppColors.success,
       );
       Navigator.pop(context, updated);
     } catch (e) {
@@ -393,7 +464,10 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Edit Payment Receipt'),
       ),
       // Tombol simpan dipatok di bawah (tidak ikut scroll) — pola standar
@@ -406,7 +480,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
         ),
       ),
       body: SingleChildScrollView(
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD.copyWith(top: AppBarInsets.top(context)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -415,7 +489,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
               padding: AppSpacing.paddingMD,
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+                borderRadius: AppSpacing.borderRadiusMD,
               ),
               child: Column(
                 children: [
@@ -436,6 +510,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                   TextField(
                     controller: _transferAmountController,
                     keyboardType: TextInputType.number,
+                    inputFormatters: rupiahInputFormatters,
                     decoration: const InputDecoration(
                       labelText: 'Nominal Transfer',
                       isDense: true,
@@ -456,14 +531,15 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                   child: Text(
                       _isDailySalary
                           ? 'Item Gaji Harian (${_items.length})'
-                          : 'Item Bensin & Servis (${_items.length})',
+                          : _isFuelService
+                              ? 'Item Bensin & Servis (${_items.length})'
+                              : 'Invoice Terkait (${_items.length})',
                       style: theme.textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.bold)),
                 ),
-                TextButton.icon(
+                FormAddButton(
+                  label: 'Tambah',
                   onPressed: _openAddItemSheet,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Tambah'),
                 ),
               ],
             ),
@@ -472,6 +548,16 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                 padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                 child: Text(
                   'Karyawan: $_salaryEmployeeName',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            if (_isInvoicePurchase &&
+                _supplierName != null &&
+                _supplierName!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Text(
+                  'Supplier: $_supplierName',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -511,7 +597,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
               Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+                    borderRadius: AppSpacing.borderRadiusMD,
                     child: Image.file(_imageFile!,
                         height: 180, width: double.infinity, fit: BoxFit.cover),
                   ),
@@ -522,6 +608,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
                       backgroundColor: Colors.black.withValues(alpha: 0.6),
                       radius: 18,
                       child: IconButton(
+                        tooltip: 'Hapus',
                         icon: const Icon(Icons.close_rounded,
                             size: 18, color: Colors.white),
                         onPressed: () => setState(() => _imageFile = null),
@@ -562,7 +649,9 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
   Widget _buildItemCard(_EditableItem item, int idx, ThemeData theme) {
     final badgeColor = _isDailySalary
         ? AppColors.info
-        : (item.badge == 'Fuel' ? AppColors.success : AppColors.warning);
+        : _isFuelService
+            ? (item.badge == 'Fuel' ? AppColors.success : AppColors.warning)
+            : AppColors.primary;
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: ListTile(
@@ -571,7 +660,7 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
               horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
           decoration: BoxDecoration(
             color: badgeColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSM),
+            borderRadius: AppSpacing.borderRadiusSM,
           ),
           child: Text(item.badge ?? '-',
               style: theme.textTheme.labelMedium
@@ -581,8 +670,8 @@ class _EditPaymentReceiptPageState extends State<EditPaymentReceiptPage> {
             style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(
           item.subtitle,
-          style: TextStyle(
-              fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline, color: AppColors.error),

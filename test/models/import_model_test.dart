@@ -33,7 +33,8 @@ void main() {
     });
 
     test('nilai tak dikenal → other', () {
-      expect(ImportDocumentType.fromApi('surat_jalan'), ImportDocumentType.other);
+      expect(
+          ImportDocumentType.fromApi('surat_jalan'), ImportDocumentType.other);
     });
   });
 
@@ -76,7 +77,8 @@ void main() {
           'id': 3,
           'type': 'invoice',
           'file_path': 'documents/ImportPurchase/x.pdf',
-          'file_url': 'https://img.sagansa.id/storage/documents/ImportPurchase/x.pdf',
+          'file_url':
+              'https://img.sagansa.id/storage/documents/ImportPurchase/x.pdf',
           'mime_type': 'application/pdf',
         },
       ],
@@ -104,6 +106,115 @@ void main() {
       expect(doc.type, ImportDocumentType.invoice);
       expect(doc.isPdf, isTrue);
       expect(parsed.uploadedTypes, {ImportDocumentType.invoice});
+    });
+  });
+
+  group('ImportItem harga satuan', () {
+    Map<String, dynamic> json({
+      bool realized = false,
+      double? unitPriceIdr,
+      double? estimate,
+      double? real,
+    }) =>
+        {
+          'id': 1,
+          'product_id': 9,
+          'quantity': 19500,
+          'unit_price_foreign': 0.78,
+          'product': {
+            'name': 'Mete BB2',
+            'unit': {'unit': 'kg'},
+          },
+          if (unitPriceIdr != null) 'unit_price_idr': unitPriceIdr,
+          if (estimate != null) 'hpp_estimate_unit': estimate,
+          if (real != null) 'hpp_real_unit': real,
+          'price_is_realized': realized,
+        };
+
+    test('memakai realisasi bila sudah ada', () {
+      final item = ImportItem.fromJson(json(
+        realized: true,
+        unitPriceIdr: 18709,
+        estimate: 16624,
+        real: 18709,
+      ));
+
+      expect(item.priceIsRealized, isTrue);
+      expect(item.displayUnitPriceIdr, 18709);
+    });
+
+    test('fallback estimasi bila realisasi belum ada', () {
+      final item = ImportItem.fromJson(json(
+        unitPriceIdr: 16624,
+        estimate: 16624,
+        real: 0,
+      ));
+
+      expect(item.priceIsRealized, isFalse);
+      expect(item.displayUnitPriceIdr, 16624);
+    });
+
+    test('fallback snapshot HPP saat field hitung list tidak ada', () {
+      final item = ImportItem.fromJson({
+        'id': 1,
+        'product_id': 9,
+        'quantity': 19500,
+        'unit_price_foreign': 0.78,
+        'hpp_estimate': 15000,
+        'product': {
+          'name': 'Mete BB2',
+          'unit': {'unit': 'kg'},
+        },
+      });
+
+      expect(item.displayUnitPriceIdr, 15000);
+    });
+  });
+
+  group('ImportProductPriceTrend.fromJson', () {
+    test('memetakan titik USD/IDR dan realisasi', () {
+      final trend = ImportProductPriceTrend.fromJson({
+        'product_id': 9,
+        'product_name': 'Mete BB2',
+        'unit_name': 'kg',
+        'currency': 'USD',
+        'points': [
+          {
+            'import_id': 1,
+            'date': '2026-09-01',
+            'supplier_name': 'Supplier A',
+            'currency': 'USD',
+            'exchange_rate': 17000,
+            'quantity': 19500,
+            'unit_price_foreign': '0.75',
+            'unit_price_idr': 15000,
+            'unit_price_idr_estimate': 15000,
+            'unit_price_idr_real': 16000,
+            'is_realized': false,
+          },
+          {
+            'import_id': 2,
+            'date': '2026-10-01',
+            'supplier_name': 'Supplier B',
+            'currency': 'USD',
+            'exchange_rate': 17545,
+            'quantity': 19500,
+            'quantity_received': 11700,
+            'unit_price_foreign': '0.82',
+            'unit_price_idr': 17000,
+            'unit_price_idr_estimate': 16500,
+            'unit_price_idr_real': 17000,
+            'is_realized': true,
+          },
+        ],
+      });
+
+      expect(trend.points, hasLength(2));
+      expect(trend.latest?.importId, 2);
+      expect(trend.previous?.importId, 1);
+      expect(trend.latest?.unitPriceForeign, 0.82);
+      expect(trend.latest?.unitPriceIdr, 17000);
+      expect(trend.latest?.isRealized, isTrue);
     });
   });
 

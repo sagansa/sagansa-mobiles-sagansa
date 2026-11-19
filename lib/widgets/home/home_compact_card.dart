@@ -12,6 +12,7 @@ class HomeCompactCard extends StatelessWidget {
   final String label;
   final String? badge;
   final Color? badgeColor;
+  final String? subValue;
   final VoidCallback? onTap;
   final bool isLoading;
 
@@ -23,6 +24,7 @@ class HomeCompactCard extends StatelessWidget {
     required this.label,
     this.badge,
     this.badgeColor,
+    this.subValue,
     this.onTap,
     this.isLoading = false,
   });
@@ -31,10 +33,18 @@ class HomeCompactCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final displayValue = isLoading ? '...' : value;
 
     final card = Card(
       margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.paddingSM,
         child: Column(
@@ -46,20 +56,27 @@ class HomeCompactCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.15),
+                    color: iconColor.withValues(alpha: isDark ? 0.2 : 0.12),
                     borderRadius: AppSpacing.borderRadiusSM,
                   ),
-                  child: Icon(icon, color: iconColor, size: 16),
+                  child: Icon(icon, color: iconColor, size: 18),
                 ),
                 if (badge != null)
-                  Text(
-                    badge!,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: badgeColor ?? colorScheme.error,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 9,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: (badgeColor ?? colorScheme.error).withValues(alpha: 0.15),
+                      borderRadius: AppSpacing.borderRadiusFull,
+                    ),
+                    child: Text(
+                      badge!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: badgeColor ?? colorScheme.error,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 9,
+                      ),
                     ),
                   )
                 else
@@ -67,21 +84,43 @@ class HomeCompactCard extends StatelessWidget {
               ],
             ),
             // Value tengah
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                displayValue,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    displayValue,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
                 ),
-              ),
+                if (subValue != null && !isLoading)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      subValue!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 9.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
             ),
             // Label bawah
             Text(
               label,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+                fontSize: 11,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -95,7 +134,7 @@ class HomeCompactCard extends StatelessWidget {
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         child: card,
       );
     }

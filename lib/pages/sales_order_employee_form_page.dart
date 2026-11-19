@@ -1,21 +1,30 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../models/delivery_address_model.dart';
 import '../models/sales_order_employee_model.dart';
 import '../models/store_model.dart';
+import '../services/image_service.dart';
 import '../services/image_upload_service.dart';
 import '../services/sales_order_employee_service.dart';
 import '../services/store_service.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
 import '../utils/snackbar_utils.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/forms/form_image_tile.dart';
+import '../widgets/forms/form_item_card.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
+import '../widgets/glass_container.dart';
 import '../widgets/modern_button.dart';
+import '../widgets/modern_date_field.dart';
 import '../widgets/modern_dropdown.dart';
-import '../widgets/safe_bottom_bar.dart';
+import '../widgets/modern_text_form_field.dart';
 import 'delivery_address_form_page.dart';
 
 /// Form create/update penjualan employee (role sales).
@@ -35,14 +44,27 @@ class _FormItem {
   int? productId;
   String? productName;
   String? unit;
-  int quantity;
-  int unitPrice;
-  _FormItem(
-      {this.productId,
-      this.productName,
-      this.unit,
-      this.quantity = 1,
-      this.unitPrice = 0});
+  final TextEditingController qtyController;
+  final TextEditingController priceController;
+
+  _FormItem({
+    this.productId,
+    this.productName,
+    this.unit,
+    int quantity = 1,
+    int unitPrice = 0,
+  })  : qtyController = TextEditingController(text: '$quantity'),
+        priceController =
+            TextEditingController(text: FormatUtils.formatAmount(unitPrice));
+
+  int get quantity => int.tryParse(qtyController.text) ?? 0;
+  int get unitPrice => parseAmountInt(priceController.text);
+  int get subtotal => quantity * unitPrice;
+
+  void dispose() {
+    qtyController.dispose();
+    priceController.dispose();
+  }
 }
 
 class _SalesOrderEmployeeFormPageState
@@ -82,6 +104,9 @@ class _SalesOrderEmployeeFormPageState
   @override
   void dispose() {
     _notesController.dispose();
+    for (final item in _items) {
+      item.dispose();
+    }
     super.dispose();
   }
 
@@ -157,26 +182,13 @@ class _SalesOrderEmployeeFormPageState
           )));
   }
 
-  int get _total =>
-      _items.fold(0, (sum, i) => sum + (i.quantity * i.unitPrice));
+  int get _total => _items.fold(0, (sum, i) => sum + i.subtotal);
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return;
-    setState(() => _imagePath = picked.path);
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _deliveryDate ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 1),
-    );
-    if (picked != null) setState(() => _deliveryDate = picked);
+    // Pipeline standar: dialog sumber → pick native terkompresi.
+    final photo = await ImageService.selectAndPickImage(context);
+    if (photo == null || !mounted) return;
+    setState(() => _imagePath = photo.path);
   }
 
   String _fmt(DateTime d) =>
@@ -197,6 +209,17 @@ class _SalesOrderEmployeeFormPageState
         entry,
       ];
       _deliveryAddress = entry;
+    });
+  }
+
+  void _addItem() {
+    setState(() => _items.add(_FormItem()));
+  }
+
+  void _removeItem(int index) {
+    setState(() {
+      final removed = _items.removeAt(index);
+      removed.dispose();
     });
   }
 
@@ -286,8 +309,14 @@ class _SalesOrderEmployeeFormPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(_isEdit ? 'Edit Penjualan' : 'Penjualan Baru'),
       ),
       body: _loading
@@ -296,341 +325,329 @@ class _SalesOrderEmployeeFormPageState
               ? _ErrorView(message: _error!, onRetry: _loadSupportingData)
               : Form(
                   key: _formKey,
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.md,
-                      AppSpacing.md,
-                      AppSpacing.md + context.systemBottomInset,
-                    ),
-                    children: [
-                      _buildStoreField(theme),
-                      AppSpacing.gapVerticalMD,
-                      _buildDateField(theme),
-                      AppSpacing.gapVerticalMD,
-                      _buildDeliveryAddressField(theme),
-                      AppSpacing.gapVerticalMD,
-                      _buildDropdownField(
-                        theme: theme,
-                        label: 'Rekening Tujuan Transfer',
-                        value: _transferAccount,
-                        items: _transferAccounts,
-                        onChanged: (v) => setState(() => _transferAccount = v),
-                      ),
-                      AppSpacing.gapVerticalMD,
-                      _buildItemsSection(theme),
-                      AppSpacing.gapVerticalMD,
-                      _buildImageSection(theme),
-                      AppSpacing.gapVerticalMD,
-                      TextFormField(
-                        controller: _notesController,
-                        decoration: const InputDecoration(
-                          labelText: 'Catatan (opsional)',
-                          border: OutlineInputBorder(),
+                  child: GestureDetector(
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    behavior: HitTestBehavior.translucent,
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ).copyWith(top: AppBarInsets.top(context)),
+                      children: [
+                        // Section 1: Informasi Penjualan
+                        FormSectionCard(
+                          title: 'Informasi Penjualan',
+                          icon: Icons.receipt_long_outlined,
+                          children: [
+                            ModernDropdown<StoreModel>(
+                              value: _store,
+                              labelText: 'Toko',
+                              hint: 'Pilih toko...',
+                              isRequired: true,
+                              prefixIcon:
+                                  const Icon(Icons.storefront, size: 20),
+                              items: _stores,
+                              getLabel: (s) => s.nickname,
+                              onChanged: (v) => setState(() => _store = v),
+                              validator: (v) => v == null ? 'Pilih toko' : null,
+                            ),
+                            ModernDateField(
+                              value: _deliveryDate,
+                              labelText: 'Tanggal Pengiriman',
+                              isRequired: true,
+                              firstDate: DateTime(DateTime.now().year - 1),
+                              lastDate: DateTime(DateTime.now().year + 1),
+                              onChanged: (d) {
+                                if (d != null) {
+                                  setState(() => _deliveryDate = d);
+                                }
+                              },
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ModernDropdown<Map<String, dynamic>>(
+                                  value: _deliveryAddress,
+                                  labelText: 'Alamat Pengiriman (Konsumen)',
+                                  hint: 'Pilih konsumen...',
+                                  isRequired: true,
+                                  prefixIcon: const Icon(
+                                      Icons.location_on_outlined,
+                                      size: 20),
+                                  items: _deliveryAddresses,
+                                  getLabel: (e) => e['name']?.toString() ?? '-',
+                                  onChanged: (v) =>
+                                      setState(() => _deliveryAddress = v),
+                                  validator: (v) =>
+                                      v == null ? 'Pilih konsumen' : null,
+                                ),
+                                const SizedBox(height: 2),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    onPressed: _saving
+                                        ? null
+                                        : _openCreateDeliveryAddress,
+                                    icon: const Icon(
+                                        Icons.person_add_alt_outlined,
+                                        size: 16),
+                                    label: const Text('Tambah Konsumen Baru'),
+                                    style: AppButtonStyle.text(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 2),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            ModernDropdown<Map<String, dynamic>>(
+                              value: _transferAccount,
+                              labelText: 'Rekening Tujuan Transfer',
+                              hint: 'Pilih rekening...',
+                              isRequired: true,
+                              prefixIcon:
+                                  const Icon(Icons.credit_card, size: 20),
+                              items: _transferAccounts,
+                              getLabel: (e) => e['name']?.toString() ?? '-',
+                              onChanged: (v) =>
+                                  setState(() => _transferAccount = v),
+                              validator: (v) =>
+                                  v == null ? 'Pilih rekening tujuan' : null,
+                            ),
+                            ModernTextFormField(
+                              controller: _notesController,
+                              labelText: 'Catatan (opsional)',
+                              hintText: 'Tambahkan catatan khusus bila ada',
+                              prefixIcon: const Icon(Icons.chat_bubble_outline,
+                                  size: 20),
+                              maxLines: 2,
+                            ),
+                            FormImageTile(
+                              imageFile:
+                                  _imagePath != null ? File(_imagePath!) : null,
+                              imageUrl: _imagePath == null
+                                  ? (widget.order?.imagePaymentUrl)
+                                  : null,
+                              label: 'Bukti Transfer Pembayaran',
+                              hint: 'Lampirkan foto struk / resi transfer',
+                              onPick: _pickImage,
+                              onRemove: (_imagePath != null ||
+                                      _uploadedImagePath != null)
+                                  ? () => setState(() {
+                                        _imagePath = null;
+                                        _uploadedImagePath = null;
+                                      })
+                                  : null,
+                            ),
+                          ],
                         ),
-                        maxLines: 2,
-                      ),
-                      AppSpacing.gapVerticalLG,
-                      ModernButton(
-                        text: _isEdit ? 'Simpan Perubahan' : 'Simpan',
-                        onPressed: _saving ? null : _save,
-                        isLoading: _saving,
-                        icon: Icons.save_outlined,
-                      ),
-                    ],
-                  ),
-                ),
-    );
-  }
+                        const SizedBox(height: 12),
 
-  Widget _buildStoreField(ThemeData theme) {
-    return ModernDropdown<StoreModel>(
-      value: _store,
-      labelText: 'Toko',
-      hint: 'Pilih toko...',
-      isRequired: true,
-      prefixIcon: const Icon(Icons.storefront, size: 20),
-      items: _stores,
-      getLabel: (s) => s.nickname,
-      onChanged: (v) => setState(() => _store = v),
-    );
-  }
+                        // Section 2: Detail Item Produk
+                        FormSectionCard(
+                          title: 'Item Produk',
+                          icon: Icons.inventory_2_outlined,
+                          trailing: FormAddButton(
+                            label: 'Tambah',
+                            onPressed: _addItem,
+                          ),
+                          children: [
+                            if (_items.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 24),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.3),
+                                  borderRadius: AppSpacing.borderRadiusMD,
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.shopping_bag_outlined,
+                                        size: 32,
+                                        color: colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.5)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Belum ada produk ditambahkan',
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tekan "Tambah" di kanan atas untuk memilih produk.',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              ..._items.asMap().entries.map((entry) {
+                                final idx = entry.key;
+                                final item = entry.value;
+                                return FormItemCard(
+                                  index: idx,
+                                  onDelete: _items.length > 1
+                                      ? () => _removeItem(idx)
+                                      : null,
+                                  productField: ModernDropdown<int>(
+                                    value: item.productId,
+                                    labelText: 'Produk',
+                                    hint: 'Pilih produk...',
+                                    items: _products
+                                        .map((p) => p['id'] as int)
+                                        .toList(),
+                                    getLabel: (v) {
+                                      final p = _products.firstWhere(
+                                          (e) => e['id'] == v,
+                                          orElse: () => {});
+                                      return '${p['name'] ?? ''} (${p['unit'] ?? ''})';
+                                    },
+                                    getSubtitle: (v) {
+                                      final p = _products.firstWhere(
+                                          (e) => e['id'] == v,
+                                          orElse: () => {});
+                                      return 'Rp ${p['price'] ?? 0}';
+                                    },
+                                    onChanged: (v) {
+                                      if (v == null) return;
+                                      final p = _products
+                                          .firstWhere((e) => e['id'] == v);
+                                      setState(() {
+                                        item.productId = v;
+                                        item.productName =
+                                            p['name']?.toString();
+                                        item.unit = p['unit']?.toString();
+                                        final defaultPrice =
+                                            p['price'] as int? ?? 0;
+                                        if (item.unitPrice == 0 &&
+                                            defaultPrice > 0) {
+                                          item.priceController.text =
+                                              FormatUtils.formatAmount(
+                                                  defaultPrice);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  qtyField: TextFormField(
+                                    controller: item.qtyController,
+                                    keyboardType: TextInputType.number,
+                                    onTap: () {
+                                      item.qtyController.selection =
+                                          TextSelection(
+                                        baseOffset: 0,
+                                        extentOffset:
+                                            item.qtyController.text.length,
+                                      );
+                                    },
+                                    decoration: InputDecoration(
+                                      labelText: 'Qty',
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 9,
+                                      ),
+                                      suffixText: item.unit,
+                                    ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                  priceField: TextFormField(
+                                    controller: item.priceController,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: rupiahInputFormatters,
+                                    onTap: () {
+                                      item.priceController.selection =
+                                          TextSelection(
+                                        baseOffset: 0,
+                                        extentOffset:
+                                            item.priceController.text.length,
+                                      );
+                                    },
+                                    decoration: const InputDecoration(
+                                      labelText: 'Harga Satuan',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 9,
+                                      ),
+                                      prefixText: 'Rp ',
+                                    ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                  subtotalText:
+                                      FormatUtils.formatCurrency(item.subtotal),
+                                );
+                              }),
 
-  Widget _buildDateField(ThemeData theme) {
-    final text =
-        _deliveryDate == null ? '' : FormatUtils.formatDate(_deliveryDate!);
-    return InkWell(
-      onTap: _pickDate,
-      child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: 'Tanggal Pengiriman *',
-          border: OutlineInputBorder(),
-          suffixIcon: Icon(Icons.calendar_today),
-        ),
-        child: Text(text.isEmpty ? 'Pilih tanggal' : text),
-      ),
-    );
-  }
-
-  Widget _buildDeliveryAddressField(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildDropdownField(
-          theme: theme,
-          label: 'Alamat Pengiriman',
-          value: _deliveryAddress,
-          items: _deliveryAddresses,
-          onChanged: (v) => setState(() => _deliveryAddress = v),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _saving ? null : _openCreateDeliveryAddress,
-            icon: const Icon(Icons.person_add_alt_outlined, size: 18),
-            label: const Text('Tambah konsumen baru'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDropdownField({
-    required ThemeData theme,
-    required String label,
-    required Map<String, dynamic>? value,
-    required List<Map<String, dynamic>> items,
-    required ValueChanged<Map<String, dynamic>?> onChanged,
-  }) {
-    return ModernDropdown<Map<String, dynamic>>(
-      value: value,
-      labelText: label,
-      hint: 'Pilih $label...',
-      isRequired: true,
-      items: items,
-      getLabel: (e) => e['name']?.toString() ?? '-',
-      onChanged: onChanged,
-    );
-  }
-
-  Widget _buildItemsSection(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Produk',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            Text(
-              'Total: ${FormatUtils.formatCurrency(_total)}',
-              style: theme.textTheme.titleSmall?.copyWith(
-                  color: AppColors.success, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        AppSpacing.gapVerticalSM,
-        ..._items.asMap().entries.map((entry) {
-          final i = entry.key;
-          final item = entry.value;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: _ItemRow(
-              item: item,
-              products: _products,
-              onChanged: (newItem) => setState(() => _items[i] = newItem),
-              onRemove: _items.length > 1
-                  ? () => setState(() => _items.removeAt(i))
-                  : null,
-            ),
-          );
-        }),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => setState(() => _items.add(_FormItem())),
-            icon: const Icon(Icons.add),
-            label: const Text('Tambah produk'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildImageSection(ThemeData theme) {
-    final hasImage = _imagePath != null || _uploadedImagePath != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Bukti Transfer (opsional)',
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        AppSpacing.gapVerticalSM,
-        if (hasImage)
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: AppSpacing.borderRadiusMD,
-                child: _imagePath != null
-                    ? Image.file(File(_imagePath!),
-                        height: 160, width: double.infinity, fit: BoxFit.cover)
-                    : Image.network(
-                        '$_uploadedImagePath',
-                        height: 160,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 160,
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: const Icon(Icons.image_not_supported_outlined),
+                            // Total summary strip
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer
+                                    .withValues(alpha: 0.35),
+                                borderRadius: AppSpacing.borderRadiusMD,
+                                border: Border.all(
+                                  color: colorScheme.primary
+                                      .withValues(alpha: 0.2),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.payments_outlined,
+                                          size: 18, color: colorScheme.primary),
+                                      AppSpacing.gapHorizontalSM,
+                                      Text(
+                                        'Total Nilai Penjualan',
+                                        style: textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Text(
+                                    FormatUtils.formatCurrency(_total),
+                                    style: textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-              ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton.filled(
-                  onPressed: _saving
-                      ? null
-                      : () => setState(() {
-                            _imagePath = null;
-                            _uploadedImagePath = null;
-                          }),
-                  icon: const Icon(Icons.close, size: 18),
-                  style: IconButton.styleFrom(
-                    backgroundColor: theme.colorScheme.error,
-                    foregroundColor: theme.colorScheme.onError,
-                  ),
-                ),
-              ),
-            ],
-          )
-        else
-          OutlinedButton.icon(
-            onPressed: _saving ? null : _pickImage,
-            icon: const Icon(Icons.upload_outlined),
-            label: const Text('Pilih Gambar'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ItemRow extends StatelessWidget {
-  final _FormItem item;
-  final List<Map<String, dynamic>> products;
-  final ValueChanged<_FormItem> onChanged;
-  final VoidCallback? onRemove;
-  const _ItemRow({
-    required this.item,
-    required this.products,
-    required this.onChanged,
-    this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final qtyCtrl = TextEditingController(text: '${item.quantity}');
-    final priceCtrl = TextEditingController(text: '${item.unitPrice}');
-    return Card(
-      child: Padding(
-        padding: AppSpacing.paddingSM,
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: ModernDropdown<int>(
-                    value: item.productId,
-                    labelText: 'Produk',
-                    hint: 'Pilih produk...',
-                    items: products.map((p) => p['id'] as int).toList(),
-                    getLabel: (v) {
-                      final p = products.firstWhere((e) => e['id'] == v,
-                          orElse: () => {});
-                      return '${p['name'] ?? ''} (${p['unit'] ?? ''})';
-                    },
-                    getSubtitle: (v) {
-                      final p = products.firstWhere((e) => e['id'] == v,
-                          orElse: () => {});
-                      return 'Rp ${p['price'] ?? 0}';
-                    },
-                    onChanged: (v) {
-                      if (v == null) return;
-                      final p = products.firstWhere((e) => e['id'] == v);
-                      onChanged(_FormItem(
-                        productId: v,
-                        productName: p['name']?.toString(),
-                        unit: p['unit']?.toString(),
-                        quantity: item.quantity,
-                        unitPrice: item.unitPrice,
-                      ));
-                    },
-                  ),
-                ),
-                if (onRemove != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  IconButton(
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline, size: 20),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: qtyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Qty',
-                      isDense: true,
-                      border: OutlineInputBorder(),
+                        AppSpacing.gapVerticalMD,
+                      ],
                     ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final n = int.tryParse(v) ?? 0;
-                      onChanged(_FormItem(
-                        productId: item.productId,
-                        productName: item.productName,
-                        unit: item.unit,
-                        quantity: n,
-                        unitPrice: item.unitPrice,
-                      ));
-                    },
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: priceCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Harga Satuan',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final n = int.tryParse(v) ?? 0;
-                      onChanged(_FormItem(
-                        productId: item.productId,
-                        productName: item.productName,
-                        unit: item.unit,
-                        quantity: item.quantity,
-                        unitPrice: n,
-                      ));
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
+      bottomNavigationBar: GlassContainer.bottomBar(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm + 4, AppSpacing.md, AppSpacing.lg),
+        child: ModernButton(
+          text: _isEdit ? 'Simpan Perubahan' : 'Simpan Penjualan',
+          onPressed: _saving ? null : _save,
+          isLoading: _saving,
+          icon: Icons.save_outlined,
         ),
       ),
     );

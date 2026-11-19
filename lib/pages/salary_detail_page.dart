@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/salary_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/safe_bottom_bar.dart';
 import 'salary_pay_page.dart';
 
@@ -181,7 +182,7 @@ class _SalaryDetailPageState extends State<SalaryDetailPage> {
         padding: AppSpacing.paddingMD,
         decoration: BoxDecoration(
           border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppSpacing.borderRadiusMD,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,14 +300,17 @@ class _SalaryDetailPageState extends State<SalaryDetailPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            label,
-            style: textTheme.bodyMedium?.copyWith(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          Expanded(
+            child: Text(
+              label,
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
+          AppSpacing.gapHorizontalSM,
           Text(
             value,
             style: textTheme.bodyMedium?.copyWith(
@@ -332,7 +336,9 @@ class _SalaryDetailPageState extends State<SalaryDetailPage> {
 
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Detail Gaji')),
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+        appBar: GlassAppBar(title: const Text('Detail Gaji')),
         body: Center(
           child: Padding(
             padding: AppSpacing.paddingLG,
@@ -362,7 +368,7 @@ class _SalaryDetailPageState extends State<SalaryDetailPage> {
     final DateTime periodDate = _resolvePeriodDate(salaryDetail!['period']);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

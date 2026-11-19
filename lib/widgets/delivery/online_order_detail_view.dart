@@ -351,21 +351,48 @@ class OnlineOrderDetailView extends StatelessWidget {
                   color: colorScheme.primary.withValues(alpha: 0.2),
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
                 children: [
-                  Text(
-                    'Total Nilai Order',
-                    style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  // Ongkos kirim ikut dirangkum total — tampil hanya bila
+                  // server mengirim field-nya (versi backend lama tanpa kolom
+                  // ini tidak mengirim apa-apa).
+                  if (order['shipping_cost'] != null) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Ongkos Kirim',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          provider.formatPrice(order['shipping_cost']),
+                          style: textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Text(
-                    provider.formatPrice(order['total_price']),
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.primary,
-                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total Nilai Order',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        provider.formatPrice(order['total_price']),
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

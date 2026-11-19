@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sagansa/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Kontrak `AuthService.canSell`: ber-role `sales` = boleh berjualan,
 /// termasuk `sales + former-employee` (sales eksternal, keputusan

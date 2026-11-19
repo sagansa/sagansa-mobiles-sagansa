@@ -12,8 +12,10 @@ import '../../../theme/app_spacing.dart';
 import '../../../utils/error_utils.dart';
 import '../../../widgets/app_page_scaffold.dart';
 import '../../../widgets/app_snackbar.dart';
+import '../../../widgets/documents/letter_action_sheet.dart';
 import '../../../widgets/documents/letter_thread_timeline.dart';
 import '../../../widgets/empty_state.dart';
+import '../../../widgets/safe_bottom_bar.dart';
 import '../../../widgets/status_badge.dart';
 import '../document_create_wizard.dart';
 import '../document_detail_page.dart';
@@ -129,8 +131,8 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
     try {
       await _service.markIncomingStatus(letter.id, next);
       if (!mounted) return;
-      showSuccessSnackBar(
-          context, 'Surat ditandai ${IncomingLetterModel.statusLabelOf(next)}.');
+      showSuccessSnackBar(context,
+          'Surat ditandai ${IncomingLetterModel.statusLabelOf(next)}.');
       await _loadDetail();
     } catch (e) {
       if (mounted) showErrorSnackBar(context, e);
@@ -315,6 +317,53 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
     if (mounted) _loadDetail();
   }
 
+  /// Buka tab Runutan dari header/Info — timeline balasan tidak lagi hanya
+  /// berada di tab terakhir yang jarang ditemukan.
+  void _openThreadTab() => _tabController.animateTo(3);
+
+  /// Bottom sheet aksi surat masuk — ikon + keterangan, aksi status hanya
+  /// muncul saat surat belum selesai.
+  Future<void> _openActions(IncomingLetterModel letter) async {
+    final value = await showLetterActionSheet(
+      context,
+      title: letter.agendaNumber,
+      subtitle: letter.subject,
+      actions: [
+        const LetterAction(
+          value: 'reply',
+          label: 'Balas surat ini',
+          description: 'Susun surat keluar sebagai balasan surat masuk ini.',
+          icon: Icons.reply_rounded,
+        ),
+        const LetterAction(
+          value: 'edit',
+          label: 'Ubah (penyuntingan menyusul)',
+          description: 'Penyuntingan surat masuk belum tersedia.',
+          icon: Icons.edit_note_rounded,
+          enabled: false,
+        ),
+        if (letter.status != 'selesai')
+          LetterAction(
+            value: 'status',
+            label: letter.status == 'terdaftar'
+                ? 'Tandai Diproses'
+                : 'Tandai Selesai',
+            description: letter.status == 'terdaftar'
+                ? 'Tandai surat sedang ditangani.'
+                : 'Tutup surat sebagai selesai diproses.',
+            icon: Icons.task_alt_rounded,
+          ),
+      ],
+    );
+    if (!mounted || value == null) return;
+    switch (value) {
+      case 'reply':
+        await _openReplyWizard();
+      case 'status':
+        await _advanceStatus();
+    }
+  }
+
   // ——— build ———
 
   @override
@@ -324,44 +373,19 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
       titleText: 'Detail Surat Masuk',
       bodyPadding: EdgeInsets.zero,
       actions: [
-        if (letter != null)
-          PopupMenuButton<String>(
+        // Menu aksi sebagai tombol ⋮ (tooltip "Aksi Surat Masuk") dengan
+        // bottom sheet berikon — aksi balas ditonjolkan di header, menu
+        // menyimpan aksi status.
+        if (letter != null && !_acting)
+          LetterActionMenuButton(
             tooltip: 'Aksi Surat Masuk',
-            enabled: !_acting,
-            onSelected: (value) {
-              switch (value) {
-                case 'reply':
-                  _openReplyWizard();
-                case 'status':
-                  _advanceStatus();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'reply',
-                child: Text('Balas surat ini'),
-              ),
-              // Penyuntingan surat masuk menyusul (fase berikutnya) —
-              // selalu nonaktif agar posisi menu stabil.
-              const PopupMenuItem(
-                value: 'edit',
-                enabled: false,
-                child: Text('Ubah (penyuntingan menyusul)'),
-              ),
-              if (letter.status != 'selesai')
-                PopupMenuItem(
-                  value: 'status',
-                  child: Text(
-                      letter.status == 'terdaftar'
-                          ? 'Tandai Diproses'
-                          : 'Tandai Selesai'),
-                ),
-            ],
+            onTap: () => _openActions(letter),
           ),
       ],
       body: SafeArea(
         top: true,
-        bottom: false,
+        // bottom: true — konten tab tidak tertutup home indicator.
+        bottom: true,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
@@ -383,6 +407,8 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
                           _buildHeader(context, letter),
                           TabBar(
                             controller: _tabController,
+                            // 4 tab — seluruh label utuh di lebar ponsel.
+                            isScrollable: false,
                             tabs: const [
                               Tab(text: 'Info'),
                               Tab(text: 'Scan'),
@@ -397,6 +423,7 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
                                 _InfoTab(
                                   letter: letter,
                                   dateFormatter: _dateFormatter,
+                                  onOpenThreadTab: _openThreadTab,
                                 ),
                                 _ScanTab(
                                   bytes: _scanBytes,
@@ -448,24 +475,120 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
   }
 
   Widget _buildHeader(BuildContext context, IncomingLetterModel letter) {
+    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final sender = letter.senderParty?.name ?? 'Pengirim tidak diketahui';
+    final meta = [
+      sender,
+      if (letter.receivedAt != null)
+        'Diterima ${_dateFormatter.format(letter.receivedAt!)}',
+    ].join(' • ');
+
     return Container(
       width: double.infinity,
-      color: Theme.of(context).colorScheme.surface,
-      padding: AppSpacing.paddingMD,
+      color: colorScheme.surface,
+      padding: AppSpacing.paddingHorizontalMD.copyWith(
+        top: AppSpacing.sm,
+        bottom: AppSpacing.sm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer.withValues(alpha: 0.6),
+                  borderRadius: AppSpacing.borderRadiusXS,
+                ),
+                child: Text(
+                  'MASUK',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  letter.agendaNumber,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              _buildStatusBadge(letter),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs + 2),
           Text(
-            letter.agendaNumber,
-            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            letter.subject,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              height: 1.3,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Row(
             children: [
+              Icon(Icons.inbox_outlined,
+                  size: 14, color: colorScheme.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  meta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
               _buildSifatBadge(letter),
               const SizedBox(width: AppSpacing.sm),
-              _buildStatusBadge(letter),
+              if (letter.numberExternal != null)
+                Expanded(
+                  child: Text(
+                    'No. eksternal: ${letter.numberExternal}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: _acting ? null : _openReplyWizard,
+                icon: const Icon(Icons.reply_rounded, size: 18),
+                label: const Text('Buat balasan'),
+              ),
+              TextButton.icon(
+                onPressed: _openThreadTab,
+                icon: const Icon(Icons.alt_route_rounded, size: 18),
+                label: const Text('Lihat runutan'),
+              ),
             ],
           ),
         ],
@@ -498,18 +621,19 @@ class _IncomingDetailPageState extends State<IncomingDetailPage>
 class _InfoTab extends StatelessWidget {
   final IncomingLetterModel letter;
   final DateFormat dateFormatter;
+  final VoidCallback onOpenThreadTab;
 
-  const _InfoTab({required this.letter, required this.dateFormatter});
+  const _InfoTab({
+    required this.letter,
+    required this.dateFormatter,
+    required this.onOpenThreadTab,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: AppSpacing.paddingMD,
       children: [
-        _section(context, 'Perihal', [
-          Text(letter.subject,
-              style: Theme.of(context).textTheme.bodyLarge),
-        ]),
         _section(context, 'Pengirim & tanggal', [
           _row(context, 'Pengirim', letter.senderParty?.name),
           _row(context, 'Alamat pengirim', letter.senderParty?.address),
@@ -530,16 +654,60 @@ class _InfoTab extends StatelessWidget {
           _row(context, 'Uraian lampiran', letter.attachmentsNote),
         ]),
         _scanIntegritySection(context),
+        _runutanSection(context),
         const SizedBox(height: AppSpacing.lg),
       ],
     );
   }
 
+  /// Ringkasan runutan di tab Info — surat masuk sering berbalas-balasan
+  /// dengan surat keluar; jumlah surat terkait ditampilkan di sini agar
+  /// tidak tersembunyi di tab Runutan.
+  Widget _runutanSection(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final nodes = letter.thread?.nodes ?? const <ThreadNodeModel>[];
+    final related = nodes.where(
+      (node) => node.id != letter.id || node.type != 'incoming_letter',
+    );
+
+    return _section(context, 'Runutan surat', [
+      if (nodes.length <= 1)
+        Text(
+          'Belum ada surat balasan atau tindak lanjut yang tertaut.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        )
+      else ...[
+        Text(
+          '${nodes.length} surat dalam satu runutan'
+          '${related.isEmpty ? '' : ' — termasuk ${related.length} surat terkait'}. '
+          'Buka runutan untuk melihat urutan lengkapnya.',
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            onPressed: onOpenThreadTab,
+            icon: const Icon(Icons.alt_route_rounded, size: 18),
+            label: const Text('Buka tab Runutan'),
+          ),
+        ),
+      ],
+    ]);
+  }
+
   /// Metadata integritas scan — sha256 pendek 8 karakter (full disalin via
   /// long-press, pola IssuanceTimeline) + ukuran + jumlah halaman.
   Widget _scanIntegritySection(BuildContext context) {
-    final hasMeta =
-        letter.scanSha256 != null || letter.scanSize != null || letter.scanPages != null;
+    final hasMeta = letter.scanSha256 != null ||
+        letter.scanSize != null ||
+        letter.scanPages != null;
     return _section(context, 'Integritas scan', [
       if (!hasMeta)
         Text(
@@ -563,23 +731,20 @@ class _InfoTab extends StatelessWidget {
                         await Clipboard.setData(
                             ClipboardData(text: letter.scanSha256!));
                         if (context.mounted) {
-                          showInfoSnackBar(
-                              context, 'SHA-256 lengkap disalin.');
+                          showInfoSnackBar(context, 'SHA-256 lengkap disalin.');
                         }
                       },
                 child: Text(
                   [
                     if (letter.scanSha256 != null)
                       'SHA-256 ${_shortHash(letter.scanSha256!)}',
-                    if (letter.scanSize != null)
-                      _formatBytes(letter.scanSize!),
-                    if (letter.scanPages != null)
-                      '${letter.scanPages} halaman',
+                    if (letter.scanSize != null) _formatBytes(letter.scanSize!),
+                    if (letter.scanPages != null) '${letter.scanPages} halaman',
                   ].join(' • '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
             ),
@@ -824,9 +989,7 @@ class _DispositionCard extends StatelessWidget {
                     ? colorScheme.surfaceContainerHighest
                     : colorScheme.secondaryContainer,
                 child: Icon(
-                  isCompleted
-                      ? Icons.check_rounded
-                      : Icons.assignment_outlined,
+                  isCompleted ? Icons.check_rounded : Icons.assignment_outlined,
                   size: 16,
                   color: isCompleted
                       ? colorScheme.onSurfaceVariant
@@ -850,8 +1013,8 @@ class _DispositionCard extends StatelessWidget {
                         if (disposition.createdAt != null)
                           'Dibuat ${dateFormatter.format(disposition.createdAt!.toLocal())}',
                       ].join(' • '),
-                      style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant),
+                      style: textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -964,8 +1127,8 @@ class _AddDispositionSheetState extends State<_AddDispositionSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = ErrorUtils.sanitize(e,
-            fallback: 'Gagal memuat daftar signer.');
+        _error =
+            ErrorUtils.sanitize(e, fallback: 'Gagal memuat daftar signer.');
         _loading = false;
       });
     }
@@ -989,7 +1152,11 @@ class _AddDispositionSheetState extends State<_AddDispositionSheet> {
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.viewInsetsOf(context);
     return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      // Keyboard + inset sistem bawah (home indicator / gesture bar) —
+      // tanpa inset sistem, tombol "Kirim Disposisi" tertutup.
+      padding: EdgeInsets.only(
+        bottom: viewInsets.bottom + context.systemBottomInset,
+      ),
       child: SingleChildScrollView(
         padding: AppSpacing.paddingMD,
         child: Column(
@@ -1058,8 +1225,7 @@ class _AddDispositionSheetState extends State<_AddDispositionSheet> {
                       ),
                     ),
                 ],
-                onChanged: (value) =>
-                    setState(() => _selected = value),
+                onChanged: (value) => setState(() => _selected = value),
                 decoration: const InputDecoration(
                   labelText: 'Penerima disposisi',
                   prefixIcon: Icon(Icons.how_to_reg_rounded),
@@ -1076,9 +1242,8 @@ class _AddDispositionSheetState extends State<_AddDispositionSheet> {
                   labelText: 'Instruksi disposisi',
                   hintText: 'Mis. Mohon dipelajari dan dipersiapkan '
                       'tanggapan sebelum rapat',
-                  errorText: _instructionMissing
-                      ? 'Instruksi wajib diisi.'
-                      : null,
+                  errorText:
+                      _instructionMissing ? 'Instruksi wajib diisi.' : null,
                   isDense: true,
                 ),
                 onChanged: (_) {

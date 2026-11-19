@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import '../services/user_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/modern_dropdown.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
+import '../widgets/safe_bottom_bar.dart';
 import 'admin_profile_detail_page.dart';
 
 class AdminProfileListPage extends StatefulWidget {
@@ -93,6 +97,32 @@ class _AdminProfileListPageState extends State<AdminProfileListPage> {
     await _loadData();
   }
 
+  void _openFilterSheet() {
+    FilterBottomSheet.show(
+      context,
+      title: 'Filter Status Profil',
+      fields: [
+        DropdownFilterField<String>(
+          label: 'Status',
+          value: _statusFilter,
+          options: const [
+            ('draft', 'Draft'),
+            ('submitted', 'Submitted'),
+            ('accepted', 'Diterima'),
+            ('reviewed', 'Direview'),
+            ('rejected', 'Ditolak'),
+          ],
+        ),
+      ],
+      onApply: (values) {
+        setState(() {
+          _statusFilter = values['Status'] as String?;
+        });
+        _loadData(reset: true);
+      },
+    );
+  }
+
   Color _statusColor(String? status, ColorScheme cs) {
     switch (status) {
       case 'submitted':
@@ -129,89 +159,111 @@ class _AdminProfileListPageState extends State<AdminProfileListPage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Kelola Profil'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _loadData(reset: true),
-            tooltip: 'Muat Ulang',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Container(
-            padding: AppSpacing.paddingMD,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              border: Border(
-                bottom: BorderSide(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
+          BarButtonCluster(actions: [
+            if (_statusFilter != null)
+              BarButtonSpec(
+                icon: Icons.filter_list_off,
+                tooltip: 'Hapus Filter',
+                onTap: () {
+                  setState(() => _statusFilter = null);
+                  _loadData(reset: true);
+                },
               ),
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter Status',
+              badgeCount: _statusFilter != null ? 1 : 0,
+              onTap: _openFilterSheet,
             ),
-            child: ModernDropdown<String?>(
-              value: _statusFilter,
-              labelText: 'Filter Status',
-              hint: 'Semua Status',
-              prefixIcon: const Icon(Icons.filter_alt_outlined, size: 20),
-              items: const [null, 'draft', 'submitted', 'accepted', 'reviewed', 'rejected'],
-              getLabel: (v) {
-                switch (v) {
-                  case 'draft': return 'Draft';
-                  case 'submitted': return 'Submitted';
-                  case 'accepted': return 'Diterima';
-                  case 'reviewed': return 'Direview';
-                  case 'rejected': return 'Ditolak';
-                  default: return 'Semua Status';
-                }
-              },
-              onChanged: (v) {
-                setState(() => _statusFilter = v);
-                _loadData(reset: true);
-              },
-            ),
-          ),
-          Expanded(
-            child: _buildBody(colorScheme, textTheme),
-          ),
+          ]),
         ],
       ),
+      body: _buildBody(colorScheme, textTheme),
     );
   }
 
   Widget _buildBody(ColorScheme colorScheme, TextTheme textTheme) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Padding(
+        padding: EdgeInsets.only(top: AppBarInsets.top(context)),
+        child: const Center(child: CircularProgressIndicator()),
+      );
     }
     if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: AppSpacing.paddingLG,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_errorMessage!, style: TextStyle(color: colorScheme.error)),
-              AppSpacing.gapVerticalMD,
-              ElevatedButton(
-                onPressed: () => _loadData(reset: true),
-                child: const Text('Coba Lagi'),
-              ),
-            ],
+      return Padding(
+        padding: EdgeInsets.only(top: AppBarInsets.top(context)),
+        child: Center(
+          child: Padding(
+            padding: AppSpacing.paddingLG,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(_errorMessage!, style: TextStyle(color: colorScheme.error)),
+                AppSpacing.gapVerticalMD,
+                ElevatedButton(
+                  onPressed: () => _loadData(reset: true),
+                  child: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
     if (_items.isEmpty) {
-      return const Center(child: Text('Belum ada data profil.'));
+      return Padding(
+        padding: EdgeInsets.only(top: AppBarInsets.top(context)),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.person_off_outlined,
+                size: 48,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+              AppSpacing.gapVerticalSM,
+              Text(
+                _statusFilter != null
+                    ? 'Tidak ada profil dengan status "${_statusText(_statusFilter)}".'
+                    : 'Belum ada data profil.',
+                style: textTheme.bodyMedium
+                    ?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+              if (_statusFilter != null) ...[
+                AppSpacing.gapVerticalSM,
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() => _statusFilter = null);
+                    _loadData(reset: true);
+                  },
+                  icon: const Icon(Icons.clear, size: 16),
+                  label: const Text('Hapus Filter'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: AppSpacing.paddingMD,
-      itemCount: _items.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
+    return RefreshIndicator(
+      onRefresh: () => _loadData(reset: true),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppBarInsets.top(context),
+          AppSpacing.md,
+          AppSpacing.md + context.systemBottomInset,
+        ),
+        itemCount: _items.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
         if (index == _items.length) {
           return const Padding(
             padding: EdgeInsets.all(AppSpacing.md),
@@ -284,6 +336,7 @@ class _AdminProfileListPageState extends State<AdminProfileListPage> {
           ),
         );
       },
+      ),
     );
   }
 }

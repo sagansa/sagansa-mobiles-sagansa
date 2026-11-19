@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Notifikasi (Android 13+). -->
@@ -22,6 +23,21 @@
       Lihat docs/play-policy-audit.md untuk justifikasi.
     -->
 
+    <!--
+      Geolocator dipakai hanya untuk lokasi one-shot saat app terbuka
+      (check-in presensi, alamat delivery, cek aset). Plugin geolocator
+      mendeklarasikan FOREGROUND_SERVICE_LOCATION + GeolocatorLocationService
+      di manifest library-nya yang otomatis ter-merge; keduanya dilepas di
+      sini supaya AAB final bebas permission itu (Play Console mewajibkan
+      deklarasi + video demo untuk FGS tipe location).
+
+      Saat modul tracking lokasi karyawan aktif: hapus kedua entri
+      tools:node="remove" di bawah dan deklarasikan ulang permission-nya.
+    -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
+        tools:node="remove" />
+
     <application
         android:label="Sagansa App"
         android:name="${applicationName}"
@@ -29,6 +45,9 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules">
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorLocationService"
+            tools:node="remove" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

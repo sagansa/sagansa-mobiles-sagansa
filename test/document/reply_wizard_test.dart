@@ -9,6 +9,7 @@ import 'package:sagansa/pages/documents/document_create_wizard.dart';
 import 'package:sagansa/services/document/document_models.dart';
 import 'package:sagansa/services/document/document_service.dart';
 import 'package:sagansa/services/document/incoming_models.dart';
+import 'package:sagansa/services/document/incoming_service.dart';
 
 /// Kontrak UI wizard mode balasan (Task 11 fase 1b):
 /// - banner "Membalas: {agenda} — {pengirim}" tampil sejak langkah 1 dan
@@ -22,6 +23,15 @@ import 'package:sagansa/services/document/incoming_models.dart';
 ///   → detail surat keluar baru menggantikan wizard.
 
 const _stType = LetterTypeModel(code: 'ST', name: 'Surat Tugas');
+
+/// Fake IncomingService — dialog "Lihat runutan" membuka Detail Surat yang
+/// memuat runutan secara eager; tanpa fake ini test memakai service asli
+/// (HTTP nyata) dan spinner tak pernah selesai (pumpAndSettle timeout).
+class _FakeIncomingService extends IncomingService {
+  @override
+  Future<ThreadModel> getThread(String rootType, String rootId) async =>
+      ThreadModel(rootType: rootType, rootId: rootId);
+}
 
 final _replyLetter = IncomingLetterModel(
   id: 'il-1',
@@ -190,6 +200,7 @@ Future<void> _pumpReplyWizard(
         service: service,
         replyTo: _replyLetter,
         fetchUrl: fetchUrl,
+        incomingService: _FakeIncomingService(),
       ),
     ),
   );

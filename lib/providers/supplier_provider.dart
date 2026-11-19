@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/supplier_model.dart';
 import '../services/supplier_service.dart';
+import '../utils/country_catalog.dart';
 
 @immutable
 class SupplierListState {
@@ -107,6 +108,12 @@ class SupplierFormState {
   final PostalCodeModel? selectedPostalCode;
   final BankModel? selectedBank;
 
+  /// Asal supplier: luar negeri memakai negara + kota bebas + bank LN,
+  /// domestik memakai cascade wilayah + bank lokal + QRIS.
+  final bool isForeign;
+  final Country? selectedCountry;
+  final String? currency;
+
   final bool isLoadingLookups;
   final bool isLoadingCities;
   final bool isLoadingDistricts;
@@ -135,6 +142,9 @@ class SupplierFormState {
     this.selectedSubdistrict,
     this.selectedPostalCode,
     this.selectedBank,
+    this.isForeign = false,
+    this.selectedCountry,
+    this.currency,
     this.isLoadingLookups = true,
     this.isLoadingCities = false,
     this.isLoadingDistricts = false,
@@ -167,6 +177,11 @@ class SupplierFormState {
     bool clearPostalCode = false,
     BankModel? selectedBank,
     bool clearBank = false,
+    bool? isForeign,
+    Country? selectedCountry,
+    bool clearCountry = false,
+    String? currency,
+    bool clearCurrency = false,
     bool? isLoadingLookups,
     bool? isLoadingCities,
     bool? isLoadingDistricts,
@@ -204,6 +219,10 @@ class SupplierFormState {
           ? null
           : (selectedPostalCode ?? this.selectedPostalCode),
       selectedBank: clearBank ? null : (selectedBank ?? this.selectedBank),
+      isForeign: isForeign ?? this.isForeign,
+      selectedCountry:
+          clearCountry ? null : (selectedCountry ?? this.selectedCountry),
+      currency: clearCurrency ? null : (currency ?? this.currency),
       isLoadingLookups: isLoadingLookups ?? this.isLoadingLookups,
       isLoadingCities: isLoadingCities ?? this.isLoadingCities,
       isLoadingDistricts: isLoadingDistricts ?? this.isLoadingDistricts,
@@ -235,6 +254,9 @@ class SupplierProvider extends ChangeNotifier {
   final nameController = TextEditingController();
   final noTelpController = TextEditingController();
   final addressController = TextEditingController();
+  final cityNameController = TextEditingController();
+  final bankNameController = TextEditingController();
+  final bankSwiftController = TextEditingController();
   final bankAccountNameController = TextEditingController();
   final bankAccountNoController = TextEditingController();
   final qrisController = TextEditingController();
@@ -261,6 +283,9 @@ class SupplierProvider extends ChangeNotifier {
     nameController.dispose();
     noTelpController.dispose();
     addressController.dispose();
+    cityNameController.dispose();
+    bankNameController.dispose();
+    bankSwiftController.dispose();
     bankAccountNameController.dispose();
     bankAccountNoController.dispose();
     qrisController.dispose();
@@ -268,11 +293,24 @@ class SupplierProvider extends ChangeNotifier {
   }
 
   void _onScroll() {
-    if (scrollController.position.pixels >=
-            scrollController.position.maxScrollExtent - 200 &&
+    // Guard: controller bisa belum attach (mis. saat build pertama /
+    // setelah dispose ListView) — akses .position langsung akan throw.
+    if (!scrollController.hasClients) return;
+    final pos = scrollController.position;
+    // Listener scroll bisa fire di tengah fase layout (ListView
+    // menyesuaikan extent saat data berubah). notifyListeners() di dalam
+    // loadMore() saat itu → "setState() called during build" berulang.
+    // Tunda ke post-frame agar selalu jalan di luar build/layout.
+    if (pos.pixels >= pos.maxScrollExtent - 200 &&
         !_list.isLoadingMore &&
         _list.hasMore) {
-      loadMore();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Cek ulang: state bisa berubah sebelum frame berikutnya jalan.
+        if (!scrollController.hasClients) return;
+        if (!_list.isLoadingMore && _list.hasMore) {
+          loadMore();
+        }
+      });
     }
   }
 
@@ -281,17 +319,6 @@ class SupplierProvider extends ChangeNotifier {
   // -------------------------------------------------------------------------
 
   Future<void> loadInitialSuppliers() async {
-    if (_list.searchQuery.isEmpty && _list.selectedStatus == null) {
-      _list = _list.copyWith(
-        suppliers: const [],
-        hasSearched: false,
-        clearError: true,
-        page: 1,
-      );
-      notifyListeners();
-      return;
-    }
-
     _list = _list.copyWith(
       isLoading: true,
       clearError: true,
@@ -358,13 +385,9 @@ class SupplierProvider extends ChangeNotifier {
   }
 
   Future<void> clearSearch() async {
-    _list = _list.copyWith(
-      searchQuery: '',
-      suppliers: const [],
-      hasSearched: false,
-      page: 1,
-    );
+    _list = _list.copyWith(searchQuery: '');
     notifyListeners();
+    await loadInitialSuppliers();
   }
 
   void setSearchVisible(bool visible) {
@@ -372,15 +395,13 @@ class SupplierProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void closeSearch() {
+  Future<void> closeSearch() async {
     _list = _list.copyWith(
       isSearchVisible: false,
       searchQuery: '',
-      suppliers: const [],
-      hasSearched: false,
-      page: 1,
     );
     notifyListeners();
+    await loadInitialSuppliers();
   }
 
   Future<void> setStatusFilter(int? status) async {
@@ -427,6 +448,16 @@ class SupplierProvider extends ChangeNotifier {
     bankAccountNameController.text = s.bankAccountName ?? '';
     bankAccountNoController.text = s.bankAccountNo ?? '';
     qrisController.text = s.qris ?? '';
+    if (s.isForeign) {
+      cityNameController.text = s.cityName ?? '';
+      bankNameController.text = s.bankName ?? '';
+      bankSwiftController.text = s.bankSwiftCode ?? '';
+      _form = _form.copyWith(
+        isForeign: true,
+        selectedCountry: s.country,
+        currency: s.currency,
+      );
+    }
   }
 
   Future<void> loadLookups() async {
@@ -569,6 +600,38 @@ class SupplierProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ganti asal supplier. Isian asal lain tidak dihapus di sini — pengguna
+  /// bisa berpindah segmen tanpa kehilangan ketikan; backend yang
+  /// mengosongkan field yang tidak berlaku saat disimpan.
+  void setForeign(bool foreign) {
+    if (_form.isForeign == foreign) return;
+    _form = _form.copyWith(isForeign: foreign);
+    notifyListeners();
+  }
+
+  /// Pilih negara; valuta default mengikuti negara selama belum diubah
+  /// manual (atau masih sama dengan default negara sebelumnya).
+  void setCountry(Country? country) {
+    final previousDefault = _form.selectedCountry?.currency;
+    final followsDefault =
+        _form.currency == null || _form.currency == previousDefault;
+    _form = _form.copyWith(
+      selectedCountry: country,
+      clearCountry: country == null,
+      currency: followsDefault ? country?.currency : null,
+      clearCurrency: followsDefault && country == null,
+    );
+    notifyListeners();
+  }
+
+  void setCurrency(String? currency) {
+    _form = _form.copyWith(
+      currency: currency,
+      clearCurrency: currency == null,
+    );
+    notifyListeners();
+  }
+
   Future<void> setSelectedProvince(ProvinceModel? province) async {
     _form = _form.copyWith(
       selectedProvince: province,
@@ -661,8 +724,6 @@ class SupplierProvider extends ChangeNotifier {
       return;
     }
 
-    if (editingSupplier == null) return;
-
     _form = _form.copyWith(
       qrisValidating: true,
       clearQrisMerchant: true,
@@ -671,7 +732,7 @@ class SupplierProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _service.validateQris(editingSupplier!.id, qrisText);
+      final result = await _service.validateQris(qrisText);
       _form = _form.copyWith(
         qrisMerchantName: result['merchant_name'] as String?,
         qrisNmid: result['merchant_nmid'] as String?,
@@ -685,31 +746,41 @@ class SupplierProvider extends ChangeNotifier {
     }
   }
 
+  /// Payload create/update. Field opsional yang dikosongkan dikirim sebagai
+  /// string kosong (bukan null, yang dibuang [SupplierService]) agar server
+  /// (`ConvertEmptyStringsToNull`) benar-benar menghapus nilai lamanya.
   Map<String, dynamic> buildPayload() {
+    String text(TextEditingController c) => c.text.trim();
+
+    final common = <String, dynamic>{
+      'name': text(nameController),
+      'no_telp': text(noTelpController),
+      'address': text(addressController),
+      'bank_account_name': text(bankAccountNameController),
+      'bank_account_no': text(bankAccountNoController),
+    };
+
+    if (_form.isForeign) {
+      return {
+        ...common,
+        'country_code': _form.selectedCountry!.code,
+        'city_name': text(cityNameController),
+        'currency': _form.currency ?? '',
+        'bank_name': text(bankNameController),
+        'bank_swift_code': text(bankSwiftController).toUpperCase(),
+      };
+    }
+
     return {
-      'name': nameController.text.trim(),
-      'no_telp': noTelpController.text.trim().isEmpty
-          ? null
-          : noTelpController.text.trim(),
-      'address': addressController.text.trim(),
+      ...common,
+      'country_code': CountryCatalog.indonesia.code,
       'province_id': _form.selectedProvince!.id,
       'city_id': _form.selectedCity!.id,
-      if (_form.selectedDistrict != null)
-        'district_id': _form.selectedDistrict!.id,
-      if (_form.selectedSubdistrict != null)
-        'subdistrict_id': _form.selectedSubdistrict!.id,
-      if (_form.selectedPostalCode != null)
-        'postal_code_id': _form.selectedPostalCode!.id,
-      if (_form.selectedBank != null) 'bank_id': _form.selectedBank!.id,
-      'bank_account_name': bankAccountNameController.text.trim().isEmpty
-          ? null
-          : bankAccountNameController.text.trim(),
-      'bank_account_no': bankAccountNoController.text.trim().isEmpty
-          ? null
-          : bankAccountNoController.text.trim(),
-      'qris': qrisController.text.trim().isEmpty
-          ? null
-          : qrisController.text.trim(),
+      'district_id': _form.selectedDistrict?.id ?? '',
+      'subdistrict_id': _form.selectedSubdistrict?.id ?? '',
+      'postal_code_id': _form.selectedPostalCode?.id ?? '',
+      'bank_id': _form.selectedBank?.id ?? '',
+      'qris': text(qrisController),
     };
   }
 

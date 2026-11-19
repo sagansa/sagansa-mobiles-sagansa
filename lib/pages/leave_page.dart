@@ -6,10 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/leave_model.dart';
 import '../services/leave_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/snackbar_utils.dart';
 import '../widgets/approval_action_buttons.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/leave_detail_bottom_sheet.dart';
 import '../widgets/leave_stats_header.dart';
 import '../widgets/modern_bottom_nav.dart';
@@ -214,7 +216,7 @@ class LeavePageState extends State<LeavePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Tolak pengajuan cuti dari ${leave.createdBy.name}?'),
-            const SizedBox(height: 16),
+            AppSpacing.gapVerticalMD,
             TextField(
               controller: notesController,
               decoration: const InputDecoration(
@@ -232,7 +234,7 @@ class LeavePageState extends State<LeavePage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
+            style: AppButtonStyle.filled(
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
@@ -286,17 +288,16 @@ class LeavePageState extends State<LeavePage> {
     final rejectedCount = _leaves.where((l) => l.status == 3).length;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Cuti & Izin'),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadLeaves,
-          ),
-        ],
       ),
-      body: Column(
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
         children: [
           // Header Stats summary
           LeaveStatsHeader(
@@ -321,6 +322,7 @@ class LeavePageState extends State<LeavePage> {
                         : _buildListWidget(),
           ),
         ],
+      ),
       ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 1,
@@ -393,7 +395,8 @@ class LeavePageState extends State<LeavePage> {
       onRefresh: _loadLeaves,
       child: ListView.builder(
         controller: _scrollController,
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD
+            .copyWith(bottom: ModernBottomNav.clearance(context)),
         itemCount: _leaves.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _leaves.length) {
@@ -460,8 +463,7 @@ class LeavePageState extends State<LeavePage> {
                     backgroundColor: colorScheme.primaryContainer,
                     child: Text(
                       initials,
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colorScheme.onPrimaryContainer,
                       ),
@@ -498,7 +500,7 @@ class LeavePageState extends State<LeavePage> {
                     ),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: AppSpacing.borderRadiusLG,
                       border: Border.all(
                         color: statusColor.withValues(alpha: 0.3),
                       ),
@@ -508,7 +510,6 @@ class LeavePageState extends State<LeavePage> {
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: statusColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 11,
                       ),
                     ),
                   ),
@@ -535,21 +536,20 @@ class LeavePageState extends State<LeavePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppSpacing.borderRadiusMD,
                     ),
                     child: Text(
                       leave.durationText,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.bold,
-                        fontSize: 10,
                       ),
                     ),
                   ),
                 ],
               ),
               if (leave.notes != null && leave.notes.toString().isNotEmpty) ...[
-                const SizedBox(height: 8),
+                AppSpacing.gapVerticalSM,
                 Text(
                   leave.notes.toString(),
                   style: theme.textTheme.bodySmall?.copyWith(

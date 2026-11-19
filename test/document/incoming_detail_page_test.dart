@@ -401,6 +401,9 @@ void main() {
     final service = _FakeIncomingService(_letter());
     await _pumpDetail(tester, service: service);
 
+    // TabBar scrollable — tab terakhir di luar viewport; gulir dulu.
+    await tester.ensureVisible(find.text('Runutan'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Runutan'));
     await tester.pumpAndSettle();
 
@@ -439,10 +442,11 @@ void main() {
     await tester.tap(find.byTooltip('Aksi Surat Masuk'));
     await tester.pumpAndSettle();
 
-    // Ubah selalu nonaktif (penyuntingan menyusul).
-    final editItem = tester.widget<PopupMenuItem<String>>(
-        find.byType(PopupMenuItem<String>).at(1));
-    expect(editItem.enabled, isFalse);
+    // Menu ⋮ kini bottom sheet aksi (bukan PopupMenu). "Ubah" tetap
+    // tampil (nonaktif — penyuntingan menyusul); ketuk tidak menutup
+    // sheet maupun menavigasi.
+    expect(find.text('Ubah (penyuntingan menyusul)'), findsOneWidget);
+    expect(find.text('Tandai Diproses'), findsOneWidget);
 
     await tester.tap(find.text('Tandai Diproses'));
     await tester.pumpAndSettle();

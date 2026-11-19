@@ -10,6 +10,8 @@ import 'package:sagansa/pages/documents/document_detail_page.dart';
 import 'package:sagansa/pages/documents/signing_task_page.dart';
 import 'package:sagansa/services/document/document_models.dart';
 import 'package:sagansa/services/document/document_service.dart';
+import 'package:sagansa/services/document/incoming_models.dart';
+import 'package:sagansa/services/document/incoming_service.dart';
 import 'package:sagansa/widgets/documents/issuance_timeline.dart';
 
 /// Kontrak UI task 22: DocumentDetailPage (tab Info/Terbitan + aksi sesuai
@@ -174,13 +176,26 @@ class _FakeSigningService extends DocumentService {
   }
 }
 
+/// Fake IncomingService — detail kini memuat runutan secara eager saat
+/// dibuka; tanpa fake ini test memakai service asli (HTTP nyata) dan
+/// spinner runutan tak pernah selesai (pumpAndSettle timeout).
+class _FakeIncomingService extends IncomingService {
+  @override
+  Future<ThreadModel> getThread(String rootType, String rootId) async =>
+      ThreadModel(rootType: rootType, rootId: rootId);
+}
+
 Future<void> _pumpDetail(WidgetTester tester, DocumentService service) async {
   await initializeDateFormatting('id_ID');
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3.0;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(
-    home: DocumentDetailPage(documentId: 'doc-1', service: service),
+    home: DocumentDetailPage(
+      documentId: 'doc-1',
+      service: service,
+      incomingService: _FakeIncomingService(),
+    ),
   ));
   await tester.pumpAndSettle();
 }
@@ -204,7 +219,16 @@ void main() {
 
     // Tab Info (default): metadata ramah + penandatangan + lampiran.
     expect(find.text('Kuasa pengurusan pajak'), findsOneWidget);
+    // Header baru lebih ringkas — seksi penerima Info di bawah lipatan.
+    await tester.scrollUntilVisible(find.text('PT Mitra Jaya'), 200,
+        scrollable: find
+              .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+              .first);
     expect(find.text('PT Mitra Jaya'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Andi Saputra'), 200,
+        scrollable: find
+              .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+              .first);
     expect(find.text('Andi Saputra'), findsOneWidget);
     // Bagian bawah (penandatangan/lampiran) di bawah lipatan — scroll.
     await tester.scrollUntilVisible(find.text('Budi Komisaris'), 200,
@@ -225,9 +249,11 @@ void main() {
               .first);
     expect(find.textContaining('Daftar Hadir'), findsOneWidget);
 
-    // Tab Terbitan: timeline.
-    await tester.tap(find.text('Terbitan'));
-    await tester.pumpAndSettle();
+    // Riwayat penerbitan kini seksi di tab Info (eks-tab Terbitan).
+    await tester.scrollUntilVisible(find.text('Riwayat penerbitan'), 200,
+        scrollable: find
+              .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+              .first);
     expect(find.text('Berlaku'), findsOneWidget);
     expect(find.text('Digantikan'), findsOneWidget);
     expect(find.textContaining('Salah isi penerima'), findsOneWidget);
@@ -263,8 +289,9 @@ void main() {
     expect(find.text('Batalkan surat'), findsOneWidget);
   });
 
-  testWidgets('menu aksi KUA draft: Edit + Batalkan, tanpa Cabut/Terbitkan '
-      'ulang; isi draf tampil di tab Info', (tester) async {
+  testWidgets('menu aksi KUA draft: Edit + Hapus, TANPA Batalkan (draf '
+      'cukup dihapus), tanpa Cabut/Terbitkan ulang; isi draf di Info',
+      (tester) async {
     final draftService = _FakeDetailService(DocumentModel(
       id: 'doc-draft',
       status: 'draft',
@@ -276,7 +303,10 @@ void main() {
     await _pumpDetail(tester, draftService);
     await _openMenu(tester);
     expect(find.text('Edit'), findsOneWidget);
-    expect(find.text('Batalkan surat'), findsOneWidget);
+    expect(find.text('Hapus draf…'), findsOneWidget);
+    // Koreksi review: draft TIDAK menawarkan "Batalkan surat" — cukup
+    // hapus; Batalkan hanya untuk menunggu_ttd/terbit.
+    expect(find.text('Batalkan surat'), findsNothing);
     expect(find.text('Cabut kuasa'), findsNothing);
     expect(find.text('Terbitkan ulang…'), findsNothing);
 
@@ -541,7 +571,8 @@ void main() {
 
     // Langkah 2 (Formulir) — jenis & sumber terkunci karena draf ada.
     expect(find.text('Langkah 2 dari 6 — Formulir'), findsOneWidget);
-    expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
+    // Ikon draf-tersimpan kini juga muncul di indikator autosave editor.
+    expect(find.byIcon(Icons.cloud_done_outlined), findsAtLeastNWidgets(1));
 
     // Prefill perihal + unit + penerima dari metadata.
     expect(find.text('Kuasa pengurusan dokumen'), findsOneWidget);

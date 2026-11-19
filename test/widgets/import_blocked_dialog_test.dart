@@ -44,6 +44,19 @@ void main() {
     expect(find.textContaining('Bukti Pembayaran'), findsOneWidget);
     expect(find.text('Lanjut Tanpa Dokumen'), findsOneWidget);
 
+    // Hierarki: Tutup = aksi utama (filled); bypass = sekunder peringatan
+    // (outlined merah), bukan tombol utama.
+    expect(
+      find.widgetWithText(OutlinedButton, 'Lanjut Tanpa Dokumen'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(FilledButton, 'Tutup'), findsOneWidget);
+
+    await expectLater(
+      find.byType(AlertDialog),
+      matchesGoldenFile('goldens/import_blocked_dialog_light.png'),
+    );
+
     await tester.tap(find.text('Lanjut Tanpa Dokumen'));
     await tester.pumpAndSettle();
     expect(bypassed, isTrue);

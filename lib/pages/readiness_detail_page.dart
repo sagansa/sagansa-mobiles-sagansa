@@ -4,7 +4,8 @@ import '../models/readiness_model.dart';
 import '../services/readiness_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/image_preview_dialog.dart';
+import '../widgets/detail/detail_image_view.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/status_badge.dart';
 
 /// Detail kesiapan diri dengan navigasi geser (kiri/kanan) antar data.
@@ -96,7 +97,9 @@ class _ReadinessDetailPageState extends State<ReadinessDetailPage> {
         if (!didPop) Navigator.pop(context, _hasChanged);
       },
       child: Scaffold(
-        appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+        appBar: GlassAppBar(
           title: const Text('Detail Kesiapan Diri'),
           actions: [
             Padding(
@@ -190,34 +193,22 @@ class _ReadinessDetailPageState extends State<ReadinessDetailPage> {
             style: tt.labelMedium
                 ?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.bold)),
         const SizedBox(height: AppSpacing.xs),
-        ClipRRect(
-          borderRadius: AppSpacing.borderRadiusMD,
-          child: url == null
-              ? Container(
+        url == null
+            ? ClipRRect(
+                borderRadius: AppSpacing.borderRadiusMD,
+                child: Container(
                   height: height,
                   width: double.infinity,
                   color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
                   child: Center(
                       child: Icon(icon, size: 40, color: AppColors.info)),
-                )
-              : GestureDetector(
-                  onTap: () =>
-                      ImagePreviewDialog.show(context, url, title: label),
-                  child: Image.network(
-                    url,
-                    height: height,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: height,
-                      width: double.infinity,
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                      child: Center(
-                          child: Icon(icon, size: 40, color: AppColors.info)),
-                    ),
-                  ),
                 ),
-        ),
+              )
+            : DetailImageView(
+                imageUrl: url,
+                height: height,
+                previewTitle: label,
+              ),
       ],
     );
   }

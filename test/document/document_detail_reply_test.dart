@@ -164,7 +164,9 @@ void main() {
     final incoming = _FakeThreadIncomingService();
     await _pumpDetail(tester, service: service, incoming: incoming);
 
-    expect(find.text('020/ST/DIR/X/2026'), findsOneWidget);
+    // Nomor tampil di header; header baru juga menampilkan pratinjau
+    // runutan yang memuat nomor node ini — bisa lebih dari satu.
+    expect(find.text('020/ST/DIR/X/2026'), findsAtLeastNWidgets(1));
     expect(find.text('Membalas: SM-017/X/2026'), findsOneWidget);
 
     await tester.tap(find.text('Membalas: SM-017/X/2026'));
@@ -181,9 +183,11 @@ void main() {
     final incoming = _FakeThreadIncomingService();
     await _pumpDetail(tester, service: service, incoming: incoming);
 
-    expect(incoming.threadCalls, 0, reason: 'malas — termuat saat tab dibuka');
+    // Detail kini memuat runutan secara EAGER saat dibuka (pratinjau
+    // header) — bukan malas seperti fase 1b.
+    expect(incoming.threadCalls, 1, reason: 'eager saat detail dibuka');
 
-    await tester.tap(find.text('Runutan'));
+    await tester.tap(find.byType(Tab).last);
     await tester.pumpAndSettle();
 
     expect(incoming.threadCalls, 1);
@@ -206,7 +210,7 @@ void main() {
     final incoming = _FakeThreadIncomingService();
     await _pumpDetail(tester, service: service, incoming: incoming);
 
-    await tester.tap(find.text('Runutan'));
+    await tester.tap(find.byType(Tab).last);
     await tester.pumpAndSettle();
     final detailCallsBefore = service.detailIds.length;
     final threadCallsBefore = incoming.threadCalls;

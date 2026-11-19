@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 /// 3-tab stage fixed: Request | Invoice | Payment.
-/// Menggantikan 4-perspektif tab di versi lama.
 ///
 /// Index:
-///   0 = Request (warna orange #FF9800)
-///   1 = Invoice (warna biru #2196F3)
-///   2 = Payment (warna ungu #9C27B0)
+///   0 = Request
+///   1 = Invoice
+///   2 = Payment
 class ProcurementStageTabs extends StatelessWidget {
   final int activeStage;
   final int requestCount;
@@ -24,22 +24,30 @@ class ProcurementStageTabs extends StatelessWidget {
   });
 
   static const _stageColors = [
-    Color(0xFFFF9800), // orange - Request
-    Color(0xFF2196F3), // blue   - Invoice
-    Color(0xFF9C27B0), // purple - Payment
+    AppColors.warning, // amber - Request
+    AppColors.info,    // muted blue - Invoice
+    AppColors.success, // green - Payment
   ];
 
   static const _stageLabels = ['Request', 'Invoice', 'Payment'];
-  static const _stageEmojis = ['📋', '🧾', '💳'];
+  static const _stageIcons = [
+    Icons.shopping_bag_outlined,
+    Icons.receipt_long_outlined,
+    Icons.payments_outlined,
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: cs.surface,
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: cs.outlineVariant.withValues(alpha: 0.3),
+            width: 1,
           ),
         ),
       ),
@@ -50,57 +58,64 @@ class ProcurementStageTabs extends StatelessWidget {
   }
 
   Widget _buildTab(BuildContext context, int index) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final isActive = activeStage == index;
-    final color = _stageColors[index];
+    final stageColor = _stageColors[index];
     final count = [requestCount, invoiceCount, paymentCount][index];
 
     return Expanded(
-      child: InkWell(
-        onTap: () => onTabTap?.call(index),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isActive ? color : Colors.transparent,
-                width: 2,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onTabTap?.call(index),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: isActive ? stageColor : Colors.transparent,
+                  width: 2.5,
+                ),
               ),
             ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_stageEmojis[index], style: const TextStyle(fontSize: 12)),
-              const SizedBox(width: 4),
-              Text(
-                _stageLabels[index],
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  color: isActive
-                      ? color
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _stageIcons[index],
+                  size: 15,
+                  color: isActive ? stageColor : cs.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? color
-                      : Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: isActive ? Colors.white : Theme.of(context).colorScheme.onSurfaceVariant,
+                const SizedBox(width: 5),
+                Text(
+                  _stageLabels[index],
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                    color: isActive ? stageColor : cs.onSurfaceVariant,
+                    letterSpacing: 0.1,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? stageColor.withValues(alpha: 0.15)
+                        : cs.surfaceContainerHighest.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: isActive ? stageColor : cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

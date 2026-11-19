@@ -1,5 +1,5 @@
 import 'dart:developer' as developer;
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
 
 /// Helper logging terpusat yang release-aware.
 ///
@@ -31,6 +31,9 @@ class AppLogger {
   /// Log level debug. No-op di release build.
   static void debug(String message, {Object? error, StackTrace? stack}) {
     if (kReleaseMode) return;
+    // debugPrint: developer.log tidak muncul di adb logcat — cermin ke
+    // logcat agar debugging perangkat/emulator bisa dari satu tempat.
+    debugPrint('[sagansa] $message');
     if (error != null) {
       developer.log(message, error: error, stackTrace: stack, name: 'sagansa.debug');
     } else {

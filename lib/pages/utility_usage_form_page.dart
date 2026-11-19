@@ -1,17 +1,19 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
+
 
 import '../models/utility_usage_model.dart';
+import '../services/image_service.dart';
 import '../services/image_upload_service.dart';
 import '../services/presence_service.dart';
 import '../services/utility_usage_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../utils/image_utils.dart';
-import '../widgets/glass_container.dart';
-import '../widgets/modern_bottom_nav.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/safe_bottom_bar.dart';
@@ -218,16 +220,13 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
 
   Future<void> _pickPhoto(int utilityId) async {
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
+      final photo = await ImageService.pickAndResizeImage(
         source: ImageSource.camera,
-        imageQuality: 75,
       );
-      if (picked == null) return;
+      if (photo == null) return;
 
-      final compressed = await ImageUtils.compressImage(picked.path);
       setState(() {
-        _meterPhotos[utilityId] = compressed;
+        _meterPhotos[utilityId] = photo;
         _uploadedPhotoPaths.remove(utilityId);
       });
     } catch (e) {
@@ -315,13 +314,12 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isEditing
-              ? 'Pemakaian utility berhasil diperbarui.'
-              : 'Pemakaian utility berhasil ditambahkan.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        isEditing
+            ? 'Pemakaian utility berhasil diperbarui.'
+            : 'Pemakaian utility berhasil ditambahkan.',
+        background: AppColors.success,
       );
       Navigator.pop(context, true);
     } catch (e) {
@@ -356,7 +354,10 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(isEditing ? 'Edit Pemakaian' : 'Tambah Pemakaian'),
       ),
       body: _isLoadingLookups
@@ -366,9 +367,9 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
               child: ListView(
                 padding: EdgeInsets.fromLTRB(
                     AppSpacing.md,
+                    AppBarInsets.top(context) + AppSpacing.md,
                     AppSpacing.md,
-                    AppSpacing.md,
-                    ModernBottomNav.height + context.systemBottomInset),
+                    AppSpacing.xl * 2),
                 children: [
                   _buildStoreSection(theme, colorScheme),
                   if (!isEditing && _selectedStore != null) ...[
@@ -403,33 +404,22 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
   }
 
   Widget _buildStoreSection(ThemeData theme, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('Toko', Icons.store_rounded, colorScheme),
-        AppSpacing.gapVerticalSM,
-        Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: AppSpacing.borderRadiusLG,
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-            ),
-          ),
-          child: ModernDropdown<Map<String, dynamic>>(
-            value: _selectedStore,
-            labelText: 'Toko',
-            hint: 'Pilih toko...',
-            isRequired: true,
-            prefixIcon: const Icon(Icons.storefront, size: 20),
-            items: _stores,
-            getLabel: (s) => s['nickname']?.toString() ?? 'Toko #${s['id']}',
-            getSubtitle: (s) => s['address']?.toString() ?? '',
-            onChanged: (val) => _onStoreChanged(val),
-            validator: (v) => v == null ? 'Toko wajib dipilih' : null,
-          ),
-        ),
-      ],
+    return FormSectionCard(
+      title: 'Toko',
+      subtitle: 'Pilih cabang operasional utility',
+      icon: Icons.store_rounded,
+      child: ModernDropdown<Map<String, dynamic>>(
+        value: _selectedStore,
+        labelText: 'Toko',
+        hint: 'Pilih toko...',
+        isRequired: true,
+        prefixIcon: const Icon(Icons.storefront, size: 20),
+        items: _stores,
+        getLabel: (s) => s['nickname']?.toString() ?? 'Toko #${s['id']}',
+        getSubtitle: (s) => s['address']?.toString() ?? '',
+        onChanged: (val) => _onStoreChanged(val),
+        validator: (v) => v == null ? 'Toko wajib dipilih' : null,
+      ),
     );
   }
 
@@ -455,8 +445,7 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
           const Spacer(),
           Text(
             '$filled dari $total terisi',
-            style: TextStyle(
-              fontSize: 13,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
@@ -481,10 +470,9 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
             ? Icon(Icons.check, size: 18, color: colorScheme.onPrimary)
             : Text(
                 '$index',
-                style: TextStyle(
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
                 ),
               ),
       ),
@@ -498,7 +486,7 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(1),
+        borderRadius: AppSpacing.borderRadiusXS,
       ),
     );
   }
@@ -508,35 +496,26 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
     final cat = _categories.firstWhere((c) => c['id'] == categoryId);
     final items = _getCategory(categoryId);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(
-          cat['label'] as String,
-          cat['icon'] as IconData,
-          colorScheme,
-        ),
-        AppSpacing.gapVerticalSM,
-        ...items.map((u) {
-          final id = _storeId(u);
-          final controller = _resultControllers[id]!;
-          final prevReading = _previousReadings[id];
-          final hasPhoto = _meterPhotos.containsKey(id);
-
-          return Padding(
-            padding:
-                EdgeInsets.only(bottom: items.last == u ? 0 : AppSpacing.sm),
-            child: _buildMeterCard(
-              utility: u,
-              controller: controller,
-              prevReading: prevReading,
-              hasPhoto: hasPhoto,
-              utilityId: id,
+    return FormSectionCard(
+      title: cat['label'] as String,
+      subtitle:
+          'Pencatatan indikator meter ${cat['label'].toString().toLowerCase()}',
+      icon: cat['icon'] as IconData,
+      child: Column(
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            _buildMeterCard(
+              utility: items[i],
+              controller: _resultControllers[_storeId(items[i])]!,
+              prevReading: _previousReadings[_storeId(items[i])],
+              hasPhoto: _meterPhotos.containsKey(_storeId(items[i])),
+              utilityId: _storeId(items[i]),
               colorScheme: colorScheme,
             ),
-          );
-        }),
-      ],
+            if (i < items.length - 1) AppSpacing.gapVerticalSM,
+          ],
+        ],
+      ),
     );
   }
 
@@ -570,8 +549,8 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: AppSpacing.borderRadiusLG,
+        color: colorScheme.surfaceContainerLowest,
+        borderRadius: AppSpacing.borderRadiusMD,
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
@@ -599,16 +578,14 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
                         ),
                       ),
                       if (unit.isNotEmpty)
                         Text(
                           'Satuan: $unit',
-                          style: TextStyle(
-                            fontSize: 12,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
@@ -630,8 +607,7 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
                   AppSpacing.gapHorizontalXS,
                   Text(
                     'Lalu: ${_formatNumber(prevReading)} $unit',
-                    style: TextStyle(
-                      fontSize: 12,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -648,21 +624,18 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
                   child: TextFormField(
                     controller: controller,
                     keyboardType: TextInputType.number,
-                    style: TextStyle(
-                      fontSize: 18,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colorScheme.onSurface,
                     ),
                     decoration: InputDecoration(
                       hintText: '0',
-                      hintStyle: TextStyle(
-                        fontSize: 18,
+                      hintStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color:
                             colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                       labelText: 'Angka meter',
-                      labelStyle: TextStyle(
-                        fontSize: 13,
+                      labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
                       suffixText: unit.isNotEmpty ? unit : null,
@@ -801,8 +774,7 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
           ),
           Text(
             'Toko ini belum memiliki utility yang aktif',
-            style: TextStyle(
-              fontSize: 13,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
@@ -812,112 +784,80 @@ class _UtilityUsageFormPageState extends State<UtilityUsageFormPage> {
   }
 
   Widget _buildEditModeFields(ThemeData theme, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(
-            'Utility', Icons.electrical_services_rounded, colorScheme),
-        AppSpacing.gapVerticalSM,
-        Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: AppSpacing.borderRadiusLG,
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+    return FormSectionCard(
+      title: 'Utility',
+      subtitle: 'Pilih jenis utility dan perbarui angka meter',
+      icon: Icons.electrical_services_rounded,
+      child: Column(
+        children: [
+          ModernDropdown<Map<String, dynamic>>(
+            value: _selectedUtility,
+            labelText: 'Utility',
+            hint: _selectedStore == null
+                ? 'Pilih toko dulu'
+                : 'Pilih utility...',
+            isRequired: true,
+            enabled: _selectedStore != null,
+            prefixIcon: const Icon(Icons.electrical_services, size: 20),
+            items: _filteredUtilities,
+            getLabel: (u) =>
+                '${u['utility_name'] ?? 'Utility #${u['id']}'}${u['unit'] != null ? ' (${u['unit']})' : ''}',
+            onChanged: (val) => setState(() => _selectedUtility = val),
+            validator: (v) => v == null ? 'Utility wajib dipilih' : null,
+          ),
+          if (_selectedUtility != null) ...[
+            AppSpacing.gapVerticalMD,
+            _buildMeterCard(
+              utility: _selectedUtility!,
+              controller: _resultCtrl,
+              prevReading: null,
+              hasPhoto: false,
+              utilityId: _storeId(_selectedUtility!),
+              colorScheme: colorScheme,
             ),
-          ),
-          child: Column(
-            children: [
-              ModernDropdown<Map<String, dynamic>>(
-                value: _selectedUtility,
-                labelText: 'Utility',
-                hint: _selectedStore == null
-                    ? 'Pilih toko dulu'
-                    : 'Pilih utility...',
-                isRequired: true,
-                enabled: _selectedStore != null,
-                prefixIcon: const Icon(Icons.electrical_services, size: 20),
-                items: _filteredUtilities,
-                getLabel: (u) =>
-                    '${u['utility_name'] ?? 'Utility #${u['id']}'}${u['unit'] != null ? ' (${u['unit']})' : ''}',
-                onChanged: (val) => setState(() => _selectedUtility = val),
-                validator: (v) => v == null ? 'Utility wajib dipilih' : null,
-              ),
-            ],
-          ),
-        ),
-        if (_selectedUtility != null) ...[
-          AppSpacing.gapVerticalMD,
-          _buildMeterCard(
-            utility: _selectedUtility!,
-            controller: _resultCtrl,
-            prevReading: null,
-            hasPhoto: false,
-            utilityId: _storeId(_selectedUtility!),
-            colorScheme: colorScheme,
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
   Widget _buildNotesSection(ThemeData theme, ColorScheme colorScheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('Catatan', Icons.notes_rounded, colorScheme),
-        AppSpacing.gapVerticalSM,
-        Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: AppSpacing.borderRadiusLG,
-            border: Border.all(
+    return FormSectionCard(
+      title: 'Catatan',
+      subtitle: 'Keterangan tambahan pemakaian (opsional)',
+      icon: Icons.notes_rounded,
+      child: TextFormField(
+        controller: _notesCtrl,
+        maxLines: 3,
+        decoration: InputDecoration(
+          hintText: 'Tulis catatan pemakaian jika ada...',
+          filled: true,
+          fillColor: colorScheme.surfaceContainerLowest,
+          border: OutlineInputBorder(
+            borderRadius: AppSpacing.borderRadiusMD,
+            borderSide: BorderSide(
               color: colorScheme.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
-          child: TextFormField(
-            controller: _notesCtrl,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: 'Catatan tambahan (opsional)',
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.all(AppSpacing.md),
-              hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: AppSpacing.borderRadiusMD,
+            borderSide: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader(
-      String title, IconData icon, ColorScheme colorScheme) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: AppColors.info),
-        AppSpacing.gapHorizontalXS,
-        Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: colorScheme.primary,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildBottomBar() {
-    return GlassContainer.bottomBar(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.sm + 4, AppSpacing.md, AppSpacing.lg),
+    return SafeBottomBar(
       child: ModernButton(
         text: isEditing ? 'Simpan Perubahan' : 'Tambah Pemakaian',
         icon: isEditing ? Icons.save_rounded : Icons.add_circle_rounded,
         onPressed: _isSaving ? null : _submit,
         isLoading: _isSaving,
+        height: 52,
       ),
     );
   }

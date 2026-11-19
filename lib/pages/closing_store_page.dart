@@ -1,27 +1,37 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/store_model.dart';
 import '../providers/auth_provider.dart';
 import '../services/closing_store_service.dart';
-import '../services/fuel_service_service.dart';
-import '../services/image_service.dart';
+import '../services/presence_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/add_fab.dart';
+import '../utils/text_formatters.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/detail/detail_section_card.dart';
+import '../widgets/detail_row.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/forms/form_add_button.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/modern_bottom_sheet.dart';
-import '../widgets/modern_dropdown.dart';
+import '../widgets/modern_button.dart';
 import '../widgets/modern_text_form_field.dart';
+import '../widgets/safe_bottom_bar.dart';
 import '../widgets/status_badge.dart';
-import '../widgets/supplier_picker_modal.dart';
+import 'fuel_service_form_page.dart';
 
 class ClosingStorePage extends StatefulWidget {
-  const ClosingStorePage({super.key});
+  /// Bila true, langsung buka draft Tutup Shift aktif (dipakai saat user
+  /// diarahkan dari guard check-out `CLOSING_STORE_REQUIRED`).
+  final bool autoStartDraft;
+
+  const ClosingStorePage({super.key, this.autoStartDraft = false});
 
   @override
   State<ClosingStorePage> createState() => _ClosingStorePageState();
@@ -29,7 +39,6 @@ class ClosingStorePage extends StatefulWidget {
 
 class _ClosingStorePageState extends State<ClosingStorePage> {
   final ClosingStoreService _service = ClosingStoreService();
-  final FuelServiceService _fuelService = FuelServiceService();
   final currencyFormatter = NumberFormat.currency(
     locale: 'id_ID',
     symbol: 'Rp ',
@@ -48,6 +57,13 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   int _page = 1;
   final ScrollController _scrollController = ScrollController();
 
+  // Filter riwayat tutup shift.
+  int? _filterStoreId;
+  (DateTime, DateTime)? _filterDateRange;
+  int? _filterStatus; // 1=belum diperiksa, 2=disetujui, 3=ditolak
+  bool _isAdminUser = false;
+  List<StoreModel> _storeOptions = [];
+
   // Active Draft Data
   Map<String, dynamic>? _closingData;
   List<dynamic> _cashlessList = [];
@@ -63,8 +79,10 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   final Set<int> _selectedInvoicePurchaseIds = {};
 
   // Controllers
-  final TextEditingController _cashForTomorrowController = TextEditingController(text: '0');
-  final TextEditingController _totalCashTransferController = TextEditingController(text: '0');
+  final TextEditingController _cashForTomorrowController =
+      TextEditingController(text: '0');
+  final TextEditingController _totalCashTransferController =
+      TextEditingController(text: '0');
   final TextEditingController _notesController = TextEditingController();
   final Map<int, TextEditingController> _cashlessControllers = {};
 
@@ -73,8 +91,85 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   @override
   void initState() {
     super.initState();
-    _loadClosingStores();
+    _isAdminUser = Provider.of<AuthProvider>(context, listen: false).isAdmin;
+    if (_isAdminUser) {
+      _loadStoreOptions();
+    }
+    if (widget.autoStartDraft) {
+      _loadData();
+    } else {
+      _loadClosingStores();
+    }
     _scrollController.addListener(_onScroll);
+  }
+
+  /// Daftar toko untuk dropdown filter (admin saja — staff hanya melihat
+  /// closing miliknya sendiri sesuai guard backend).
+  Future<void> _loadStoreOptions() async {
+    try {
+      final stores = await PresenceService().getStores();
+      if (!mounted) return;
+      setState(() {
+        _storeOptions = stores.where((s) => s.id > 0).toList();
+      });
+    } catch (_) {
+      // Filter toko opsional; biarkan kosong bila gagal dimuat.
+    }
+  }
+
+  int get _activeFilterCount {
+    var count = 0;
+    if (_filterStoreId != null) count++;
+    if (_filterDateRange != null) count++;
+    if (_filterStatus != null) count++;
+    return count;
+  }
+
+  void _openFilterSheet() {
+    final fields = <FilterField>[
+      if (_isAdminUser)
+        DropdownFilterField<int?>(
+          label: 'Toko',
+          value: _filterStoreId,
+          options: [
+            for (final s in _storeOptions) (s.id, s.nickname),
+          ],
+        ),
+      DateRangeFilterField(
+        label: 'Periode',
+        value: _filterDateRange,
+      ),
+      DropdownFilterField<int?>(
+        label: 'Status',
+        value: _filterStatus,
+        options: const [
+          (1, 'Belum Diperiksa'),
+          (2, 'Disetujui'),
+          (3, 'Ditolak'),
+        ],
+      ),
+    ];
+    FilterBottomSheet.show(
+      context,
+      title: 'Filter Riwayat',
+      fields: fields,
+      onApply: (values) {
+        setState(() {
+          _filterStoreId = values['Toko'] as int?;
+          _filterDateRange = values['Periode'] as (DateTime, DateTime)?;
+          _filterStatus = values['Status'] as int?;
+        });
+        _loadClosingStores();
+      },
+      onReset: () {
+        setState(() {
+          _filterStoreId = null;
+          _filterDateRange = null;
+          _filterStatus = null;
+        });
+        _loadClosingStores();
+      },
+    );
   }
 
   @override
@@ -110,7 +205,13 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     });
 
     try {
-      final result = await _service.getClosingStoresPaged(page: _page);
+      final result = await _service.getClosingStoresPaged(
+        page: _page,
+        storeId: _filterStoreId,
+        dateFrom: _filterDateRange?.$1,
+        dateTo: _filterDateRange?.$2,
+        status: _filterStatus,
+      );
       if (!mounted) return;
       setState(() {
         _stores = result['data'] as List<Map<String, dynamic>>;
@@ -131,7 +232,13 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     setState(() => _isLoadingMore = true);
 
     try {
-      final result = await _service.getClosingStoresPaged(page: _page + 1);
+      final result = await _service.getClosingStoresPaged(
+        page: _page + 1,
+        storeId: _filterStoreId,
+        dateFrom: _filterDateRange?.$1,
+        dateTo: _filterDateRange?.$2,
+        status: _filterStatus,
+      );
       if (!mounted) return;
       setState(() {
         _page++;
@@ -145,8 +252,6 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     }
   }
 
-
-
   Widget _buildClosingStoreItem(dynamic item) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
@@ -155,10 +260,15 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     final dateStr = item['date'] ?? '';
     final storeName = item['store']?['nickname'] ?? 'Toko';
     final shiftName = item['shift_store']?['name'] ?? 'Shift';
-    final totalTransfer = double.tryParse((item['total_cash_transfer'] ?? 0).toString()) ?? 0;
-    final cashForTomorrow = double.tryParse((item['cash_for_tomorrow'] ?? 0).toString()) ?? 0;
-    final creatorName = item['created_by']?['name'] ?? item['created_by_id']?.toString() ?? '-';
-    
+    final totalTransfer =
+        double.tryParse((item['total_cash_transfer'] ?? 0).toString()) ?? 0;
+    final cashForTomorrow =
+        double.tryParse((item['cash_for_tomorrow'] ?? 0).toString()) ?? 0;
+    final cashFromYesterday =
+        double.tryParse((item['cash_from_yesterday'] ?? 0).toString()) ?? 0;
+    final creatorName =
+        item['created_by']?['name'] ?? item['created_by_id']?.toString() ?? '-';
+
     String displayDate = dateStr;
     try {
       final parsedDate = DateTime.parse(dateStr);
@@ -179,8 +289,15 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
       child: InkWell(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         onTap: () {
           _loadSpecificClosingStore(item['id'] as int);
         },
@@ -193,22 +310,49 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      storeName,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.1),
+                            borderRadius: AppSpacing.borderRadiusSM,
+                          ),
+                          child: Icon(
+                            Icons.storefront_outlined,
+                            size: 18,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        AppSpacing.gapHorizontalSM,
+                        Expanded(
+                          child: Text(
+                            storeName,
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  AppSpacing.gapHorizontalSM,
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.1),
+                      color: colorScheme.surfaceContainerHighest,
                       borderRadius: AppSpacing.borderRadiusSM,
+                      border: Border.all(
+                        color:
+                            colorScheme.outlineVariant.withValues(alpha: 0.4),
+                      ),
                     ),
                     child: Text(
                       shiftName,
-                      style: textTheme.bodySmall?.copyWith(
+                      style: textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.bold,
                       ),
@@ -216,33 +360,64 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                   ),
                 ],
               ),
-              AppSpacing.gapVerticalXS,
+              AppSpacing.gapVerticalSM,
               Text(
                 displayDate,
                 style: textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
-              const Divider(height: 16),
+              Divider(
+                height: 20,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total Setoran Kas',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total Setoran Kas',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(
-                        currencyFormatter.format(totalTransfer),
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: 2),
+                        Text(
+                          currencyFormatter.format(totalTransfer),
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.primary,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Kas Hari Sebelumnya',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          currencyFormatter.format(cashFromYesterday),
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -252,10 +427,13 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         currencyFormatter.format(cashForTomorrow),
-                        style: textTheme.bodyMedium?.copyWith(
+                        style: textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -263,16 +441,28 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                   ),
                 ],
               ),
-              const Divider(height: 16),
+              Divider(
+                height: 20,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Oleh: $creatorName',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      AppSpacing.gapHorizontalXS,
+                      Text(
+                        creatorName,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                   StatusBadge(
                     label: statusLabel,
@@ -297,7 +487,7 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     try {
       // 1. Get active draft
       final draft = await _service.getActiveDraft();
-      
+
       // 2. Get unpaid transactions
       final unpaid = await _service.getUnpaidTransactions();
 
@@ -306,14 +496,16 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
         _cashlessList = draft['cashlesses'] ?? [];
 
         // Pre-fill controllers
-        _cashForTomorrowController.text = (draft['cash_for_tomorrow'] ?? 0).toString();
-        _totalCashTransferController.text = (draft['total_cash_transfer'] ?? 0).toString();
+        _cashForTomorrowController.text =
+            _moneyText(draft['cash_for_tomorrow']);
+        _totalCashTransferController.text =
+            _moneyText(draft['total_cash_transfer']);
         _notesController.text = FormatUtils.stripHtml(draft['notes'] ?? '');
 
         for (var c in _cashlessList) {
           final id = c['id'] as int;
           _cashlessControllers[id] = TextEditingController(
-            text: (c['bruto_apl'] ?? 0).toString(),
+            text: _moneyText(c['bruto_apl']),
           );
           // Add listener to rebuild/recalculate on change
           _cashlessControllers[id]!.addListener(() {
@@ -397,21 +589,23 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     try {
       final res = await _service.getClosingStore(id);
       final draft = res['closing_store'];
-      
+
       setState(() {
         _closingData = draft;
         _cashlessList = draft['cashlesses'] ?? [];
 
         // Pre-fill controllers
-        _cashForTomorrowController.text = (draft['cash_for_tomorrow'] ?? 0).toString();
-        _totalCashTransferController.text = (draft['total_cash_transfer'] ?? 0).toString();
+        _cashForTomorrowController.text =
+            _moneyText(draft['cash_for_tomorrow']);
+        _totalCashTransferController.text =
+            _moneyText(draft['total_cash_transfer']);
         _notesController.text = FormatUtils.stripHtml(draft['notes'] ?? '');
 
         _cashlessControllers.clear();
         for (var c in _cashlessList) {
           final cid = c['id'] as int;
           _cashlessControllers[cid] = TextEditingController(
-            text: (c['bruto_apl'] ?? 0).toString(),
+            text: _moneyText(c['bruto_apl']),
           );
           _cashlessControllers[cid]!.addListener(() {
             setState(() {});
@@ -468,9 +662,16 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   }
 
   // Calculations
-  double get _cashFromYesterday => double.tryParse((_closingData?['cash_from_yesterday'] ?? 0).toString()) ?? 0;
-  double get _cashForTomorrow => double.tryParse(_cashForTomorrowController.text) ?? 0;
-  double get _totalCashTransfer => double.tryParse(_totalCashTransferController.text) ?? 0;
+  String _moneyText(dynamic value) =>
+      FormatUtils.formatAmount(double.tryParse(value?.toString() ?? '') ?? 0);
+
+  double get _cashFromYesterday =>
+      double.tryParse((_closingData?['cash_from_yesterday'] ?? 0).toString()) ??
+      0;
+  double get _cashForTomorrow =>
+      parseAmount(_cashForTomorrowController.text) ?? 0;
+  double get _totalCashTransfer =>
+      parseAmount(_totalCashTransferController.text) ?? 0;
 
   bool get _isEditable {
     final status = _closingData?['status'];
@@ -486,7 +687,7 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   double get _totalCashless {
     double total = 0;
     for (var ctrl in _cashlessControllers.values) {
-      total += double.tryParse(ctrl.text) ?? 0;
+      total += parseAmount(ctrl.text) ?? 0;
     }
     return total;
   }
@@ -505,14 +706,17 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     }
     for (var i in _availableInvoicePurchases) {
       if (_selectedInvoicePurchaseIds.contains(i['id'])) {
-        total += double.tryParse(i['amount'].toString()) ?? 0;
+        total += double.tryParse(i['total_price'].toString()) ?? 0;
       }
     }
     return total;
   }
 
   double get _totalCash {
-    return _cashForTomorrow - _cashFromYesterday + _spendingTotalCash + _totalCashTransfer;
+    return _cashForTomorrow -
+        _cashFromYesterday +
+        _spendingTotalCash +
+        _totalCashTransfer;
   }
 
   double get _totalOmzet {
@@ -534,7 +738,7 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
           final id = c['id'] as int;
           return {
             'id': id,
-            'bruto_apl': double.tryParse(_cashlessControllers[id]?.text ?? '0') ?? 0,
+            'bruto_apl': parseAmount(_cashlessControllers[id]?.text ?? '') ?? 0,
           };
         }).toList(),
         'fuel_service_ids': _selectedFuelServiceIds.toList(),
@@ -546,7 +750,8 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan Closing Store berhasil disimpan.')),
+        const SnackBar(
+            content: Text('Laporan Closing Store berhasil disimpan.')),
       );
       setState(() {
         _isCreatingOrEditing = false;
@@ -558,7 +763,11 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Gagal Menyimpan', style: Theme.of(ctx).textTheme.titleMedium?.copyWith(color: Theme.of(ctx).colorScheme.error)),
+          title: Text('Gagal Menyimpan',
+              style: Theme.of(ctx)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(color: Theme.of(ctx).colorScheme.error)),
           content: Text(e.toString().replaceAll('Exception: ', '')),
           actions: [
             TextButton(
@@ -578,405 +787,26 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
   void _showAddFuelServiceBottomSheet() async {
     if (_closingData == null) return;
 
-    setState(() => _isLoading = true);
-    List<dynamic> vehicles = [];
-    List<dynamic> suppliers = [];
-    try {
-      vehicles = await _service.getVehicles();
-      suppliers = await _service.getSuppliers();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memuat data kendaraan/supplier: $e')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-
-    if (!mounted) return;
-
-    final formKey = GlobalKey<FormState>();
-    DateTime selectedDate = DateTime.now();
-    int selectedType = 1; // 1 = Fuel, 2 = Service
-    int? selectedVehicleId;
-    int? selectedSupplierId;
-    final kmController = TextEditingController(text: '0');
-    final literController = TextEditingController(text: '0');
-    final amountController = TextEditingController(text: '0');
-    final notesController = TextEditingController();
-    final List<Map<String, dynamic>> serviceDetails = [];
-    File? selectedImage;
-
-    ModernBottomSheet.show(
-      context: context,
-      title: 'Tambah Bensin / Servis Baru',
-      child: StatefulBuilder(
-        builder: (context, setModalState) {
-          void updateServiceAmount() {
-            if (selectedType == 2) {
-              double total = 0;
-              for (var detail in serviceDetails) {
-                total += double.tryParse(detail['costController'].text) ?? 0;
-              }
-              amountController.text = total.toStringAsFixed(0);
-            }
-          }
-
-          final theme = Theme.of(context);
-
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Close button row
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                      tooltip: 'Tutup',
-                    ),
-                  ),
-
-                  // Type Radio
-                  RadioGroup<int>(
-                    groupValue: selectedType,
-                    onChanged: (val) {
-                      setModalState(() {
-                        selectedType = val!;
-                        if (val == 1) {
-                          amountController.text = '0';
-                        } else {
-                          updateServiceAmount();
-                        }
-                      });
-                    },
-                    child: Row(
-                      children: [
-                        Radio<int>(value: 1),
-                        const Text('Fuel (Bensin)'),
-                        AppSpacing.gapHorizontalLG,
-                        Radio<int>(value: 2),
-                        const Text('Service (Servis)'),
-                      ],
-                    ),
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // Date picker
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      'Tanggal: ${DateFormat('dd MMMM yyyy').format(selectedDate)}',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setModalState(() => selectedDate = picked);
-                      }
-                    },
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // Vehicle Dropdown
-                  ModernDropdown<int>(
-                    labelText: 'Pilih Kendaraan',
-                    hint: 'Pilih kendaraan...',
-                    isRequired: true,
-                    prefixIcon: const Icon(Icons.directions_car_outlined, size: 20),
-                    value: selectedVehicleId,
-                    items: vehicles.map((v) => v['id'] as int).toList(),
-                    getLabel: (val) {
-                      final v = vehicles.firstWhere((e) => e['id'] == val, orElse: () => {});
-                      return v['no_register']?.toString() ?? '';
-                    },
-                    getSubtitle: (val) {
-                      final v = vehicles.firstWhere((e) => e['id'] == val, orElse: () => {});
-                      return v['name']?.toString() ?? '';
-                    },
-                    onChanged: (val) => setModalState(() => selectedVehicleId = val),
-                    validator: (val) => val == null ? 'Pilih kendaraan' : null,
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // Supplier (searchable dialog)
-                  InkWell(
-                    onTap: () async {
-                      final result = await SupplierPickerModal.show(
-                        context: context,
-                        suppliers: suppliers,
-                        selectedSupplierId: selectedSupplierId,
-                      );
-                      if (result != null) {
-                        setModalState(() => selectedSupplierId = result['id']);
-                      }
-                    },
-                    borderRadius: AppSpacing.borderRadiusXS,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Pilih Supplier (Opsional)',
-                        suffixIcon: Icon(Icons.search),
-                      ),
-                      child: Text(
-                        selectedSupplierId != null
-                            ? (suppliers.firstWhere(
-                                  (s) => s['id'] == selectedSupplierId,
-                                  orElse: () => {'name': ''},
-                                )['name'] ??
-                                '')
-                            : '',
-                      ),
-                    ),
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // KM Input
-                  TextFormField(
-                    controller: kmController,
-                    decoration: const InputDecoration(
-                      labelText: 'KM Kendaraan',
-                      suffixText: 'km',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // Liter Input (Bensin only)
-                  if (selectedType == 1) ...[
-                    TextFormField(
-                      controller: literController,
-                      decoration: const InputDecoration(
-                        labelText: 'Jumlah Liter',
-                        suffixText: 'liter',
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    AppSpacing.gapVerticalSM,
-                  ],
-
-                  // Service Details Repeater (Service only)
-                  if (selectedType == 2) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Rincian Service:',
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        TextButton.icon(
-                          onPressed: () {
-                            setModalState(() {
-                              serviceDetails.add({
-                                'nameController': TextEditingController(),
-                                'costController':
-                                    TextEditingController(text: '0'),
-                              });
-                            });
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('Tambah Item'),
-                        ),
-                      ],
-                    ),
-                    AppSpacing.gapVerticalSM,
-                    ...serviceDetails.map((detail) {
-                      final idx = serviceDetails.indexOf(detail);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: TextFormField(
-                                controller: detail['nameController']
-                                    as TextEditingController,
-                                decoration: const InputDecoration(
-                                    labelText: 'Nama Item/Part'),
-                              ),
-                            ),
-                            AppSpacing.gapHorizontalSM,
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: detail['costController']
-                                    as TextEditingController,
-                                decoration:
-                                    const InputDecoration(labelText: 'Biaya'),
-                                keyboardType: TextInputType.number,
-                                onChanged: (_) =>
-                                    setModalState(() => updateServiceAmount()),
-                              ),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete_outline,
-                                  color: Theme.of(context).colorScheme.error),
-                              onPressed: () {
-                                setModalState(() {
-                                  serviceDetails.removeAt(idx);
-                                  updateServiceAmount();
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    AppSpacing.gapVerticalSM,
-                  ],
-
-                  // Amount Input
-                  TextFormField(
-                    controller: amountController,
-                    decoration: const InputDecoration(
-                      labelText: 'Total Biaya (Amount) *',
-                      prefixText: 'Rp ',
-                    ),
-                    keyboardType: TextInputType.number,
-                    readOnly: selectedType == 2,
-                    validator: (val) =>
-                        (double.tryParse(val ?? '0') ?? 0) <= 0
-                            ? 'Masukkan total biaya'
-                            : null,
-                  ),
-                  AppSpacing.gapVerticalSM,
-
-                  // Notes
-                  TextFormField(
-                    controller: notesController,
-                    decoration:
-                        const InputDecoration(labelText: 'Catatan / Notes'),
-                    maxLines: 2,
-                  ),
-                  AppSpacing.gapVerticalLG,
-
-                  // Foto Bukti
-                  Text('Foto Bukti / Nota *:',
-                      style: theme.textTheme.bodyMedium),
-                  AppSpacing.gapVerticalXS,
-                  Row(
-                    children: [
-                      if (selectedImage != null) ...[
-                        ClipRRect(
-                          borderRadius: AppSpacing.borderRadiusSM,
-                          child: Image.file(
-                            selectedImage!,
-                            width: 80,
-                            height: 80,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        AppSpacing.gapHorizontalMD,
-                      ],
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final File? file =
-                              await ImageService.selectAndPickImage(context);
-                          if (file != null) {
-                            setModalState(() => selectedImage = file);
-                          }
-                        },
-                        icon: const Icon(Icons.add_a_photo),
-                        label: Text(
-                            selectedImage == null ? 'Unggah Foto *' : 'Ubah Foto'),
-                      ),
-                      if (selectedImage != null) ...[
-                        AppSpacing.gapHorizontalSM,
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () =>
-                              setModalState(() => selectedImage = null),
-                        ),
-                      ],
-                    ],
-                  ),
-                  AppSpacing.gapVerticalLG,
-
-                  // Simpan button (full width)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        if (selectedImage == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Foto bukti / nota wajib diunggah!')),
-                          );
-                          return;
-                        }
-                        Navigator.pop(context);
-                        setState(() => _isLoading = true);
-                        try {
-                          final payload = {
-                            'closing_store_id': _closingData!['id'],
-                            'date': selectedDate.toIso8601String().split('T')[0],
-                            'fuel_service': selectedType,
-                            'vehicle_id': selectedVehicleId,
-                            'supplier_id': selectedSupplierId,
-                            'payment_type_id': 2, // selalu tunai (cash)
-                            'km': double.tryParse(kmController.text) ?? 0,
-                            'liter': double.tryParse(literController.text) ?? 0,
-                            'amount':
-                                double.tryParse(amountController.text) ?? 0,
-                            'notes': notesController.text,
-                            if (selectedType == 2)
-                              'service_details': serviceDetails.map((d) {
-                                return {
-                                  'name': (d['nameController']
-                                          as TextEditingController)
-                                      .text,
-                                  'price': double.tryParse(
-                                          (d['costController']
-                                                  as TextEditingController)
-                                              .text) ??
-                                      0,
-                                };
-                              }).toList(),
-                          };
-
-                          final newFs = await _fuelService.createFuelService(
-                              payload,
-                              imageFile: selectedImage);
-                          setState(() {
-                            _isLoading = false;
-                            _availableFuelServices.insert(0, newFs);
-                            _selectedFuelServiceIds.add(newFs['id'] as int);
-                          });
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(
-                                    'Gagal menyimpan transaksi bensin/servis: $e')),
-                          );
-                          setState(() => _isLoading = false);
-                        }
-                      },
-                      child: const Text('Simpan'),
-                    ),
-                  ),
-                  AppSpacing.gapVerticalMD,
-                ],
-              ),
-            ),
-          );
-        },
+    final newFs = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FuelServiceFormPage(
+          closingStoreId: _closingData!['id'] as int,
+          isCashOnly: true,
+        ),
       ),
     );
+
+    if (newFs != null && mounted) {
+      setState(() {
+        _availableFuelServices.insert(0, newFs);
+        _selectedFuelServiceIds.add(newFs['id'] as int);
+      });
+      showSuccessSnackBar(
+        context,
+        'Pengeluaran ${newFs['fuel_service'] == 1 ? 'bensin' : 'servis'} berhasil ditambahkan ke shift.',
+      );
+    }
   }
 
   @override
@@ -987,13 +817,27 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
     if (!_isCreatingOrEditing) {
       return Scaffold(
-        appBar: AppBar(
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: GlassAppBar(
           title: const Text('Riwayat Tutup Shift'),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadClosingStores,
-            )
+            BarButtonCluster(
+              actions: [
+                BarButtonSpec(
+                  icon: Icons.tune,
+                  tooltip: 'Filter Riwayat',
+                  badgeCount: _activeFilterCount,
+                  onTap: _openFilterSheet,
+                ),
+                BarButtonSpec(
+                  icon: Icons.add_rounded,
+                  iconSize: 22,
+                  tooltip: 'Tambah Closing Store',
+                  onTap: _loadData,
+                ),
+              ],
+            ),
           ],
         ),
         body: _isListLoading
@@ -1005,7 +849,8 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+                          const Icon(Icons.error_outline,
+                              size: 64, color: AppColors.error),
                           AppSpacing.gapVerticalMD,
                           Text(
                             _listErrorMessage!,
@@ -1030,26 +875,25 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
                         onRefresh: _loadClosingStores,
                         child: ListView.builder(
                           controller: _scrollController,
-                          padding: AppSpacing.paddingMD,
+                          padding: AppSpacing.paddingMD
+                              .copyWith(top: AppBarInsets.top(context)),
                           itemCount: _stores.length + (_hasMore ? 1 : 0),
                           itemBuilder: (context, index) {
                             if (index == _stores.length) {
                               return const Padding(
                                 padding: EdgeInsets.all(AppSpacing.md),
-                                child: Center(child: CircularProgressIndicator()),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
                               );
                             }
                             return _buildClosingStoreItem(_stores[index]);
                           },
                         ),
                       ),
-        floatingActionButton: AddFab(
-          onPressed: _loadData,
-        ),
         bottomNavigationBar: ModernBottomNav(
-          currentIndex: 4,
+          currentIndex: 3,
           onTap: (index) {
-            if (index != 4) {
+            if (index != 3) {
               Navigator.pop(context);
             }
           },
@@ -1065,9 +909,10 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: GlassAppBar(
           title: const Text('Tutup Shift Toko'),
           leading: IconButton(
+            tooltip: 'Kembali',
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
               setState(() {
@@ -1083,7 +928,8 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+                const Icon(Icons.error_outline,
+                    size: 64, color: AppColors.error),
                 AppSpacing.gapVerticalMD,
                 Text(
                   _errorMessage!,
@@ -1105,6 +951,27 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
     final storeName = _closingData?['store']?['nickname'] ?? 'Toko';
     final shiftName = _closingData?['shift_store']?['name'] ?? 'Shift';
     final closingDate = _closingData?['date'] ?? '-';
+    final creatorName = _closingData?['created_by']?['name'] ??
+        _closingData?['created_by_id']?.toString() ??
+        '-';
+
+    String displayDate = closingDate;
+    try {
+      final parsedDate = DateTime.parse(closingDate);
+      displayDate = DateFormat('dd MMMM yyyy', 'id_ID').format(parsedDate);
+    } catch (_) {}
+
+    final status = _closingData?['status'] ?? 1;
+    String statusLabel = 'Belum Diperiksa';
+    StatusType statusType = StatusType.warning;
+
+    if (status == 2) {
+      statusLabel = 'Disetujui';
+      statusType = StatusType.success;
+    } else if (status == 3) {
+      statusLabel = 'Ditolak';
+      statusType = StatusType.error;
+    }
 
     return PopScope(
       canPop: false,
@@ -1116,9 +983,12 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
         _loadClosingStores();
       },
       child: Scaffold(
-        appBar: AppBar(
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: GlassAppBar(
           title: const Text('Tutup Shift Toko'),
           leading: IconButton(
+            tooltip: 'Kembali',
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
               setState(() {
@@ -1128,301 +998,514 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
             },
           ),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadData,
-            )
-          ],
-        ),
-      body: SingleChildScrollView(
-        padding: AppSpacing.paddingMD,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!_isEditable)
-              Container(
-                width: double.infinity,
-                padding: AppSpacing.paddingMD,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: colorScheme.error.withValues(alpha: 0.1),
-                  borderRadius: AppSpacing.borderRadiusMD,
-                  border: Border.all(color: colorScheme.error),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.lock, color: colorScheme.error),
-                    AppSpacing.gapHorizontalMD,
-                    Expanded(
-                      child: Text(
-                        'Laporan Closing Store ini telah diperiksa oleh admin dan tidak dapat diedit lagi.',
-                        style: TextStyle(
-                          color: colorScheme.error,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            // Header Card
-            Card(
-              child: Padding(
-                padding: AppSpacing.paddingMD,
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-                      child: Icon(Icons.storefront, color: AppColors.info),
-                    ),
-                    AppSpacing.gapHorizontalMD,
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            storeName,
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '$shiftName | $closingDate',
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            AppSpacing.gapVerticalMD,
-
-            // Cash Info Section
-            Text(
-              'Aliran Kas Laci Kasir (Cash)',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            AppSpacing.gapVerticalSM,
-            Card(
-              child: Padding(
-                padding: AppSpacing.paddingMD,
-                child: Column(
-                  children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Saldo Kas Awal (Kemarin)'),
-                      trailing: Text(
-                        currencyFormatter.format(_cashFromYesterday),
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const Divider(),
-                    TextFormField(
-                      controller: _cashForTomorrowController,
-                      enabled: _isEditable,
-                      decoration: const InputDecoration(
-                        labelText: 'Kas Untuk Besok *',
-                        prefixText: 'Rp ',
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (val) => setState(() {}),
-                    ),
-                    SizedBox(height: AppSpacing.sectionGap),
-                    TextFormField(
-                      controller: _totalCashTransferController,
-                      enabled: _isEditable,
-                      decoration: const InputDecoration(
-                        labelText: 'Total Setoran Cash (Bank Transfer) *',
-                        prefixText: 'Rp ',
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (val) => setState(() {}),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            AppSpacing.gapVerticalMD,
-
-            // Cashless List Section
-            if (_cashlessList.isNotEmpty) ...[
-              Text(
-                'Laporan EDC / Cashless',
-                style: textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              AppSpacing.gapVerticalSM,
-              Card(
-                child: Padding(
-                  padding: AppSpacing.paddingMD,
-                  child: Column(
-                    children: _cashlessList.map((c) {
-                      final id = c['id'] as int;
-                      final providerName = c['account_cashless']?['cashless_provider']?['name'] ?? 'Provider';
-                      final storeCashlessName = c['account_cashless']?['store_cashless']?['name'] ?? '';
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: AppSpacing.sm + AppSpacing.xs),
-                        child: TextFormField(
-                          controller: _cashlessControllers[id],
-                          enabled: _isEditable,
-                          decoration: InputDecoration(
-                            labelText: '$providerName | $storeCashlessName',
-                            prefixText: 'Rp ',
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              AppSpacing.gapVerticalMD,
-            ],
-
-            // Spending Lists
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Pengeluaran Bensin & Servis (Cash)',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle, color: AppColors.info),
-                  onPressed: _isEditable ? _showAddFuelServiceBottomSheet : null,
+            BarButtonCluster(
+              actions: [
+                BarButtonSpec(
+                  icon: Icons.refresh,
+                  tooltip: 'Muat ulang',
+                  onTap: _loadData,
                 ),
               ],
             ),
-            AppSpacing.gapVerticalSM,
-            _buildFuelServicesList(colorScheme),
-            AppSpacing.gapVerticalMD,
-
-            Text(
-              'Pengeluaran Gaji Harian (Cash)',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            AppSpacing.gapVerticalSM,
-            _buildDailySalariesList(colorScheme),
-            AppSpacing.gapVerticalMD,
-
-            Text(
-              'Pengeluaran Invoice & Bon (Cash)',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            AppSpacing.gapVerticalSM,
-            _buildInvoicePurchasesList(colorScheme),
-            AppSpacing.gapVerticalLG,
-
-            // Calculator Summary Card
-            Card(
-              color: colorScheme.primaryContainer,
-              child: Padding(
-                padding: AppSpacing.paddingMD,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ringkasan Shift',
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.sectionGap),
-                    _buildSummaryRow(
-                      'Total Pengeluaran Laci (Cash)', 
-                      currencyFormatter.format(_spendingTotalCash),
-                      colorScheme,
-                    ),
-                    _buildSummaryRow(
-                      'Total Cashless/EDC', 
-                      currencyFormatter.format(_totalCashless),
-                      colorScheme,
-                    ),
-                    _buildSummaryRow(
-                      'Total Cash Fisik Laci', 
-                      currencyFormatter.format(_totalCash),
-                      colorScheme,
-                      isBold: true,
-                    ),
-                    const Divider(),
-                    _buildSummaryRow(
-                      'Total Omzet Toko Hari Ini', 
-                      currencyFormatter.format(_totalOmzet),
-                      colorScheme,
-                      isBold: true,
-                      large: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            AppSpacing.gapVerticalLG,
-
-            // Notes Section
-            ModernTextFormField(
-              labelText: 'Catatan Closing',
-              controller: _notesController,
-              maxLines: 3,
-              enabled: _isEditable,
-            ),
-            AppSpacing.gapVerticalXL,
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (_isSubmitting || !_isEditable) ? null : _submit,
-                child: _isSubmitting 
-                  ? CircularProgressIndicator(color: colorScheme.onPrimary)
-                  : Text(
-                      'Simpan & Selesaikan Shift',
-                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-              ),
-            ),
-            AppSpacing.gapVerticalXL,
           ],
         ),
-      ),
-    ),
-  );
-}
+        bottomNavigationBar: _isEditable
+            ? SafeBottomBar(
+                child: ModernButton(
+                  text: 'Simpan & Selesaikan Shift',
+                  onPressed: _isSubmitting ? null : _submit,
+                  isLoading: _isSubmitting,
+                  height: 52,
+                ),
+              )
+            : null,
+        body: SingleChildScrollView(
+          padding:
+              AppSpacing.paddingMD.copyWith(top: AppBarInsets.top(context)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!_isEditable)
+                Container(
+                  width: double.infinity,
+                  padding: AppSpacing.paddingMD,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.1),
+                    borderRadius: AppSpacing.borderRadiusMD,
+                    border: Border.all(
+                      color: AppColors.warning.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lock_outline,
+                          color: AppColors.warning, size: 20),
+                      AppSpacing.gapHorizontalMD,
+                      Expanded(
+                        child: Text(
+                          'Laporan Closing Store ini telah diperiksa oleh admin dan tidak dapat diedit lagi.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: AppColors.warning,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-  Widget _buildSummaryRow(String label, String value, ColorScheme colorScheme, {bool isBold = false, bool large = false}) {
+              // Header Section Card
+              DetailSectionCard(
+                icon: Icons.storefront_outlined,
+                title: 'Informasi Toko & Shift',
+                trailing: StatusBadge(
+                  label: statusLabel,
+                  type: statusType,
+                ),
+                children: [
+                  DetailRow(label: 'Toko', value: storeName, valueBold: true),
+                  DetailRow(label: 'Shift', value: shiftName),
+                  DetailRow(label: 'Tanggal', value: displayDate),
+                  if (creatorName.isNotEmpty && creatorName != '-')
+                    DetailRow(label: 'Kasir', value: creatorName),
+                ],
+              ),
+              AppSpacing.gapVerticalMD,
+
+              // Cash Info Section
+              DetailSectionCard(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Aliran Kas Laci Kasir (Cash)',
+                children: [
+                  DetailRow(
+                    label: 'Saldo Kas Awal',
+                    value: currencyFormatter.format(_cashFromYesterday),
+                    valueBold: true,
+                  ),
+                  Divider(
+                    height: 16,
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                  if (_isEditable) ...[
+                    ModernTextFormField(
+                      controller: _cashForTomorrowController,
+                      labelText: 'Kas Untuk Besok *',
+                      prefixText: 'Rp ',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: rupiahInputFormatters,
+                      onChanged: (val) => setState(() {}),
+                    ),
+                    AppSpacing.gapVerticalSM,
+                    ModernTextFormField(
+                      controller: _totalCashTransferController,
+                      labelText: 'Total Setoran Cash (Bank Transfer) *',
+                      prefixText: 'Rp ',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: rupiahInputFormatters,
+                      onChanged: (val) => setState(() {}),
+                    ),
+                  ] else ...[
+                    DetailRow(
+                      label: 'Kas Untuk Besok',
+                      value: currencyFormatter.format(_cashForTomorrow),
+                      valueBold: true,
+                    ),
+                    DetailRow(
+                      label: 'Total Setoran Cash',
+                      value: currencyFormatter.format(_totalCashTransfer),
+                      valueBold: true,
+                    ),
+                  ],
+                ],
+              ),
+              AppSpacing.gapVerticalMD,
+
+              // Cashless List Section
+              if (_cashlessList.isNotEmpty) ...[
+                DetailSectionCard(
+                  icon: Icons.credit_card_outlined,
+                  title: 'Laporan EDC / Cashless',
+                  children: _cashlessList.map((c) {
+                    final id = c['id'] as int;
+                    final providerName = c['account_cashless']
+                            ?['cashless_provider']?['name'] ??
+                        'Provider';
+                    final storeCashlessName =
+                        c['account_cashless']?['store_cashless']?['name'] ?? '';
+                    final label = storeCashlessName.isNotEmpty
+                        ? '$providerName ($storeCashlessName)'
+                        : providerName;
+                    if (_isEditable) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ModernTextFormField(
+                          controller: _cashlessControllers.putIfAbsent(
+                            id,
+                            () => TextEditingController(),
+                          ),
+                          labelText: label,
+                          prefixText: 'Rp ',
+                          keyboardType: TextInputType.number,
+                          inputFormatters: rupiahInputFormatters,
+                          onChanged: (val) => setState(() {}),
+                        ),
+                      );
+                    } else {
+                      final val =
+                          parseAmount(_cashlessControllers[id]?.text ?? '') ??
+                              0;
+                      return DetailRow(
+                        label: label,
+                        value: currencyFormatter.format(val),
+                        valueBold: true,
+                      );
+                    }
+                  }).toList(),
+                ),
+                AppSpacing.gapVerticalMD,
+              ],
+
+              // Spending Lists
+              DetailSectionCard(
+                icon: Icons.local_gas_station_outlined,
+                title: 'Pengeluaran Bensin & Servis (Cash)',
+                trailing: _isEditable
+                    ? FormAddButton(
+                        label: 'Tambah',
+                        onPressed: _showAddFuelServiceBottomSheet,
+                      )
+                    : null,
+                child: _buildFuelServicesList(colorScheme),
+              ),
+              AppSpacing.gapVerticalMD,
+
+              DetailSectionCard(
+                icon: Icons.people_outline,
+                title: 'Pengeluaran Gaji Harian (Cash)',
+                child: _buildDailySalariesList(colorScheme),
+              ),
+              AppSpacing.gapVerticalMD,
+
+              DetailSectionCard(
+                icon: Icons.receipt_long_outlined,
+                title: 'Pengeluaran Invoice & Bon (Cash)',
+                child: _buildInvoicePurchasesList(colorScheme),
+              ),
+              AppSpacing.gapVerticalLG,
+
+              // Financial Summary Card
+              _buildFinancialSummaryCard(colorScheme, textTheme),
+              AppSpacing.gapVerticalLG,
+
+              // Notes Section
+              DetailSectionCard(
+                icon: Icons.notes_outlined,
+                title: 'Catatan Closing',
+                child: _isEditable
+                    ? ModernTextFormField(
+                        labelText: 'Tuliskan catatan closing...',
+                        controller: _notesController,
+                        maxLines: 3,
+                      )
+                    : Text(
+                        _notesController.text.trim().isEmpty
+                            ? 'Tidak ada catatan.'
+                            : _notesController.text,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+              ),
+              AppSpacing.gapVerticalLG,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFinancialSummaryCard(
+      ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+      ),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: AppSpacing.borderRadiusSM,
+                ),
+                child: Icon(
+                  Icons.calculate_outlined,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
+              ),
+              AppSpacing.gapHorizontalSM,
+              Text(
+                'Ringkasan Finansial Shift',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(
+            height: 1,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+          const SizedBox(height: 10),
+          _buildSummaryRow(
+            'Saldo Kas Awal',
+            currencyFormatter.format(_cashFromYesterday),
+            colorScheme,
+          ),
+          _buildSummaryRow(
+            'Total Pengeluaran Laci (Cash)',
+            currencyFormatter.format(_spendingTotalCash),
+            colorScheme,
+          ),
+          _buildSummaryRow(
+            'Total Setoran Kas (Transfer)',
+            currencyFormatter.format(_totalCashTransfer),
+            colorScheme,
+          ),
+          _buildSummaryRow(
+            'Kas Untuk Besok',
+            currencyFormatter.format(_cashForTomorrow),
+            colorScheme,
+          ),
+          _buildSummaryRow(
+            'Total Cashless / EDC',
+            currencyFormatter.format(_totalCashless),
+            colorScheme,
+          ),
+          _buildSummaryRow(
+            'Total Cash Fisik Laci',
+            currencyFormatter.format(_totalCash),
+            colorScheme,
+            isBold: true,
+          ),
+          const SizedBox(height: 6),
+          Divider(
+            height: 1,
+            color: colorScheme.primary.withValues(alpha: 0.3),
+          ),
+          const SizedBox(height: 10),
+          _buildSummaryRow(
+            'Total Omzet Toko Hari Ini',
+            currencyFormatter.format(_totalOmzet),
+            colorScheme,
+            isBold: true,
+            large: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    String label,
+    String value,
+    ColorScheme colorScheme, {
+    bool isBold = false,
+    bool large = false,
+  }) {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
-            style: (large ? textTheme.bodyLarge : textTheme.bodyMedium)?.copyWith(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: colorScheme.onPrimaryContainer,
+            style:
+                (large ? textTheme.titleSmall : textTheme.bodyMedium)?.copyWith(
+              fontWeight:
+                  (isBold || large) ? FontWeight.bold : FontWeight.normal,
+              color: large ? colorScheme.primary : colorScheme.onSurfaceVariant,
             ),
           ),
           Text(
             value,
-            style: (large ? textTheme.titleMedium : textTheme.bodyMedium)?.copyWith(
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: colorScheme.onPrimaryContainer,
+            style: (large ? textTheme.titleMedium : textTheme.bodyMedium)
+                ?.copyWith(
+              fontWeight: (isBold || large) ? FontWeight.bold : FontWeight.w600,
+              color: large ? colorScheme.primary : colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectableItemTile({
+    required bool isChecked,
+    required String title,
+    required String subtitle,
+    required String amountText,
+    required VoidCallback? onTap,
+    required IconData icon,
+    required ColorScheme colorScheme,
+    Color? iconColor,
+    Color? iconBgColor,
+    String? badgeText,
+    Color? badgeColor,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final effectiveIconColor = iconColor ??
+        (isChecked ? colorScheme.primary : colorScheme.onSurfaceVariant);
+    final effectiveIconBg = iconBgColor ??
+        (isChecked
+            ? colorScheme.primary.withValues(alpha: 0.12)
+            : colorScheme.surfaceContainerHighest);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isChecked
+            ? colorScheme.primary.withValues(alpha: isDark ? 0.12 : 0.05)
+            : colorScheme.surface,
+        borderRadius: AppSpacing.borderRadiusMD,
+        border: Border.all(
+          color: isChecked
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : colorScheme.outlineVariant.withValues(alpha: 0.35),
+          width: isChecked ? 1.5 : 1.0,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: AppSpacing.borderRadiusMD,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                if (onTap != null) ...[
+                  Checkbox(
+                    value: isChecked,
+                    onChanged: (_) => onTap(),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  AppSpacing.gapHorizontalSM,
+                ],
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: effectiveIconBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 16,
+                    color: effectiveIconColor,
+                  ),
+                ),
+                AppSpacing.gapHorizontalSM,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (badgeText != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (badgeColor ?? colorScheme.primary)
+                                    .withValues(alpha: 0.15),
+                                borderRadius: AppSpacing.borderRadiusXS,
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: badgeColor ?? colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AppSpacing.gapHorizontalSM,
+                Text(
+                  amountText,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyPlaceholder(String message, IconData icon) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest,
+        borderRadius: AppSpacing.borderRadiusMD,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: colorScheme.onSurfaceVariant),
+          AppSpacing.gapHorizontalSM,
+          Text(
+            message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -1432,7 +1515,10 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
   Widget _buildFuelServicesList(ColorScheme colorScheme) {
     if (_availableFuelServices.isEmpty) {
-      return const Text('Tidak ada pengeluaran bensin/servis cash.');
+      return _buildEmptyPlaceholder(
+        'Tidak ada pengeluaran bensin/servis tunai',
+        Icons.local_gas_station_outlined,
+      );
     }
     return Column(
       children: _availableFuelServices.map((f) {
@@ -1440,22 +1526,50 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
         final isChecked = _selectedFuelServiceIds.contains(id);
         final date = f['date'] ?? '';
         final amount = double.tryParse(f['amount'].toString()) ?? 0;
-        final typeStr = f['fuel_service'] == 1 ? 'Fuel' : 'Service';
+        final isFuel = f['fuel_service'] == 1;
+        final typeStr = isFuel ? 'BBM' : 'Servis';
         final vehicleNo = f['vehicle']?['no_register'] ?? '';
-        
-        return CheckboxListTile(
-          title: Text('$typeStr | $vehicleNo'),
-          subtitle: Text('$date | ${currencyFormatter.format(amount)}'),
-          value: isChecked,
-          onChanged: _isEditable ? (bool? val) {
-            setState(() {
-              if (val == true) {
-                _selectedFuelServiceIds.add(id);
-              } else {
-                _selectedFuelServiceIds.remove(id);
-              }
-            });
-          } : null,
+        final vehicleName = f['vehicle']?['name'] ?? '';
+        final vehicleLabel = [vehicleNo, vehicleName]
+            .where((s) => s.toString().isNotEmpty)
+            .join(' - ');
+        final title = vehicleLabel.isNotEmpty ? vehicleLabel : typeStr;
+
+        final liter = double.tryParse(f['liter']?.toString() ?? '0') ?? 0;
+        final subtitleParts = <String>[];
+        if (date.toString().isNotEmpty) subtitleParts.add(date.toString());
+        if (isFuel && liter > 0) {
+          subtitleParts.add('${liter.toStringAsFixed(1)} Liter');
+        }
+        final subtitle = subtitleParts.isNotEmpty
+            ? subtitleParts.join(' • ')
+            : date.toString();
+
+        return _buildSelectableItemTile(
+          isChecked: isChecked,
+          title: title,
+          subtitle: subtitle,
+          amountText: currencyFormatter.format(amount),
+          icon: isFuel
+              ? Icons.local_gas_station_rounded
+              : Icons.build_circle_rounded,
+          iconColor: isFuel ? AppColors.success : AppColors.warning,
+          iconBgColor: (isFuel ? AppColors.success : AppColors.warning)
+              .withValues(alpha: 0.12),
+          badgeText: typeStr,
+          badgeColor: isFuel ? AppColors.success : AppColors.warning,
+          colorScheme: colorScheme,
+          onTap: _isEditable
+              ? () {
+                  setState(() {
+                    if (isChecked) {
+                      _selectedFuelServiceIds.remove(id);
+                    } else {
+                      _selectedFuelServiceIds.add(id);
+                    }
+                  });
+                }
+              : null,
         );
       }).toList(),
     );
@@ -1463,7 +1577,10 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
   Widget _buildDailySalariesList(ColorScheme colorScheme) {
     if (_availableDailySalaries.isEmpty) {
-      return const Text('Tidak ada pengeluaran gaji harian cash.');
+      return _buildEmptyPlaceholder(
+        'Tidak ada pengeluaran gaji harian tunai',
+        Icons.people_outline,
+      );
     }
     return Column(
       children: _availableDailySalaries.map((s) {
@@ -1472,20 +1589,25 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
         final date = s['date'] ?? '';
         final amount = double.tryParse(s['amount'].toString()) ?? 0;
         final employeeName = s['user']?['name'] ?? 'Pegawai';
-        
-        return CheckboxListTile(
-          title: Text(employeeName),
-          subtitle: Text('$date | ${currencyFormatter.format(amount)}'),
-          value: isChecked,
-          onChanged: _isEditable ? (bool? val) {
-            setState(() {
-              if (val == true) {
-                _selectedDailySalaryIds.add(id);
-              } else {
-                _selectedDailySalaryIds.remove(id);
-              }
-            });
-          } : null,
+
+        return _buildSelectableItemTile(
+          isChecked: isChecked,
+          title: employeeName,
+          subtitle: date,
+          amountText: currencyFormatter.format(amount),
+          icon: Icons.person_outline,
+          colorScheme: colorScheme,
+          onTap: _isEditable
+              ? () {
+                  setState(() {
+                    if (isChecked) {
+                      _selectedDailySalaryIds.remove(id);
+                    } else {
+                      _selectedDailySalaryIds.add(id);
+                    }
+                  });
+                }
+              : null,
         );
       }).toList(),
     );
@@ -1493,29 +1615,41 @@ class _ClosingStorePageState extends State<ClosingStorePage> {
 
   Widget _buildInvoicePurchasesList(ColorScheme colorScheme) {
     if (_availableInvoicePurchases.isEmpty) {
-      return const Text('Tidak ada pengeluaran invoice/bon cash.');
+      return _buildEmptyPlaceholder(
+        'Tidak ada pengeluaran invoice/bon tunai',
+        Icons.receipt_long_outlined,
+      );
     }
     return Column(
       children: _availableInvoicePurchases.map((i) {
         final id = i['id'] as int;
         final isChecked = _selectedInvoicePurchaseIds.contains(id);
         final date = i['date'] ?? '';
-        final amount = double.tryParse(i['amount'].toString()) ?? 0;
-        final invoiceNo = i['no_invoice'] ?? '';
-        
-        return CheckboxListTile(
-          title: Text('Invoice #$invoiceNo'),
-          subtitle: Text('$date | ${currencyFormatter.format(amount)}'),
-          value: isChecked,
-          onChanged: _isEditable ? (bool? val) {
-            setState(() {
-              if (val == true) {
-                _selectedInvoicePurchaseIds.add(id);
-              } else {
-                _selectedInvoicePurchaseIds.remove(id);
-              }
-            });
-          } : null,
+        final amount = double.tryParse(i['total_price'].toString()) ?? 0;
+        final invoiceNo = i['no_invoice']?.toString() ?? '';
+        final supplierName = i['supplier']?['name']?.toString() ?? '';
+        final title = invoiceNo.isNotEmpty
+            ? 'Invoice #$invoiceNo'
+            : (supplierName.isNotEmpty ? supplierName : 'Invoice');
+
+        return _buildSelectableItemTile(
+          isChecked: isChecked,
+          title: title,
+          subtitle: date,
+          amountText: currencyFormatter.format(amount),
+          icon: Icons.receipt_long_outlined,
+          colorScheme: colorScheme,
+          onTap: _isEditable
+              ? () {
+                  setState(() {
+                    if (isChecked) {
+                      _selectedInvoicePurchaseIds.remove(id);
+                    } else {
+                      _selectedInvoicePurchaseIds.add(id);
+                    }
+                  });
+                }
+              : null,
         );
       }).toList(),
     );

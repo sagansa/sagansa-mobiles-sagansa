@@ -25,6 +25,8 @@ class StorageStockModel {
   final int status;
   final String storeName;
   final String createdByName;
+  final String? updatedByName;
+  final bool canBeEdited;
   final List<ProductStorageStockModel> details;
 
   StorageStockModel({
@@ -34,6 +36,8 @@ class StorageStockModel {
     required this.status,
     required this.storeName,
     required this.createdByName,
+    this.updatedByName,
+    this.canBeEdited = false,
     required this.details,
   });
 
@@ -53,11 +57,16 @@ class StorageStockModel {
               ? json['user']['name']
               : (json['created_by'] != null ? json['created_by']['name'] : null)) ??
           '',
+      updatedByName:
+          json['updater'] != null ? json['updater']['name'] as String? : null,
+      canBeEdited: json['can_be_edited'] == true,
       details: (detailsList.isNotEmpty ? detailsList : legacyDetailsList)
           .map((i) => ProductStorageStockModel.fromJson(i))
           .toList(),
     );
   }
+
+  bool get isPending => status == 1;
 
   String get statusText {
     switch (status) {

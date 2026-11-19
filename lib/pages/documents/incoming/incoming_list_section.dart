@@ -10,17 +10,20 @@ import '../../../services/document/incoming_service.dart';
 import '../../../theme/app_button_style.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../utils/error_utils.dart';
+import '../../../widgets/documents/letter_action_sheet.dart';
 import '../../../widgets/empty_state.dart';
-import '../../../widgets/filter_chip_row.dart';
+import '../../../widgets/filter_bottom_sheet.dart';
 import '../../../widgets/modern_bottom_nav.dart';
+import '../../../widgets/safe_bottom_bar.dart';
 import '../../../widgets/status_badge.dart';
+import '../document_create_wizard.dart';
 import 'incoming_detail_page.dart';
 import 'incoming_form_page.dart';
 
 /// Bagian "Masuk" arsip Surat Perusahaan — buku agenda surat masuk
-/// (`IncomingService.getIncoming`) dengan pola persis bagian "Keluar"
-/// fase 1: pencarian debounce, chip filter, infinite scroll,
-/// pull-to-refresh, serta state loading/error/kosong.
+/// (`IncomingService.getIncoming`) dengan pola persis bagian "Keluar":
+/// pencarian debounce, filter sheet (tombol tune AppBar), infinite
+/// scroll, pull-to-refresh, serta state loading/error/kosong.
 ///
 /// Menu kartu "Daftarkan sebagai balasan pihak luar" (Task 11): mendaftar
 /// surat masuk BARU sebagai balasan pihak luar atas salah satu surat
@@ -43,11 +46,22 @@ class IncomingListSection extends StatefulWidget {
 
   final VoidCallback? onSearchStateChanged;
 
+  /// Dipanggil saat filter diterapkan/direset — induk me-refresh badge
+  /// tombol tune di AppBar.
+  final VoidCallback? onFilterChanged;
+
+  /// Buka form "Daftarkan Surat Masuk" — dipakai ajakan di banner & state
+  /// kosong agar alur "surat dari instansi lain → balas" mudah ditemukan
+  /// (bukan hanya lewat tombol + di AppBar).
+  final VoidCallback? onRegisterIncoming;
+
   const IncomingListSection({
     super.key,
     this.service,
     this.documentService,
     this.onSearchStateChanged,
+    this.onFilterChanged,
+    this.onRegisterIncoming,
   });
 
   @override
@@ -78,6 +92,10 @@ class IncomingListSectionState extends State<IncomingListSection> {
   String? _query;
   bool _isSearchActive = false;
 
+  /// Ajakan "daftarkan surat dari instansi lain" bisa disembunyikan —
+  /// pengguna berpengalaman tidak perlu banner berulang.
+  bool _hintDismissed = false;
+
   /// Opsi tahun filter: Semua + 3 tahun terakhir (pola fase 1).
   late final List<int> _yearOptions = List.generate(
     3,
@@ -99,6 +117,67 @@ class IncomingListSectionState extends State<IncomingListSection> {
   /// Baris pencarian sedang tampil (dibaca AppBar induk untuk ikon
   /// search/close).
   bool get isSearchActive => _isSearchActive;
+
+  /// Jumlah filter aktif (badge tombol tune AppBar induk).
+  int get activeFilterCount =>
+      (_status != null ? 1 : 0) +
+      (_sifat != null ? 1 : 0) +
+      (_year != null ? 1 : 0);
+
+  /// Buka sheet filter — pola `FilterBottomSheet` standar arsip
+  /// (supplier/dll): status, sifat, tahun. Bukan baris chip inline.
+  void openFilterSheet(BuildContext context) {
+    FilterBottomSheet.show(
+      context,
+      title: 'Filter Surat Masuk',
+      fields: [
+        DropdownFilterField<String?>(
+          label: 'Status',
+          value: _status,
+          options: [
+            (null, 'Semua'),
+            for (final status in _statusOptions)
+              (status, IncomingLetterModel.statusLabelOf(status)),
+          ],
+        ),
+        DropdownFilterField<String?>(
+          label: 'Sifat',
+          value: _sifat,
+          options: [
+            (null, 'Semua'),
+            for (final sifat in _sifatOptions)
+              (sifat, IncomingLetterModel.sifatLabelOf(sifat)),
+          ],
+        ),
+        DropdownFilterField<int?>(
+          label: 'Tahun',
+          value: _year,
+          options: [
+            (null, 'Semua'),
+            for (final year in _yearOptions) (year, year.toString()),
+          ],
+        ),
+      ],
+      onApply: (values) {
+        setState(() {
+          _status = values['Status'] as String?;
+          _sifat = values['Sifat'] as String?;
+          _year = values['Tahun'] as int?;
+        });
+        widget.onFilterChanged?.call();
+        _fetch();
+      },
+      onReset: () {
+        setState(() {
+          _status = null;
+          _sifat = null;
+          _year = null;
+        });
+        widget.onFilterChanged?.call();
+        _fetch();
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -300,7 +379,6 @@ class IncomingListSectionState extends State<IncomingListSection> {
     return Column(
       children: [
         if (_isSearchActive) _buildSearchRow(colorScheme),
-        _buildFilterRows(colorScheme),
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -326,7 +404,18 @@ class IncomingListSectionState extends State<IncomingListSection> {
                                   : 'Belum ada surat masuk.',
                               subtitle: _query != null
                                   ? 'Coba kata kunci lain atau hapus filter.'
-                                  : 'Surat masuk yang didaftarkan akan tampil di sini.',
+                                  : 'Punya surat dari instansi atau perusahaan '
+                                      'lain? Daftarkan scan-nya di sini, lalu '
+                                      'buat surat balasan dari detailnya.',
+                              action: widget.onRegisterIncoming == null
+                                  ? null
+                                  : FilledButton.icon(
+                                      onPressed: widget.onRegisterIncoming,
+                                      icon:
+                                          const Icon(Icons.upload_file_rounded),
+                                      label:
+                                          const Text('Daftarkan Surat Masuk'),
+                                    ),
                             )
                           : _buildList(),
         ),
@@ -369,58 +458,12 @@ class IncomingListSectionState extends State<IncomingListSection> {
     );
   }
 
-  /// Baris chip filter: status + sifat + tahun (pola fase 1; label dari
-  /// `IncomingLetterModel` bahasa Indonesia).
-  Widget _buildFilterRows(ColorScheme colorScheme) {
-    return Container(
-      width: double.infinity,
-      color: colorScheme.surface,
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FilterChipRow<String?>(
-            options: const [null, ..._statusOptions],
-            selected: _status,
-            onSelected: (value) {
-              setState(() => _status = value);
-              _fetch();
-            },
-            getLabel: (status) => status == null
-                ? 'Semua'
-                : IncomingLetterModel.statusLabelOf(status),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          FilterChipRow<String?>(
-            options: const [null, ..._sifatOptions],
-            selected: _sifat,
-            onSelected: (value) {
-              setState(() => _sifat = value);
-              _fetch();
-            },
-            getLabel: (sifat) => sifat == null
-                ? 'Semua'
-                : IncomingLetterModel.sifatLabelOf(sifat),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          FilterChipRow<int?>(
-            options: [null, ..._yearOptions],
-            selected: _year,
-            onSelected: (value) {
-              setState(() => _year = value);
-              _fetch();
-            },
-            getLabel: (year) => year == null ? 'Semua' : year.toString(),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildList() {
+    final showHint =
+        !_hintDismissed && widget.onRegisterIncoming != null && _query == null;
     return RefreshIndicator(
       onRefresh: _fetch,
-      child: ListView.builder(
+      child: ListView(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(
           AppSpacing.md,
@@ -428,16 +471,19 @@ class IncomingListSectionState extends State<IncomingListSection> {
           AppSpacing.md,
           ModernBottomNav.clearance(context),
         ),
-        itemCount: _items.length + (_hasMore ? 1 : 0),
-        itemBuilder: (context, idx) {
-          if (idx == _items.length) {
-            return const Padding(
+        children: [
+          if (showHint)
+            _IncomingRegisterHint(
+              onRegister: widget.onRegisterIncoming!,
+              onDismiss: () => setState(() => _hintDismissed = true),
+            ),
+          for (final letter in _items) _buildCard(letter),
+          if (_hasMore)
+            const Padding(
               padding: EdgeInsets.all(AppSpacing.md),
               child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return _buildCard(_items[idx]);
-        },
+            ),
+        ],
       ),
     );
   }
@@ -446,6 +492,11 @@ class IncomingListSectionState extends State<IncomingListSection> {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final senderName = letter.senderParty?.name;
+    final accent = switch (letter.sifat) {
+      'rahasia' => colorScheme.error,
+      'segera' => Colors.amber.shade700,
+      _ => colorScheme.outlineVariant,
+    };
 
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm + AppSpacing.xs),
@@ -457,121 +508,183 @@ class IncomingListSectionState extends State<IncomingListSection> {
         boxShadow: [
           BoxShadow(
             color: colorScheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: InkWell(
+      child: ClipRRect(
         borderRadius: AppSpacing.borderRadiusLG,
-        onTap: () => _openDetail(letter),
-        child: Padding(
-          padding: AppSpacing.cardPadding,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Baris 1: nomor agenda + aksi per kartu.
-                    Row(
+        child: InkWell(
+          onTap: () => _openDetail(letter),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Rail sifat surat: rahasia merah, segera amber, biasa netral.
+                Container(width: 3, color: accent),
+                Expanded(
+                  child: Padding(
+                    padding: AppSpacing.cardPadding,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: Text(
-                            letter.agendaNumber,
-                            style: textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
+                        // Baris 1: nomor agenda + aksi per kartu.
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: colorScheme.secondaryContainer
+                                    .withValues(alpha: 0.6),
+                                borderRadius: AppSpacing.borderRadiusXS,
+                              ),
+                              child: Text(
+                                'MASUK',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onSecondaryContainer,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                letter.agendaNumber,
+                                style: textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            LetterActionMenuButton(
+                              tooltip: 'Aksi Surat Masuk',
+                              onTap: () => _openIncomingActions(letter),
+                            ),
+                          ],
+                        ),
+                        // Baris 2: perihal — judul kartu.
+                        const SizedBox(height: AppSpacing.xs + 2),
+                        Text(
+                          letter.subject,
+                          style: textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        // Baris 3: nomor surat pengirim (sekunder, bila ada).
+                        if (letter.numberExternal != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'No. eksternal: ${letter.numberExternal}',
+                            style: textTheme.bodySmall
+                                ?.copyWith(color: colorScheme.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        ],
+                        const SizedBox(height: AppSpacing.sm),
+                        // Baris 4: badge sifat + badge status.
+                        Row(
+                          children: [
+                            _buildSifatBadge(letter),
+                            const SizedBox(width: AppSpacing.sm),
+                            _buildStatusBadge(letter),
+                          ],
                         ),
-                        PopupMenuButton<String>(
-                          tooltip: 'Aksi Surat Masuk',
-                          icon: Icon(
-                            Icons.more_vert_rounded,
-                            size: 20,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          padding: EdgeInsets.zero,
-                          onSelected: (value) {
-                            if (value == 'reply_external') {
-                              _registerAsExternalReply(letter);
-                            }
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'reply_external',
+                        const SizedBox(height: AppSpacing.sm),
+                        // Baris 5: pengirim • tanggal diterima.
+                        Row(
+                          children: [
+                            Icon(Icons.inbox_outlined,
+                                size: 13, color: colorScheme.primary),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
                               child: Text(
-                                  'Daftarkan sebagai balasan pihak luar'),
+                                [
+                                  senderName ?? 'Pengirim tidak diketahui',
+                                  letter.receivedAt != null
+                                      ? 'Diterima ${_dateFormatter.format(letter.receivedAt!)}'
+                                      : 'Tanpa tanggal terima',
+                                ].join(' • '),
+                                style: textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
                       ],
                     ),
-                    // Baris 2: nomor surat pengirim (sekunder, bila ada).
-                    if (letter.numberExternal != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'No. eksternal: ${letter.numberExternal}',
-                        style: textTheme.bodySmall
-                            ?.copyWith(color: colorScheme.onSurfaceVariant),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.xs),
-                    // Baris 3: badge sifat + badge status.
-                    Row(
-                      children: [
-                        _buildSifatBadge(letter),
-                        const SizedBox(width: AppSpacing.sm),
-                        _buildStatusBadge(letter),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    // Baris 4: perihal.
-                    Text(
-                      letter.subject,
-                      style: textTheme.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    // Baris 5: pengirim • tanggal diterima.
-                    Row(
-                      children: [
-                        Icon(Icons.inbox_outlined,
-                            size: 13, color: colorScheme.primary),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            [
-                              senderName ?? 'Pengirim tidak diketahui',
-                              letter.receivedAt != null
-                                  ? 'Diterima ${_dateFormatter.format(letter.receivedAt!)}'
-                                  : 'Tanpa tanggal terima',
-                            ].join(' • '),
-                            style: textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Icon(Icons.chevron_right_rounded,
-                  size: 18, color: colorScheme.onSurfaceVariant),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// Menu ⋮ kartu surat masuk — bottom sheet aksi dengan ikon & keterangan.
+  Future<void> _openIncomingActions(IncomingLetterModel letter) async {
+    final value = await showLetterActionSheet(
+      context,
+      title: letter.agendaNumber,
+      subtitle: letter.subject,
+      actions: [
+        const LetterAction(
+          value: 'open',
+          label: 'Buka detail surat',
+          description: 'Lihat isi scan, disposisi, dan runutan surat.',
+          icon: Icons.open_in_new_rounded,
+        ),
+        const LetterAction(
+          value: 'reply_out',
+          label: 'Buat surat balasan',
+          description: 'Susun surat keluar sebagai balasan surat masuk ini.',
+          icon: Icons.reply_rounded,
+        ),
+        const LetterAction(
+          value: 'reply_external',
+          label: 'Daftarkan sebagai balasan pihak luar',
+          description:
+              'Catat surat masuk ini sebagai balasan salah satu surat keluar.',
+          icon: Icons.south_west_rounded,
+        ),
+      ],
+    );
+    if (!mounted || value == null) return;
+
+    switch (value) {
+      case 'open':
+        await _openDetail(letter);
+      case 'reply_out':
+        await _openReplyWizard(letter);
+      case 'reply_external':
+        await _registerAsExternalReply(letter);
+    }
+  }
+
+  /// Wizard surat keluar mode balasan (prefill penerima & perihal) — alur
+  /// utama "surat datang → balas" kini bisa dimulai langsung dari kartu.
+  Future<void> _openReplyWizard(IncomingLetterModel letter) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentCreateWizard(
+          service: _documentService,
+          replyTo: letter,
+        ),
+      ),
+    );
+    if (mounted) refresh();
   }
 
   /// Badge sifat: rahasia merah (error), segera amber (warning), biasa
@@ -594,6 +707,88 @@ class IncomingListSectionState extends State<IncomingListSection> {
       _ => StatusType.neutral,
     };
     return StatusBadge(label: letter.statusLabel, type: type);
+  }
+}
+
+/// Ajakan "daftarkan surat dari instansi lain" di atas daftar surat masuk —
+/// membuat alur "scan surat masuk → buat balasan" bisa ditemukan tanpa
+/// harus menekan tombol + di AppBar. Bisa ditutup (disembunyikan sampai
+/// sesi halaman berakhir).
+class _IncomingRegisterHint extends StatelessWidget {
+  final VoidCallback onRegister;
+  final VoidCallback onDismiss;
+
+  const _IncomingRegisterHint({
+    required this.onRegister,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm + AppSpacing.xs),
+      padding: AppSpacing.paddingMD,
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer.withValues(alpha: 0.45),
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.mark_email_unread_outlined,
+                size: 20,
+                color: colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Punya surat dari instansi lain?',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Tutup ajakan',
+                onPressed: onDismiss,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            'Daftarkan scan surat masuk di sini, lalu buat surat balasannya '
+            'langsung dari detail surat masuk tersebut.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSecondaryContainer,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: onRegister,
+              icon: const Icon(Icons.upload_file_rounded, size: 18),
+              label: const Text('Daftarkan Surat Masuk'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -663,7 +858,10 @@ class _OutgoingPickerSheetState extends State<_OutgoingPickerSheet> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      // Keyboard + inset sistem bawah (home indicator / gesture bar).
+      padding: EdgeInsets.only(
+        bottom: mediaQuery.viewInsets.bottom + context.systemBottomInset,
+      ),
       child: SizedBox(
         height: mediaQuery.size.height * _sheetHeightFactor,
         child: Column(
@@ -715,10 +913,9 @@ class _OutgoingPickerSheetState extends State<_OutgoingPickerSheet> {
                               itemBuilder: (context, index) {
                                 final document = _results[index];
                                 return ListTile(
-                                  leading: const Icon(
-                                      Icons.north_east_rounded),
-                                  title: Text(
-                                      document.number ?? 'Belum bernomor'),
+                                  leading: const Icon(Icons.north_east_rounded),
+                                  title:
+                                      Text(document.number ?? 'Belum bernomor'),
                                   subtitle: Text(
                                     document.subject,
                                     maxLines: 1,

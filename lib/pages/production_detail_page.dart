@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/production_model.dart';
 import '../services/production_service.dart';
+import '../theme/app_button_style.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/modern_bottom_nav.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/glass_app_bar.dart';
 
 /// Detail produksi: tampilkan header, list item (input/output), dan tombol
 /// apply/revert stok. Item tidak bisa diedit bila production sudah applied
@@ -99,16 +101,10 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail Produksi')),
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(title: const Text('Detail Produksi')),
       body: _buildBody(),
-      bottomNavigationBar: ModernBottomNav(
-        currentIndex: 2,
-        onTap: (index) {
-          if (index != 2) {
-            Navigator.pop(context);
-          }
-        },
-      ),
     );
   }
 
@@ -135,7 +131,9 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
         p.items.where((i) => i.direction == ProductionItemDirection.output).toList();
 
     return ListView(
-      padding: AppSpacing.paddingMD,
+      padding: AppSpacing.paddingMD.copyWith(
+        top: AppBarInsets.top(context),
+      ),
       children: [
         _headerCard(p),
         AppSpacing.gapVerticalMD,
@@ -168,6 +166,15 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Card(
+      elevation: 0,
+      color: cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusLG,
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(alpha: 0.5),
+          width: 1,
+        ),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMD,
         child: Column(
@@ -199,12 +206,12 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
                   ),
               ],
             ),
-            const SizedBox(height: 4),
+            AppSpacing.gapVerticalXS,
             Text(
               '${p.store?.nickname ?? '-'} · ${FormatUtils.formatDate(p.date)}',
               style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: 4),
+            AppSpacing.gapVerticalXS,
             Wrap(
               spacing: 8,
               children: [
@@ -279,7 +286,7 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
         label: Text(
           p.isApplied ? 'Batalkan Stok' : 'Terapkan Stok',
         ),
-        style: FilledButton.styleFrom(
+        style: AppButtonStyle.filled(
           backgroundColor: p.isApplied ? AppColors.warning : AppColors.success,
           foregroundColor: Colors.white,
         ),
@@ -294,7 +301,7 @@ class _ProductionDetailPageState extends State<ProductionDetailPage> {
         color: bg,
         borderRadius: AppSpacing.borderRadiusSM,
       ),
-      child: Text(text, style: const TextStyle(fontSize: 11)),
+      child: Text(text, style: Theme.of(context).textTheme.labelSmall),
     );
   }
 

@@ -7,9 +7,10 @@ import '../services/production_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import 'production_detail_page.dart';
 import 'production_form_page.dart';
@@ -171,17 +172,31 @@ class _ProductionListPageState extends State<ProductionListPage> {
   Widget build(BuildContext context) {
     final isAdmin = context.watch<AuthProvider>().isAdmin;
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Produksi'),
         actions: [
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
-            onTap: _openFilterSheet,
-          ),
+          BarButtonCluster(actions: [
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _activeFilterCount,
+              onTap: _openFilterSheet,
+            ),
+            // Backend hanya mengizinkan admin/super_admin membuat produksi
+            // (authorizeAdmin) — tombol create hanya untuk role tersebut.
+            if (isAdmin)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Produksi',
+                onTap: _openCreate,
+              ),
+          ]),
         ],
       ),
       body: _buildBody(isAdmin),
-      floatingActionButton: isAdmin ? null : AddFab(onPressed: _openCreate),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 2,
         onTap: (index) {
@@ -213,6 +228,7 @@ class _ProductionListPageState extends State<ProductionListPage> {
       return RefreshIndicator(
         onRefresh: _refresh,
         child: ListView(
+          padding: EdgeInsets.only(top: AppBarInsets.top(context)),
           children: [
             SizedBox(
               height: 300,
@@ -224,7 +240,7 @@ class _ProductionListPageState extends State<ProductionListPage> {
                         size: 64, color: Theme.of(context).colorScheme.outline),
                     AppSpacing.gapVerticalMD,
                     const Text('Belum ada produksi.'),
-                    if (!isAdmin) ...[
+                    if (isAdmin) ...[
                       AppSpacing.gapVerticalSM,
                       FilledButton.tonalIcon(
                         onPressed: _openCreate,
@@ -245,7 +261,10 @@ class _ProductionListPageState extends State<ProductionListPage> {
       onRefresh: _refresh,
       child: ListView.builder(
         controller: _scrollController,
-        padding: AppSpacing.paddingMD,
+        padding: AppSpacing.paddingMD.copyWith(
+          top: AppBarInsets.top(context),
+          bottom: ModernBottomNav.clearance(context),
+        ),
         itemCount: _items.length + 1,
         itemBuilder: (ctx, i) {
           if (i == _items.length) {

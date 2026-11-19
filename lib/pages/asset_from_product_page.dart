@@ -1,14 +1,17 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 
 import '../models/store_model.dart';
 import '../providers/asset_provider.dart';
 import '../services/store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_sheet.dart';
 import '../widgets/modern_dropdown.dart';
 
@@ -106,12 +109,10 @@ class _AssetFromProductPageState extends State<AssetFromProductPage> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    final cs = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: cs.error,
-      ),
+    showAppSnackBar(
+      context,
+      msg,
+      background: Theme.of(context).colorScheme.error,
     );
   }
 
@@ -129,7 +130,13 @@ class _AssetFromProductPageState extends State<AssetFromProductPage> {
       child: StatefulBuilder(builder: (context, setS) {
         final theme = Theme.of(context);
         List<Map<String, dynamic>> filtered = _assetProducts;
-        return Column(
+        // Kontrak ModernBottomSheet: keyboard (viewInsets) ditangani
+        // pemanggil — tanpa ini daftar tertutup keyboard saat mencari.
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -179,6 +186,7 @@ class _AssetFromProductPageState extends State<AssetFromProductPage> {
             ),
             AppSpacing.gapVerticalSM,
           ],
+          ),
         );
       }),
     );
@@ -230,7 +238,9 @@ class _AssetFromProductPageState extends State<AssetFromProductPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Text('Tambah Aset dari Produk'),
       ),
       body: _isLoading
@@ -248,8 +258,12 @@ class _AssetFromProductPageState extends State<AssetFromProductPage> {
                   ),
                 )
               : SafeArea(
+                  top: false,
+                  bottom: false,
                   child: ListView(
-                    padding: AppSpacing.screenPadding,
+                    padding: AppSpacing.screenPadding.copyWith(
+                      top: AppBarInsets.top(context),
+                    ),
                     children: [
                       // Store dropdown.
                       // Staff: dikunci ke presence store (read-only).

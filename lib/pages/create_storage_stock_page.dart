@@ -1,23 +1,39 @@
 import 'package:flutter/material.dart';
+
 import '../models/storage_stock_model.dart';
 import '../models/store_model.dart';
 import '../services/storage_stock_service.dart';
 import '../services/store_service.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/forms/form_section_card.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_dropdown.dart';
 import '../widgets/safe_bottom_bar.dart';
 
 class CreateStorageStockPage extends StatefulWidget {
-  const CreateStorageStockPage({super.key});
+  /// Mode edit: laporan yang kuantitasnya dikoreksi. Null = mode create.
+  final StorageStockModel? reportForEdit;
+
+  /// Injection untuk widget test; null = pakai service sungguhan.
+  final StoreService? storeService;
+  final StorageStockService? storageStockService;
+
+  const CreateStorageStockPage({
+    super.key,
+    this.reportForEdit,
+    this.storeService,
+    this.storageStockService,
+  });
 
   @override
   State<CreateStorageStockPage> createState() => _CreateStorageStockPageState();
 }
 
 class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
-  final StoreService _storeService = StoreService();
-  final StorageStockService _storageStockService = StorageStockService();
+  late final StoreService _storeService;
+  late final StorageStockService _storageStockService;
 
   List<StoreModel> _stores = [];
   List<StorageStockProduct> _products = [];
@@ -25,13 +41,16 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
   String? _errorMessage;
 
   StoreModel? _selectedStore;
-  final List<Map<String, dynamic>> _items =
-      []; // Contains product_id, productName, unitName, controller
+  final List<Map<String, dynamic>> _items = [];
   bool _isSubmitting = false;
+
+  bool get _isEditMode => widget.reportForEdit != null;
 
   @override
   void initState() {
     super.initState();
+    _storeService = widget.storeService ?? StoreService();
+    _storageStockService = widget.storageStockService ?? StorageStockService();
     _loadInitialData();
   }
 
@@ -52,11 +71,11 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
         _stores = stores;
         _products = products;
 
-        // Auto-populate all products by default (lazy load equivalent for mobile)
         _items.clear();
         for (var p in _products) {
-          final controller = TextEditingController(text: '0');
-          // Select all when focused
+          final controller = TextEditingController(
+            text: _isEditMode ? _initialQuantityFor(p.id) : '0',
+          );
           controller.addListener(() {
             final text = controller.text;
             if (text.startsWith('0') && text.length > 1) {
@@ -74,6 +93,10 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
           });
         }
 
+        if (_isEditMode) {
+          _selectedStore = _storeFromList(widget.reportForEdit!.storeId);
+        }
+
         _isLoadingData = false;
       });
     } catch (e) {
@@ -84,15 +107,38 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
     }
   }
 
+  String _initialQuantityFor(int productId) {
+    if (widget.reportForEdit == null) return '0';
+    try {
+      final detail = widget.reportForEdit!.details
+          .firstWhere((d) => d.productId == productId);
+      return detail.quantity.toStringAsFixed(
+        detail.quantity.truncateToDouble() == detail.quantity ? 0 : 2,
+      );
+    } catch (_) {
+      return '0';
+    }
+  }
+
+  StoreModel? _storeFromList(int storeId) {
+    try {
+      return _stores.firstWhere((s) => s.id == storeId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Gagal Menyimpan',
-            style: Theme.of(ctx)
-                .textTheme
-                .titleMedium
-                ?.copyWith(color: Theme.of(ctx).colorScheme.error)),
+        title: Text(
+          'Gagal Menyimpan',
+          style: Theme.of(ctx)
+              .textTheme
+              .titleMedium
+              ?.copyWith(color: Theme.of(ctx).colorScheme.error),
+        ),
         content: Text(message),
         actions: [
           TextButton(
@@ -104,41 +150,45 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
     );
   }
 
-  Future<void> _submitReport() async {
+  Future<void> _submit() async {
     if (_selectedStore == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Silakan pilih gudang terlebih dahulu.')),
-      );
-      return;
-    }
-
-    if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tidak ada item produk.')),
+        const SnackBar(content: Text('Silakan pilih gudang/outlet.')),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
     try {
-      final List<Map<String, dynamic>> itemsApi = _items.map((item) {
+      final itemsApi = _items.map((item) {
         final ctrl = item['controller'] as TextEditingController;
+        final qty = double.tryParse(ctrl.text) ?? 0.0;
         return {
           'product_id': item['product_id'],
-          'quantity': double.tryParse(ctrl.text) ?? 0.0,
+          'quantity': qty,
         };
       }).toList();
 
-      await _storageStockService.createStorageStock(
-          _selectedStore!.id, itemsApi);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan Stok Sisa berhasil disimpan.')),
-      );
+      if (_isEditMode) {
+        await _storageStockService.updateStorageStock(
+            widget.reportForEdit!.id, itemsApi);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Laporan Stock Opname berhasil diperbarui.')),
+        );
+      } else {
+        await _storageStockService.createStorageStock(
+            _selectedStore!.id, itemsApi);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Laporan Stock Opname berhasil disimpan.')),
+        );
+      }
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      // Show dialog for specific backend validations (e.g. time < 21:00 or duplicated)
       _showErrorDialog(e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) {
@@ -154,8 +204,11 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
     final textTheme = theme.textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stock Opname Baru'),
+      // extendBody tetap false: jika true, konten bawah form tertutup bar aksi
+      // (bar sudah meng-handle system inset sendiri lewat SafeBottomBar).
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        title: Text(_isEditMode ? 'Edit Stock Opname' : 'Stock Opname Baru'),
       ),
       body: _isLoadingData
           ? const Center(child: CircularProgressIndicator())
@@ -178,99 +231,160 @@ class _CreateStorageStockPageState extends State<CreateStorageStockPage> {
                     ),
                   ),
                 )
-              : Stack(
-                  children: [
-                    Column(
-                      children: [
-                        Padding(
-                          padding: AppSpacing.paddingMD,
-                          child: ModernDropdown<StoreModel>(
-                            labelText: 'Pilih Gudang / Outlet',
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppBarInsets.top(context),
+                    AppSpacing.md,
+                    AppSpacing.md + context.systemBottomInset + 72,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FormSectionCard(
+                        title: 'Lokasi Stock Opname',
+                        subtitle: _isEditMode
+                            ? 'Outlet terkunci saat mode koreksi laporan'
+                            : 'Pilih gudang atau outlet untuk opname fisik',
+                        icon: Icons.storefront_rounded,
+                        children: [
+                          ModernDropdown<StoreModel>(
+                            labelText: 'Gudang / Outlet',
                             hint: 'Pilih outlet...',
+                            isRequired: true,
                             prefixIcon: const Icon(Icons.storefront, size: 20),
                             value: _selectedStore,
                             items: _stores,
                             getLabel: (s) => s.nickname,
                             getSubtitle: (s) => '',
+                            enabled: !_isEditMode,
                             onChanged: (val) {
                               setState(() {
                                 _selectedStore = val;
                               });
                             },
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
-                            vertical: AppSpacing.sm,
-                          ),
-                          width: double.infinity,
-                          color: colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.3),
-                          child: Text(
-                            'Isi kuantitas stok aktual saat ini',
-                            style: textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            padding: AppSpacing.paddingMD,
-                            itemCount: _items.length,
-                            itemBuilder: (context, idx) {
-                              final item = _items[idx];
-                              return Padding(
-                                padding: EdgeInsets.only(bottom: AppSpacing.md),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 2,
-                                      child: Text(
-                                        item['productName'],
-                                        style: textTheme.bodyMedium?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                    AppSpacing.gapHorizontalSM,
-                                    Expanded(
-                                      flex: 1,
-                                      child: TextFormField(
-                                        controller: item['controller'],
-                                        keyboardType: TextInputType.number,
-                                        decoration: InputDecoration(
-                                          suffixText: item['unitName'],
-                                        ),
-                                        onTap: () {
-                                          final ctrl = item['controller']
-                                              as TextEditingController;
-                                          ctrl.selection = TextSelection(
-                                              baseOffset: 0,
-                                              extentOffset: ctrl.text.length);
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_isSubmitting)
-                      Container(
-                        color: colorScheme.scrim.withValues(alpha: 0.3),
-                        child: const Center(child: CircularProgressIndicator()),
+                        ],
                       ),
-                  ],
+                      AppSpacing.gapVerticalMD,
+                      FormSectionCard(
+                        title: 'Kuantitas Fisik Aktual',
+                        subtitle: 'Masukkan jumlah stok riil hasil penghitungan fisik',
+                        icon: Icons.inventory_2_outlined,
+                        children: [
+                          if (_items.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: Center(
+                                child: Text(
+                                  'Tidak ada produk tersedia untuk diopname.',
+                                  style: textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ..._items.map((item) {
+                            final unit = item['unitName']?.toString() ?? '';
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.25),
+                                borderRadius: AppSpacing.borderRadiusMD,
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant
+                                      .withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          item['productName'] ?? '',
+                                          style: textTheme.bodyMedium?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (unit.isNotEmpty)
+                                          Text(
+                                            'Satuan: $unit',
+                                            style:
+                                                textTheme.bodySmall?.copyWith(
+                                              color: colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  SizedBox(
+                                    width: 110,
+                                    child: TextFormField(
+                                      controller: item['controller'],
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      textAlign: TextAlign.end,
+                                      decoration: InputDecoration(
+                                        suffixText: unit.isNotEmpty ? unit : null,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 10),
+                                        filled: true,
+                                        fillColor: colorScheme.surface,
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              AppSpacing.borderRadiusMD,
+                                          borderSide: BorderSide(
+                                            color: colorScheme.outlineVariant
+                                                .withValues(alpha: 0.4),
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              AppSpacing.borderRadiusMD,
+                                          borderSide: BorderSide(
+                                            color: colorScheme.outlineVariant
+                                                .withValues(alpha: 0.4),
+                                          ),
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        final ctrl = item['controller']
+                                            as TextEditingController;
+                                        ctrl.selection = TextSelection(
+                                            baseOffset: 0,
+                                            extentOffset: ctrl.text.length);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
       bottomNavigationBar: SafeBottomBar(
-        child: ModernButton(
-          text: 'Simpan Stock Opname',
-          onPressed: _isSubmitting ? null : _submitReport,
-          isLoading: _isSubmitting,
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ModernButton(
+            text: _isEditMode
+                ? 'Simpan Perubahan Stock Opname'
+                : 'Simpan Stock Opname',
+            onPressed: _isSubmitting ? null : _submit,
+            isLoading: _isSubmitting,
+          ),
         ),
       ),
     );

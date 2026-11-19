@@ -8,8 +8,10 @@ import '../services/closing_store_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/status_mappers.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import 'create_payment_receipt_page.dart';
 
@@ -332,51 +334,52 @@ class _DailySalaryListPageState extends State<DailySalaryListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: _isSelectionMode
             ? Text('${_selectedIds.length} dipilih')
             : const Text('Daily Salary'),
         leading: _isSelectionMode
             ? IconButton(
+                tooltip: 'Tutup',
                 icon: const Icon(Icons.close),
                 onPressed: _toggleSelectionMode,
               )
             : null,
         actions: [
-          if (_isAdmin) ...[
-            if (_isSelectionMode) ...[
-              IconButton(
-                icon: Icon(
-                  _selectedIds.length == _payableCount
+          BarButtonCluster(actions: [
+            if (_isAdmin) ...[
+              if (_isSelectionMode) ...[
+                BarButtonSpec(
+                  icon: _selectedIds.length == _payableCount
                       ? Icons.deselect
                       : Icons.select_all,
+                  tooltip: _selectedIds.length == _payableCount
+                      ? 'Batalkan Semua'
+                      : 'Pilih Semua',
+                  onTap: _selectAll,
                 ),
-                onPressed: _selectAll,
-                tooltip: _selectedIds.length == _payableCount
-                    ? 'Batalkan Semua'
-                    : 'Pilih Semua',
+                BarButtonSpec(
+                  icon: Icons.payment,
+                  tooltip: 'Buat Payment Receipt',
+                  onTap: _navigateToPaymentReceipt,
+                ),
+              ] else
+                BarButtonSpec(
+                  icon: Icons.checklist,
+                  tooltip: 'Pilih Data',
+                  onTap: _toggleSelectionMode,
+                ),
+            ],
+            if (_isAdmin && !_isSelectionMode)
+              BarButtonSpec(
+                icon: Icons.tune,
+                tooltip: 'Filter',
+                badgeCount: _activeFilterCount,
+                onTap: _openFilterSheet,
               ),
-              IconButton(
-                icon: const Icon(Icons.payment),
-                onPressed: _navigateToPaymentReceipt,
-                tooltip: 'Buat Payment Receipt',
-              ),
-            ] else
-              IconButton(
-                icon: const Icon(Icons.checklist),
-                onPressed: _toggleSelectionMode,
-                tooltip: 'Pilih Data',
-              ),
-          ],
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-          ),
-          if (_isAdmin && !_isSelectionMode)
-            FilterAppBarAction(
-              activeCount: _activeFilterCount,
-              onTap: _openFilterSheet,
-            ),
+          ]),
         ],
       ),
       body: Column(
@@ -454,11 +457,15 @@ class _DailySalaryListPageState extends State<DailySalaryListPage> {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    return ListView.builder(
-      controller: _scrollController,
-      itemCount: displayList.length + (_hasMore ? 1 : 0),
-      padding: AppSpacing.paddingMD,
-      itemBuilder: (context, index) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: displayList.length + (_hasMore ? 1 : 0),
+        padding: AppSpacing.paddingMD.copyWith(
+            top: AppBarInsets.top(context),
+            bottom: ModernBottomNav.clearance(context)),
+        itemBuilder: (context, index) {
         if (index == displayList.length) {
           return const Padding(
             padding: EdgeInsets.all(AppSpacing.md),
@@ -606,6 +613,7 @@ class _DailySalaryListPageState extends State<DailySalaryListPage> {
           ),
         );
       },
+      ),
     );
   }
 }

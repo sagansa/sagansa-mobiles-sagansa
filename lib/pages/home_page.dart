@@ -1,13 +1,16 @@
-import 'package:badges/badges.dart' as badges;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/home_dashboard_provider.dart';
-import '../services/notification_service.dart';
+import '../providers/notification_provider.dart';
 import '../services/version_service.dart';
 import '../theme/app_spacing.dart';
+import '../utils/stale_refresh_policy.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/home/cards/home_anomaly_card.dart';
 import '../widgets/home/cards/home_asset_card.dart';
 import '../widgets/home/cards/home_asset_due_card.dart';
@@ -16,6 +19,7 @@ import '../widgets/home/cards/home_delivery_card.dart';
 import '../widgets/home/cards/home_invoice_unpaid_card.dart';
 import '../widgets/home/cards/home_leave_card.dart';
 import '../widgets/home/cards/home_loan_card.dart';
+import '../widgets/home/cards/home_pending_approvals_card.dart';
 import '../widgets/home/cards/home_presence_summary_card.dart';
 import '../widgets/home/cards/home_salary_slip_card.dart';
 import '../widgets/home/cards/home_shopping_card.dart';
@@ -24,11 +28,14 @@ import '../widgets/home/cards/home_stock_report_card.dart';
 import '../widgets/home/cards/home_stock_warehouse_card.dart';
 import '../widgets/home/cards/home_yesterday_omzet_card.dart';
 import '../widgets/home/home_drawer.dart';
+import '../widgets/home/home_skeleton_loader.dart';
+import '../widgets/home/sections/home_greeting_header.dart';
 import '../widgets/home/sections/home_presence_section.dart';
+import '../widgets/home/sections/home_staff_checklist_section.dart';
 import '../widgets/home/sections/home_storage_stocks_section.dart';
 import '../widgets/home/sections/today_presences_sheet.dart';
+import '../widgets/ios_bar_button.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/theme_toggle_button.dart';
 import 'hrd_dashboard_page.dart';
 import 'notification_list_page.dart';
 import 'presence_page.dart';
@@ -44,16 +51,22 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool isLoading = false;
   final int _selectedIndex = 0;
 
-  /// Jumlah notifikasi belum dibaca (badge bell).
-  int _unreadCount = 0;
+  /// Waktu siklus fetch terakhir selesai (diisi _initData). Dipakai untuk
+  /// memutuskan refresh saat app kembali ke foreground — resume tidak
+  /// me-mount ulang widget, jadi tanpa ini tampilan memakai data lama.
+  DateTime? _lastFullFetch;
+
+  /// App-switch singkat (di bawah ambang) tidak memicu fetch ulang.
+  static const _staleRefreshPolicy = StaleRefreshPolicy();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initData();
     _refreshUnreadCount();
 
@@ -65,14 +78,10 @@ class HomePageState extends State<HomePage> {
     });
   }
 
-  /// Ambil jumlah notifikasi belum dibaca untuk badge bell (polling manual).
+  /// Ambil jumlah notifikasi belum dibaca untuk badge bell. Nilai di-render
+  /// dari NotificationProvider (global), cukup refresh datanya di sini.
   Future<void> _refreshUnreadCount() async {
-    try {
-      final count = await NotificationService.instance.getUnreadCount();
-      if (mounted) setState(() => _unreadCount = count);
-    } catch (_) {
-      // Abaikan kegagalan (mis. token expired); badge cukup tidak tampil.
-    }
+    await NotificationProvider.instance.refreshUnreadCount();
   }
 
   /// Buka halaman notifikasi, lalu refresh badge saat kembali.
@@ -99,29 +108,18 @@ class HomePageState extends State<HomePage> {
       final isStorageStaffRole = authProvider.isStorageStaff;
       final hasAdminRole = widget.initialIsAdmin ?? authProvider.isAdmin;
 
-      // Load dashboard data only after the auth token/user context is ready.
-      // This prevents two concurrent waves of requests (including
-      // storage-stocks/today-status) during startup.
-      await homeProvider.loadAll();
-      if (!mounted) return;
-
-      // Load presence data via provider (today + previous + active leave flag).
-      await homeProvider.loadPresence();
-      if (!mounted) return;
-
-      if (isStorageStaffRole) {
-        await homeProvider.loadOrders();
-        if (!mounted) return;
-      }
-
-      await homeProvider.loadLeaveSalary();
-      if (!mounted) return;
-
-      if (hasAdminRole || isStorageStaffRole) {
-        await homeProvider.loadAdminStock();
-        if (!mounted) return;
-        await homeProvider.loadAdminPresence();
-      }
+      // Load dashboard data secara paralel sesuai role untuk meminimalkan waktu loading
+      await Future.wait([
+        homeProvider.loadAll(),
+        homeProvider.loadPresence(),
+        homeProvider.loadLeaveSalary(),
+        if (!hasAdminRole) homeProvider.loadStaffChecklist(),
+        if (isStorageStaffRole) homeProvider.loadOrders(),
+        if (hasAdminRole || isStorageStaffRole) ...[
+          homeProvider.loadAdminStock(),
+          homeProvider.loadAdminPresence(),
+        ],
+      ]);
     } catch (e) {
       if (mounted) {
         if (e.toString().contains('User data not found')) {
@@ -133,12 +131,31 @@ class HomePageState extends State<HomePage> {
         }
       }
     } finally {
+      _lastFullFetch = DateTime.now();
       if (mounted) {
         setState(() {
           isLoading = false;
         });
       }
     }
+  }
+
+  /// Resume dari background: HomePage tidak di-mount ulang sehingga tanpa
+  /// ini frame lama tetap tampil tanpa panggilan API baru. Refresh hanya
+  /// bila data terakhir sudah melewati ambang staleness.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    if (!_staleRefreshPolicy.shouldRefresh(_lastFullFetch, DateTime.now())) {
+      return;
+    }
+    _initData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _onRefresh() async {
@@ -156,13 +173,12 @@ class HomePageState extends State<HomePage> {
         (route) => false,
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authProvider.errorMessage.isNotEmpty
-              ? authProvider.errorMessage
-              : 'Gagal melakukan logout'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      showAppSnackBar(
+        context,
+        authProvider.errorMessage.isNotEmpty
+            ? authProvider.errorMessage
+            : 'Gagal melakukan logout',
+        background: Theme.of(context).colorScheme.error,
       );
     }
   }
@@ -216,8 +232,6 @@ class HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     // Read user info & roles from AuthProvider (single source of truth).
     final userName =
         context.select<AuthProvider, String>((a) => a.userName);
@@ -231,59 +245,49 @@ class HomePageState extends State<HomePage> {
         (p) => p.leaveSalary.hasLoanData);
     final isUserDataLoaded = context.select<HomeDashboardProvider, bool>(
         (p) => p.presence.isUserDataLoaded);
+    // Jumlah notifikasi belum dibaca dari NotificationProvider (live saat
+    // push masuk; badge di-refresh dari service di atas).
+    final unreadCount =
+        context.select<NotificationProvider, int>((p) => p.unreadCount);
+    final topPadding = MediaQuery.of(context).padding.top + 44.0;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        centerTitle: false,
+        showBottomBorder: false,
+        toolbarHeight: 44.0,
         leading: Builder(
-          builder: (context) => InkWell(
-            onTap: () {
-              Scaffold.of(context).openDrawer();
-            },
-            child: Padding(
-              padding: AppSpacing.cardPadding,
-              child: SvgPicture.asset(
-                'assets/images/logo.svg',
-                width: 36,
-                fit: BoxFit.contain,
-                height: 36,
+          builder: (context) => Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Center(
+              child: IosBarButton(
+                onTap: () => Scaffold.of(context).openDrawer(),
+                tooltip: 'Menu Navigasi',
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: SvgPicture.asset(
+                    'assets/images/logo.svg',
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
           ),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              userName,
-              style: theme.textTheme.titleSmall,
-            ),
-            Text(
-              companyName,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+        title: null,
         actions: [
-          badges.Badge(
-            showBadge: _unreadCount > 0,
-            position: badges.BadgePosition.topEnd(top: 2, end: 2),
-            badgeContent: Text(
-              _unreadCount > 99 ? '99+' : '$_unreadCount',
-              style: const TextStyle(color: Colors.white, fontSize: 10),
-            ),
-            badgeStyle: const badges.BadgeStyle(
-              padding: EdgeInsets.all(5),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.notifications),
-              tooltip: 'Notifikasi',
-              onPressed: _openNotifications,
-            ),
+          BarButtonCluster(
+            actions: [
+              BarButtonSpec(
+                icon: Icons.notifications_outlined,
+                badgeCount: unreadCount,
+                tooltip: 'Notifikasi',
+                onTap: _openNotifications,
+              ),
+            ],
           ),
-          const ThemeToggleButton(),
-          AppSpacing.gapHorizontalSM,
         ],
       ),
       drawer: HomeDrawer(
@@ -292,44 +296,57 @@ class HomePageState extends State<HomePage> {
         isAdmin: isAdmin,
         onLogout: _logout,
       ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          key: const Key('homeRefresh'),
-          onRefresh: _onRefresh,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints:
-                      BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Padding(
-                    padding: AppSpacing.paddingMD,
-                    child: !isUserDataLoaded
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 100),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                : isAdmin
-                    ? _buildAdminDashboard()
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                          HomePresenceSection(
-                              onNavigateToPresence: _navigateToPresencePage),
-                          _buildDashboardGrid(
+      body: RefreshIndicator(
+        key: const Key('homeRefresh'),
+        edgeOffset: topPadding,
+        onRefresh: _onRefresh,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                topPadding + 6,
+                AppSpacing.md,
+                ModernBottomNav.clearance(context),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight -
+                      topPadding -
+                      (ModernBottomNav.height + AppSpacing.sm),
+                ),
+                child: !isUserDataLoaded
+                    ? const HomeSkeletonLoader()
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          HomeGreetingHeader(
+                            userName: userName,
+                            companyName: companyName,
+                            isAdmin: isAdmin,
                             isStorageStaff: isStorageStaff,
-                            hasLoanData: hasLoanData,
                           ),
+                          AppSpacing.gapVerticalSM,
+                          if (isAdmin)
+                            _buildAdminDashboard()
+                          else ...[
+                            HomePresenceSection(
+                              onNavigateToPresence: _navigateToPresencePage,
+                            ),
+                            AppSpacing.gapVerticalSM,
+                            const HomeStaffChecklistSection(),
+                            AppSpacing.gapVerticalSM,
+                            _buildDashboardGrid(
+                              isStorageStaff: isStorageStaff,
+                              hasLoanData: hasLoanData,
+                            ),
+                          ],
                         ],
                       ),
-                  ),
-                ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
 
@@ -344,28 +361,67 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-
-
-
   Widget _buildDashboardGrid({
     required bool isStorageStaff,
     required bool hasLoanData,
   }) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppSpacing.gapVerticalMD,
-        Text(
-          'Menu Dashboard',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+        if (isStorageStaff) ...[
+          _buildMenuSectionHeader(
+            icon: Icons.warehouse_outlined,
+            title: 'Gudang & Logistik',
           ),
+          AppSpacing.gapVerticalSM,
+          GridView(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 140,
+              childAspectRatio: 1.0,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            children: const [
+              HomeStockWarehouseCard(),
+              HomeDeliveryCard(),
+              HomeSpecificGravityCard(),
+            ],
+          ),
+          AppSpacing.gapVerticalMD,
+        ],
+        _buildMenuSectionHeader(
+          icon: Icons.storefront_outlined,
+          title: 'Operasional Toko',
         ),
         AppSpacing.gapVerticalSM,
         GridView(
           shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 140,
+            childAspectRatio: 1.0,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+          ),
+          children: const [
+            HomeClosingStoreCard(),
+            HomeAssetCard(),
+            HomeShoppingCard(),
+          ],
+        ),
+        AppSpacing.gapVerticalMD,
+        _buildMenuSectionHeader(
+          icon: Icons.badge_outlined,
+          title: 'Personalia & Finansial',
+        ),
+        AppSpacing.gapVerticalSM,
+        GridView(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 140,
@@ -374,64 +430,29 @@ class HomePageState extends State<HomePage> {
             mainAxisSpacing: 8,
           ),
           children: [
-            if (isStorageStaff) ...[
-              const HomeStockWarehouseCard(),
-              const HomeDeliveryCard(),
-              const HomeSpecificGravityCard(),
-            ],
-            // Manajemen Aset: tampilkan untuk SEMUA user. Backend otomatis
-            // memfilter agar user hanya melihat aset di mana dia PIC/creator
-            // (admin melihat semua).
-            const HomeAssetCard(),
-            const HomeClosingStoreCard(),
             const HomeSalarySlipCard(),
             const HomeLeaveCard(),
-            if (hasLoanData)
-              const HomeLoanCard(),
-            const HomeShoppingCard(),
+            if (hasLoanData) const HomeLoanCard(),
           ],
         ),
       ],
     );
   }
 
-
   Widget _buildAdminDashboard() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Welcome header (tetap)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Dashboard Admin',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  'Ringkasan operasional harian toko',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ],
+        const HomePendingApprovalsCard(),
+        _buildMenuSectionHeader(
+          icon: Icons.dashboard_outlined,
+          title: 'Ringkasan Dashboard Admin',
         ),
-        AppSpacing.gapVerticalMD,
-
-        // 3-column grid: 6 cards
+        AppSpacing.gapVerticalSM,
         GridView.count(
           crossAxisCount: 3,
           shrinkWrap: true,
+          padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: AppSpacing.sm,
           crossAxisSpacing: AppSpacing.sm,
@@ -439,7 +460,8 @@ class HomePageState extends State<HomePage> {
           children: [
             // 1. Presensi (provider-driven)
             HomePresenceSummaryCard(
-                onTap: () => showTodayPresencesSheet(context)),
+              onTap: () => showTodayPresencesSheet(context),
+            ),
             // 2. Omzet Kemarin (provider-driven)
             const HomeYesterdayOmzetCard(),
             // 3. Selisih Stok (provider-driven)
@@ -452,12 +474,31 @@ class HomePageState extends State<HomePage> {
             const HomeAssetDueCard(),
           ],
         ),
-        AppSpacing.gapVerticalLG,
-
-        // Storage stock feed (tetap)
+        AppSpacing.gapVerticalMD,
         const HomeStorageStocksSection(),
       ],
     );
   }
 
+  Widget _buildMenuSectionHeader({
+    required IconData icon,
+    required String title,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: colorScheme.primary),
+        AppSpacing.gapHorizontalXS,
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
 }

@@ -6,12 +6,11 @@ import '../services/procurement_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format_utils.dart';
-import '../widgets/add_fab.dart';
-import '../widgets/filter_app_bar_action.dart';
+import '../widgets/bar_button_cluster.dart';
 import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
 import '../widgets/payment_receipt_card.dart';
-import '../widgets/search_app_bar_action.dart';
 import 'invoice_selection_page.dart';
 import 'payment_receipt_detail_page.dart';
 
@@ -173,12 +172,12 @@ class _PaymentReceiptDashboardPageState
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isDark
-              ? [const Color(0xFF2C281E), const Color(0xFF1A1A1A)]
-              : [AppColors.primary, const Color(0xFF3A3A3A)],
+              ? [AppColors.darkSecondaryContainer, AppColors.darkBackground]
+              : [AppColors.primary, AppColors.darkSurfaceVariant],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLG),
+        borderRadius: AppSpacing.borderRadiusLG,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -195,8 +194,7 @@ class _PaymentReceiptDashboardPageState
             children: [
               Text(
                 'TOTAL BUKTI TRANSFER',
-                style: TextStyle(
-                  fontSize: 11,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.1,
                   color: isDark ? AppColors.gold : AppColors.gold,
@@ -206,12 +204,11 @@ class _PaymentReceiptDashboardPageState
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.gold.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppSpacing.borderRadiusMD,
                 ),
                 child: Text(
                   '$count Receipt',
-                  style: const TextStyle(
-                    fontSize: 11,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppColors.gold,
                   ),
@@ -222,18 +219,16 @@ class _PaymentReceiptDashboardPageState
           AppSpacing.gapVerticalSM,
           Text(
             totalAmountFormatted,
-            style: const TextStyle(
-              fontSize: 24,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.white,
               letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 4),
+          AppSpacing.gapVerticalXS,
           Text(
             'Ringkasan pengeluaran bukti pembayaran terdata',
-            style: TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
@@ -267,8 +262,7 @@ class _PaymentReceiptDashboardPageState
                 }
               },
               selectedColor: AppColors.gold,
-              labelStyle: TextStyle(
-                fontSize: 12,
+              labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected ? Colors.black : theme.colorScheme.onSurface,
               ),
@@ -285,20 +279,44 @@ class _PaymentReceiptDashboardPageState
     final isDark = theme.brightness == Brightness.dark;
     final colorScheme = theme.colorScheme;
     final filtered = _filteredReceipts;
+    final canCreate = !context
+        .watch<AuthProvider>()
+        .hasAnyRole(['staff', 'storage-staff']);
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('Payment Receipt'),
         elevation: 0,
         actions: [
-          SearchAppBarAction(
-            isSearchActive: _searchExpanded,
-            onTap: () => setState(() => _searchExpanded = !_searchExpanded),
-          ),
-          FilterAppBarAction(
-            activeCount: _activeFilterCount,
-            onTap: _openFilterSheet,
-          ),
+          BarButtonCluster(actions: [
+            BarButtonSpec(
+              icon: _searchExpanded ? Icons.search_off : Icons.search,
+              tooltip: _searchExpanded ? 'Tutup Pencarian' : 'Cari',
+              onTap: () => setState(() => _searchExpanded = !_searchExpanded),
+            ),
+            BarButtonSpec(
+              icon: Icons.tune,
+              tooltip: 'Filter',
+              badgeCount: _activeFilterCount,
+              onTap: _openFilterSheet,
+            ),
+            if (canCreate)
+              BarButtonSpec(
+                icon: Icons.add_rounded,
+                iconSize: 22,
+                tooltip: 'Tambah Payment Receipt',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const InvoiceSelectionPage(),
+                    ),
+                  ).then((_) => _fetchReceipts());
+                },
+              ),
+          ]),
         ],
       ),
       body: SafeArea(
@@ -316,6 +334,7 @@ class _PaymentReceiptDashboardPageState
                   prefixIcon: const Icon(Icons.search_rounded, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
+                          tooltip: 'Bersihkan pencarian',
                           icon: const Icon(Icons.clear_rounded, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -329,7 +348,7 @@ class _PaymentReceiptDashboardPageState
                       ? theme.cardColor
                       : AppColors.surfaceVariant.withValues(alpha: 0.6),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusMD),
+                    borderRadius: AppSpacing.borderRadiusMD,
                     borderSide: BorderSide.none,
                   ),
                 ),
@@ -390,7 +409,9 @@ class _PaymentReceiptDashboardPageState
                             onRefresh: _fetchReceipts,
                             child: ListView.builder(
                               controller: _scrollController,
-                              padding: const EdgeInsets.all(AppSpacing.md),
+                              padding: const EdgeInsets.all(AppSpacing.md).copyWith(
+                                  bottom:
+                                      ModernBottomNav.clearance(context)),
                               itemCount: filtered.length + (_loadingMore ? 1 : 1), // +1 for summary
                               itemBuilder: (context, idx) {
                                 if (idx == 0) {
@@ -431,18 +452,6 @@ class _PaymentReceiptDashboardPageState
         ],
       ),
       ),
-      floatingActionButton: context.watch<AuthProvider>().hasAnyRole(['staff', 'storage-staff'])
-          ? null
-          : AddFab(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const InvoiceSelectionPage(),
-                  ),
-                ).then((_) => _fetchReceipts());
-              },
-            ),
       bottomNavigationBar: ModernBottomNav(
         currentIndex: 3,
         onTap: (index) {

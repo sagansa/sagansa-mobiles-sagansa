@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../models/delivery_address_model.dart';
 import '../services/delivery_address_service.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/error_utils.dart';
-import '../utils/snackbar_utils.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/glass_app_bar.dart';
 import 'delivery_address_form_page.dart';
 
 /// Daftar calon konsumen (DeliveryAddress) milik user sales.
 ///
-/// Tap item → edit. FAB "+" → tambah baru. Hapus via ikon trash dengan
-/// konfirmasi. Di-embed di [SalesHomePage] dengan `showAppBar: false`.
+/// Tap item → edit. FAB "+" → tambah baru. Tanpa fitur hapus.
+/// Di-embed di [SalesHomePage] dengan `showAppBar: false`.
 class DeliveryAddressListPage extends StatefulWidget {
   /// Set false saat di-embed di [SalesHomePage] agar tidak muncul AppBar
   /// ganda (halaman induk sudah punya AppBar + tab bar).
@@ -21,10 +22,13 @@ class DeliveryAddressListPage extends StatefulWidget {
 
   @override
   State<DeliveryAddressListPage> createState() =>
-      _DeliveryAddressListPageState();
+      DeliveryAddressListPageState();
 }
 
-class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
+/// Public supaya induk ([SalesHomePage]) bisa memanggil [openCreate]
+/// via `GlobalKey<DeliveryAddressListPageState>` — pola yang sama dengan
+/// [SalesOrderEmployeeListPageState].
+class DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
   final DeliveryAddressService _service = DeliveryAddressService();
 
   List<DeliveryAddressModel> _items = [];
@@ -58,7 +62,10 @@ class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
     }
   }
 
-  Future<void> _openCreate() async {
+  /// Buka form create, lalu refresh list jika ada konsumen baru.
+  /// Public supaya bisa dipanggil dari AppBar induk saat halaman ini
+  /// di-embed dengan `showAppBar: false`.
+  Future<void> openCreate() async {
     final created = await Navigator.push<DeliveryAddressModel>(
       context,
       MaterialPageRoute(builder: (_) => const DeliveryAddressFormPage()),
@@ -75,53 +82,31 @@ class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
     if (updated != null) _loadData();
   }
 
-  Future<void> _confirmDelete(DeliveryAddressModel address) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Hapus Konsumen?'),
-        content: Text(
-            'Konsumen "${address.displayName}" akan dihapus. Tindakan ini tidak dapat dibatalkan.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Batal')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: AppColors.onError,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Hapus'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    try {
-      await _service.delete(address.id);
-      if (!mounted) return;
-      SnackbarUtils.success(context, 'Konsumen dihapus.');
-      _loadData();
-    } catch (e) {
-      if (!mounted) return;
-      SnackbarUtils.error(
-          context, e.toString().replaceFirst('Exception: ', ''));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Scaffold(
-      appBar: widget.showAppBar ? AppBar(title: const Text('Konsumen')) : null,
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: widget.showAppBar
+          ? GlassAppBar(
+              title: const Text('Konsumen'),
+              actions: [
+                BarButtonCluster(
+                  actions: [
+                    BarButtonSpec(
+                      icon: Icons.add_rounded,
+                      iconSize: 22,
+                      tooltip: 'Tambah Konsumen',
+                      onTap: _isLoading ? null : openCreate,
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : null,
       body: _buildBody(theme, colorScheme),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isLoading ? null : _openCreate,
-        child: const Icon(Icons.add),
-      ),
     );
   }
 
@@ -172,7 +157,9 @@ class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.separated(
-        padding: AppSpacing.paddingHorizontalMD,
+        padding: AppSpacing.paddingHorizontalMD.copyWith(
+          top: AppBarInsets.top(context),
+        ),
         itemCount: _items.length,
         separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.xs),
         itemBuilder: (context, index) {
@@ -180,7 +167,6 @@ class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
           return _CustomerTile(
             address: a,
             onTap: () => _openEdit(a),
-            onDelete: () => _confirmDelete(a),
           );
         },
       ),
@@ -191,11 +177,9 @@ class _DeliveryAddressListPageState extends State<DeliveryAddressListPage> {
 class _CustomerTile extends StatelessWidget {
   final DeliveryAddressModel address;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
   const _CustomerTile({
     required this.address,
     required this.onTap,
-    required this.onDelete,
   });
 
   @override
@@ -279,11 +263,6 @@ class _CustomerTile extends StatelessWidget {
                       ),
                   ],
                 ),
-              ),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline,
-                    color: AppColors.error, size: 20),
               ),
             ],
           ),

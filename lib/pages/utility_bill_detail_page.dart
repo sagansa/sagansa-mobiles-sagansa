@@ -7,8 +7,10 @@ import '../services/utility_bill_service.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_dialogs.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/bar_button_cluster.dart';
+import '../widgets/detail/detail_image_view.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_bottom_nav.dart';
-import '../widgets/safe_bottom_bar.dart';
 import 'utility_bill_form_page.dart';
 
 class UtilityBillDetailPage extends StatefulWidget {
@@ -102,6 +104,26 @@ class _UtilityBillDetailPageState extends State<UtilityBillDetailPage>
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        title: _item != null ? Text(_item!.utilityDisplayName) : const Text('Detail Tagihan'),
+        actions: _item != null
+            ? [
+                BarButtonCluster(actions: [
+                  BarButtonSpec(
+                    icon: Icons.edit_rounded,
+                    tooltip: 'Edit',
+                    onTap: _openEdit,
+                  ),
+                  BarButtonSpec(
+                    icon: Icons.delete_outline,
+                    tooltip: 'Hapus',
+                    onTap: _delete,
+                  ),
+                ]),
+              ]
+            : null,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -113,177 +135,118 @@ class _UtilityBillDetailPageState extends State<UtilityBillDetailPage>
   Widget _buildContent(ColorScheme colorScheme, ThemeData theme) {
     final item = _item!;
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          expandedHeight: 120,
-          pinned: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.edit_rounded),
-              onPressed: _openEdit,
-              tooltip: 'Edit',
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + kToolbarHeight + 8, 16,
+            ModernBottomNav.clearance(context)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle('Detail Tagihan', theme),
+            _buildInfoCard(
+              colorScheme: colorScheme,
+              theme: theme,
+              children: [
+                _buildDetailRow(
+                  icon: Icons.electrical_services_rounded,
+                  label: 'Utility',
+                  value: item.utilityDisplayName,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                if (item.utilityNumber != null)
+                  _buildDetailRow(
+                    icon: Icons.numbers_rounded,
+                    label: 'Nomor Utility',
+                    value: item.utilityNumber!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                _buildDetailRow(
+                  icon: Icons.calendar_today_rounded,
+                  label: 'Tanggal',
+                  value: item.formattedDate,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                _buildDetailRow(
+                  icon: Icons.payments_rounded,
+                  label: 'Nominal Tagihan',
+                  value: item.formattedAmount,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  onTap: () => _copyToClipboard(item.amount),
+                ),
+                _buildDetailRow(
+                  icon: Icons.straighten_rounded,
+                  label: 'Indikator Awal',
+                  value: _indicatorValue(item.formattedInitialIndicator),
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                _buildDetailRow(
+                  icon: Icons.speed_rounded,
+                  label: 'Indikator Akhir',
+                  value: _indicatorValue(item.formattedLastIndicator),
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  isLast: true,
+                ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _delete,
-              tooltip: 'Hapus',
+            if (item.imageUrl != null) ...[
+              AppSpacing.gapVerticalMD,
+              _buildSectionTitle('Foto Tagihan', theme),
+              DetailImageView(
+                imageUrl: item.imageUrl!,
+                height: null,
+                previewTitle: 'Foto Tagihan',
+              ),
+            ],
+            AppSpacing.gapVerticalMD,
+            _buildSectionTitle('Informasi', theme),
+            _buildInfoCard(
+              colorScheme: colorScheme,
+              theme: theme,
+              children: [
+                if (item.storeNickname != null)
+                  _buildDetailRow(
+                    icon: Icons.store_rounded,
+                    label: 'Toko',
+                    value: item.storeNickname!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                if (item.providerName != null)
+                  _buildDetailRow(
+                    icon: Icons.cable_rounded,
+                    label: 'Provider',
+                    value: item.providerName!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                if (item.unitName != null)
+                  _buildDetailRow(
+                    icon: Icons.straighten_rounded,
+                    label: 'Satuan',
+                    value: item.unitName!,
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                _buildDetailRow(
+                  icon: Icons.tag_rounded,
+                  label: 'ID',
+                  value: '#${item.id}',
+                  colorScheme: colorScheme,
+                  theme: theme,
+                  isLast: true,
+                ),
+              ],
             ),
           ],
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(
-              item.utilityDisplayName,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primaryContainer,
-                    colorScheme.surfaceContainerHighest,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.receipt_long_rounded,
-                  size: 48,
-                  color: colorScheme.primary.withValues(alpha: 0.4),
-                ),
-              ),
-            ),
-          ),
         ),
-        SliverToBoxAdapter(
-          child: FadeTransition(
-            opacity: _fadeAnim,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16,
-                  ModernBottomNav.height + context.systemBottomInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionTitle('Detail Tagihan', theme),
-                  _buildInfoCard(
-                    colorScheme: colorScheme,
-                    theme: theme,
-                    children: [
-                      _buildDetailRow(
-                        icon: Icons.electrical_services_rounded,
-                        label: 'Utility',
-                        value: item.utilityDisplayName,
-                        colorScheme: colorScheme,
-                        theme: theme,
-                      ),
-                      if (item.utilityNumber != null)
-                        _buildDetailRow(
-                          icon: Icons.numbers_rounded,
-                          label: 'Nomor Utility',
-                          value: item.utilityNumber!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      _buildDetailRow(
-                        icon: Icons.calendar_today_rounded,
-                        label: 'Tanggal',
-                        value: item.formattedDate,
-                        colorScheme: colorScheme,
-                        theme: theme,
-                      ),
-                      _buildDetailRow(
-                        icon: Icons.payments_rounded,
-                        label: 'Nominal Tagihan',
-                        value: item.formattedAmount,
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        onTap: () => _copyToClipboard(item.amount),
-                      ),
-                      _buildDetailRow(
-                        icon: Icons.straighten_rounded,
-                        label: 'Indikator Awal',
-                        value: _indicatorValue(item.formattedInitialIndicator),
-                        colorScheme: colorScheme,
-                        theme: theme,
-                      ),
-                      _buildDetailRow(
-                        icon: Icons.speed_rounded,
-                        label: 'Indikator Akhir',
-                        value: _indicatorValue(item.formattedLastIndicator),
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                  if (item.imageUrl != null) ...[
-                    AppSpacing.gapVerticalMD,
-                    _buildSectionTitle('Foto Tagihan', theme),
-                    ClipRRect(
-                      borderRadius: AppSpacing.borderRadiusLG,
-                      child: Image.network(
-                        item.imageUrl!,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 200,
-                          color: colorScheme.surfaceContainerHighest,
-                          child: const Center(
-                            child: Icon(Icons.broken_image_rounded, size: 48),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  AppSpacing.gapVerticalMD,
-                  _buildSectionTitle('Informasi', theme),
-                  _buildInfoCard(
-                    colorScheme: colorScheme,
-                    theme: theme,
-                    children: [
-                      if (item.storeNickname != null)
-                        _buildDetailRow(
-                          icon: Icons.store_rounded,
-                          label: 'Toko',
-                          value: item.storeNickname!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      if (item.providerName != null)
-                        _buildDetailRow(
-                          icon: Icons.cable_rounded,
-                          label: 'Provider',
-                          value: item.providerName!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      if (item.unitName != null)
-                        _buildDetailRow(
-                          icon: Icons.straighten_rounded,
-                          label: 'Satuan',
-                          value: item.unitName!,
-                          colorScheme: colorScheme,
-                          theme: theme,
-                        ),
-                      _buildDetailRow(
-                        icon: Icons.tag_rounded,
-                        label: 'ID',
-                        value: '#${item.id}',
-                        colorScheme: colorScheme,
-                        theme: theme,
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -359,7 +322,6 @@ class _UtilityBillDetailPageState extends State<UtilityBillDetailPage>
                         label,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
-                          fontSize: 10,
                         ),
                       ),
                       AppSpacing.gapVerticalXS,

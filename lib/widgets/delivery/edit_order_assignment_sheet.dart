@@ -7,6 +7,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/status_mappers.dart';
 import '../../widgets/modern_dropdown.dart';
+import '../app_snackbar.dart';
+import '../safe_bottom_bar.dart';
 
 /// Bottom sheet untuk admin menetapkan status bayar &/atau toko pada order
 /// direct (for=1) yang dibuat tanpa store. Menggantikan alur lama "hubungi
@@ -155,11 +157,10 @@ class _EditOrderAssignmentSheetState extends State<EditOrderAssignmentSheet> {
       );
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Toko & status bayar berhasil diperbarui.'),
-          backgroundColor: AppColors.success,
-        ),
+      showAppSnackBar(
+        context,
+        'Toko & status bayar berhasil diperbarui.',
+        background: AppColors.success,
       );
     } catch (e) {
       if (!mounted) return;
@@ -169,16 +170,15 @@ class _EditOrderAssignmentSheetState extends State<EditOrderAssignmentSheet> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
-    );
+    showAppSnackBar(context, message, background: AppColors.error);
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom +
+        context.systemBottomInset;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),

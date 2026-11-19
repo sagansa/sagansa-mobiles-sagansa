@@ -5,6 +5,9 @@ import '../models/leave_model.dart';
 import '../providers/leave_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_bar_insets.dart';
+import '../widgets/app_snackbar.dart';
+import '../widgets/glass_app_bar.dart';
 import '../widgets/modern_button.dart';
 import '../widgets/modern_date_range_picker.dart';
 import '../widgets/modern_text_form_field.dart';
@@ -119,22 +122,20 @@ class LeaveFormPageState extends State<LeaveFormPage> {
       if (!mounted) return;
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.leave != null
-                ? 'Berhasil mengupdate pengajuan cuti'
-                : 'Berhasil mengajukan cuti baru'),
-            backgroundColor: AppColors.success,
-          ),
+        showAppSnackBar(
+          context,
+          widget.leave != null
+              ? 'Berhasil mengupdate pengajuan cuti'
+              : 'Berhasil mengajukan cuti baru',
+          background: AppColors.success,
         );
         Navigator.pop(context, true);
       } else {
         final error = provider.errorMessage ?? 'Gagal menyimpan cuti';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        showAppSnackBar(
+          context,
+          error,
+          background: Theme.of(context).colorScheme.error,
         );
       }
     } finally {
@@ -155,16 +156,21 @@ class LeaveFormPageState extends State<LeaveFormPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: Text(widget.leave == null ? 'Pengajuan Cuti & Izin' : 'Edit Pengajuan Cuti'),
         centerTitle: true,
       ),
       body: SafeArea(
+        top: false,
+        bottom: false,
         child: Column(
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: AppSpacing.paddingMD,
+                padding: AppSpacing.paddingMD
+                    .copyWith(top: AppBarInsets.top(context)),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -231,7 +237,7 @@ class LeaveFormPageState extends State<LeaveFormPage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: colorScheme.primary,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: AppSpacing.borderRadiusMD,
                                 ),
                                 child: Text(
                                   '$_calculatedDays Hari',
@@ -347,7 +353,7 @@ class LeaveFormPageState extends State<LeaveFormPage> {
                   size: 20,
                   color: isSelected ? color : colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
+                AppSpacing.gapHorizontalSM,
                 Expanded(
                   child: Text(
                     text,

@@ -1,22 +1,28 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/document/document_models.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/safe_bottom_bar.dart';
 
 /// Langkah 1 wizard — jenis surat, template, atau salin surat lama.
 ///
 /// Widget UI murni: semua panggilan API (getLetterTypes/getTemplates/
-/// duplicateFrom/getDocuments arsip) di-orkestrasi lewat callback oleh
-/// `DocumentCreateWizard`; sheet pencarian arsip memakai [searchArchive]
-/// agar tetap bisa diuji dengan fake.
+/// duplicateFrom/getDocuments arsip/createLetterType) di-orkestrasi lewat
+/// callback oleh `DocumentCreateWizard`; sheet pencarian arsip memakai
+/// [searchArchive] agar tetap bisa diuji dengan fake.
 ///
 /// [locked] — draf sudah dibuat: jenis surat bersifat final di server
 /// (PATCH tidak mengubah letter_type), sehingga semua pilihan dinonaktifkan
 /// dengan penjelasan; mengubah jenis = buat surat baru.
-class StepTypeTemplate extends StatelessWidget {
+///
+/// [replyMode] menampilkan anjuran jenis "Surat Tanggapan (STG)" untuk
+/// balasan SP2DK/teguran/permintaan penjelasan dari instansi lain. Anjuran
+/// bersifat visual — pengguna tetap memilih sendiri (kontrak test lama).
+class StepTypeTemplate extends StatefulWidget {
   final bool locked;
   final List<LetterTypeModel> letterTypes;
   final bool loadingTypes;
@@ -41,6 +47,14 @@ class StepTypeTemplate extends StatelessWidget {
   /// null = tombol disembunyikan; dinonaktifkan saat [locked].
   final VoidCallback? onUploadOwnDocument;
 
+  /// Mode balasan surat masuk — tampilkan anjuran STG.
+  final bool replyMode;
+
+  /// Tambah jenis surat manual (POST /letter-types). Null = fitur
+  /// disembunyikan (mis. seam test lama tanpa endpoint).
+  final Future<LetterTypeModel?> Function(String name, String? code)?
+      onCreateType;
+
   const StepTypeTemplate({
     super.key,
     required this.locked,
@@ -58,23 +72,55 @@ class StepTypeTemplate extends StatelessWidget {
     required this.duplicating,
     required this.onPickDuplicateSource,
     this.onUploadOwnDocument,
+    this.replyMode = false,
+    this.onCreateType,
   });
+
+  @override
+  State<StepTypeTemplate> createState() => _StepTypeTemplateState();
+}
+
+class _StepTypeTemplateState extends State<StepTypeTemplate> {
+  static const String _recommendedReplyCode = 'STG';
+
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  LetterTypeModel? get _recommendedReplyType => widget.letterTypes
+      .where((type) => type.code == _recommendedReplyCode)
+      .firstOrNull;
+
+  List<LetterTypeModel> get _filteredTypes {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return widget.letterTypes;
+    return widget.letterTypes
+        .where((type) =>
+            type.name.toLowerCase().contains(query) ||
+            type.code.toLowerCase().contains(query))
+        .toList(growable: false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    if (loadingTypes) {
+    if (widget.loadingTypes) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (typesError != null) {
+    if (widget.typesError != null) {
       return EmptyState(
         icon: Icons.error_outline_rounded,
-        title: typesError!,
+        title: widget.typesError!,
         subtitle: 'Terjadi kesalahan saat memuat jenis surat',
         action: ElevatedButton.icon(
-          onPressed: onRetryTypes,
+          onPressed: widget.onRetryTypes,
           icon: const Icon(Icons.refresh_rounded),
           label: const Text('Coba Lagi'),
         ),
@@ -84,7 +130,7 @@ class StepTypeTemplate extends StatelessWidget {
     return ListView(
       padding: AppSpacing.paddingMD,
       children: [
-        if (locked)
+        if (widget.locked)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: _LockedBanner(
@@ -92,32 +138,89 @@ class StepTypeTemplate extends StatelessWidget {
                   'buat surat baru bila perlu mengganti jenis.',
             ),
           ),
-        Text('Pilih jenis surat',
-            style: textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold)),
+        if (widget.replyMode) ...[
+          _buildReplyRecommendation(context),
+          const SizedBox(height: AppSpacing.md),
+        ] else ...[
+          _buildSp2dkHint(context),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Pilih jenis surat',
+                      style: textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Jenis menentukan template & field khusus.',
+                    style: textTheme.bodySmall
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            if (widget.onCreateType != null)
+              Tooltip(
+                message: 'Tambah jenis surat',
+                child: IconButton(
+                  onPressed:
+                      widget.locked ? null : () => _openAddTypeDialog(context),
+                  icon: const Icon(Icons.add_circle_outline_rounded),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.sm),
-        if (letterTypes.isEmpty)
-          const Text('Belum ada jenis surat aktif.'),
-        _buildTypeGrid(context),
-        const SizedBox(height: AppSpacing.lg),
+        if (widget.letterTypes.length > 4)
+          TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              hintText: 'Cari jenis surat…',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Bersihkan pencarian',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                      icon: const Icon(Icons.clear_rounded),
+                    ),
+              isDense: true,
+              filled: true,
+              fillColor: colorScheme.surfaceContainerHighest,
+            ),
+          ),
+        if (widget.letterTypes.length > 4)
+          const SizedBox(height: AppSpacing.sm),
+        _buildTypeList(context),
+        const SizedBox(height: AppSpacing.md),
         Text('Pilih template isi',
-            style: textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold)),
+            style:
+                textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Template mengisi awal isi surat — bisa diedit di langkah 3.',
+          'Bisa diedit di langkah isi.',
           style: textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         _buildTemplateList(context),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         _buildDuplicateButton(context),
-        if (onUploadOwnDocument != null) ...[
+        if (widget.onUploadOwnDocument != null) ...[
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton.icon(
-            onPressed: locked ? null : onUploadOwnDocument,
+            onPressed: widget.locked ? null : widget.onUploadOwnDocument,
             icon: const Icon(Icons.upload_file_rounded),
             label: const Text('Upload dokumen sendiri (PDF)'),
           ),
@@ -126,70 +229,303 @@ class StepTypeTemplate extends StatelessWidget {
     );
   }
 
-  Widget _buildTypeGrid(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth >= 560 ? 3 : 2;
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          mainAxisSpacing: AppSpacing.sm,
-          crossAxisSpacing: AppSpacing.sm,
-          childAspectRatio: 2.8,
+  /// Anjuran jenis untuk balasan: menjelaskan secara kategoris bahwa
+  /// tanggapan SP2DK/teguran/permintaan penjelasan masuk ke "Surat
+  /// Tanggapan" (STG). Bila STG belum ada di daftar, arahkan ke tombol
+  /// tambah jenis surat.
+  Widget _buildReplyRecommendation(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final recommended = _recommendedReplyType;
+    final selected =
+        recommended != null && widget.selectedType?.code == recommended.code;
+
+    return Container(
+      padding: AppSpacing.paddingMD,
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
         ),
-        itemCount: letterTypes.length,
-        itemBuilder: (context, index) =>
-            _buildTypeCard(context, letterTypes[index]),
-      );
-    });
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.reply_all_rounded,
+                size: 20,
+                color: colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Membalas surat dari instansi lain',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Untuk SP2DK, teguran, atau permintaan penjelasan dari DJP dan '
+            'instansi lain, gunakan jenis Surat Tanggapan (STG) — template '
+            'resminya sudah disiapkan untuk menanggapi surat tersebut.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSecondaryContainer,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (recommended == null)
+            Text(
+              'Jenis Surat Tanggapan (STG) belum tersedia. Tambahkan lewat '
+              'tombol Tambah di kanan atas daftar jenis.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else if (!widget.locked)
+            FilledButton.tonalIcon(
+              onPressed:
+                  selected ? null : () => widget.onSelectType(recommended),
+              icon: Icon(
+                selected ? Icons.check_circle_rounded : Icons.touch_app_rounded,
+                size: 18,
+              ),
+              label: Text(
+                selected ? 'Surat Tanggapan dipilih' : 'Pilih Surat Tanggapan',
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildTypeCard(BuildContext context, LetterTypeModel type) {
+  /// Petunjuk kategori untuk surat balasan (mis. SP2DK DJP, klarifikasi, teguran).
+  Widget _buildSp2dkHint(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final selected = selectedType?.code == type.code;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm + 2,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: AppSpacing.borderRadiusLG,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.help_outline_rounded,
+            size: 20,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Membalas SP2DK dari DJP atau surat instansi lain?',
+                  style: textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Gunakan jenis "Surat Tanggapan (STG)" atau buat jenis baru secara manual bila instansi memerlukan judul khusus.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeList(BuildContext context) {
+    final types = _filteredTypes;
+    final colorScheme = Theme.of(context).colorScheme;
+    final canCreate = widget.onCreateType != null && !widget.locked;
+
+    if (types.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              _query.trim().isEmpty
+                  ? 'Belum ada jenis surat aktif.'
+                  : 'Tidak ada jenis surat yang cocok dengan "$_query".',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            if (canCreate) ...[
+              const SizedBox(height: AppSpacing.sm),
+              FilledButton.tonalIcon(
+                onPressed: () => _openAddTypeDialog(
+                  context,
+                  initialName: _query.trim().isNotEmpty ? _query.trim() : null,
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: Text(
+                  _query.trim().isNotEmpty
+                      ? 'Tambah jenis "$_query"'
+                      : 'Tambah jenis surat baru',
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final type in types)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs + 2),
+            child: _buildTypeRow(context, type),
+          ),
+        if (canCreate) ...[
+          const SizedBox(height: AppSpacing.xs),
+          OutlinedButton.icon(
+            onPressed: () => _openAddTypeDialog(context),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              shape: RoundedRectangleBorder(
+                borderRadius: AppSpacing.borderRadiusLG,
+              ),
+            ),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Tambah jenis surat baru (manual)'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTypeRow(BuildContext context, LetterTypeModel type) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final selected = widget.selectedType?.code == type.code;
+    final isStg = type.code == _recommendedReplyCode;
+    final recommended = (widget.replyMode && isStg && !selected) ||
+        (!widget.replyMode && isStg);
 
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      color: selected
-          ? colorScheme.primaryContainer
-          : colorScheme.surfaceContainerLow,
+      color: selected ? colorScheme.primaryContainer : colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         side: selected
             ? BorderSide(color: colorScheme.primary, width: 2)
-            : BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            : BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: InkWell(
-        borderRadius: AppSpacing.borderRadiusMD,
-        onTap: locked ? null : () => onSelectType(type),
+        borderRadius: AppSpacing.borderRadiusLG,
+        onTap: widget.locked ? null : () => widget.onSelectType(type),
         child: Padding(
-          padding: AppSpacing.paddingSM,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: AppSpacing.cardPadding,
+          child: Row(
             children: [
-              Text(
-                type.code,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: selected
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
+              Container(
+                constraints: const BoxConstraints(minWidth: 46),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.xs + 2,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerHighest,
+                  borderRadius: AppSpacing.borderRadiusSM,
+                ),
+                child: Text(
+                  type.code,
+                  textAlign: TextAlign.center,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                type.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: selected ? FontWeight.bold : null,
+              const SizedBox(width: AppSpacing.rowGap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.bold : FontWeight.w600,
+                        height: 1.3,
+                      ),
                     ),
+                    if (isStg) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cocok untuk Balasan SP2DK DJP / Teguran Resmi',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ] else if (recommended) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Disarankan untuk balasan',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ] else if ((type.specificFields ?? const [])
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '${type.specificFields!.length} field khusus',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? colorScheme.primary : colorScheme.outline,
               ),
             ],
           ),
@@ -198,10 +534,26 @@ class StepTypeTemplate extends StatelessWidget {
     );
   }
 
+  Future<void> _openAddTypeDialog(BuildContext context,
+      {String? initialName}) async {
+    final onCreateType = widget.onCreateType;
+    if (onCreateType == null) return;
+    final result = await showDialog<_NewLetterType>(
+      context: context,
+      builder: (_) => _AddLetterTypeDialog(initialName: initialName),
+    );
+    if (result == null) return;
+    final created = await onCreateType(result.name, result.code);
+    if (!mounted || created == null) return;
+    // Bersihkan pencarian agar jenis baru langsung terlihat & terpilih.
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
   Widget _buildTemplateList(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    if (selectedType == null) {
+    if (widget.selectedType == null) {
       return Text(
         'Pilih jenis surat dulu untuk melihat template.',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -209,10 +561,10 @@ class StepTypeTemplate extends StatelessWidget {
             ),
       );
     }
-    if (loadingTemplates) {
+    if (widget.loadingTemplates) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (templates.isEmpty) {
+    if (widget.templates.isEmpty) {
       return Text(
         'Tidak ada template untuk jenis ini — isi surat ditulis manual '
         'di langkah 3.',
@@ -224,14 +576,14 @@ class StepTypeTemplate extends StatelessWidget {
 
     return Column(
       children: [
-        for (final template in templates)
+        for (final template in widget.templates)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: _TemplateCard(
               template: template,
-              selected: selectedTemplate?.id == template.id,
-              enabled: !locked,
-              onTap: () => onSelectTemplate(template),
+              selected: widget.selectedTemplate?.id == template.id,
+              enabled: !widget.locked,
+              onTap: () => widget.onSelectTemplate(template),
             ),
           ),
       ],
@@ -240,10 +592,11 @@ class StepTypeTemplate extends StatelessWidget {
 
   Widget _buildDuplicateButton(BuildContext context) {
     return OutlinedButton.icon(
-      onPressed: duplicating || locked || searchArchive == null
-          ? null
-          : () => _openArchiveSheet(context),
-      icon: duplicating
+      onPressed:
+          widget.duplicating || widget.locked || widget.searchArchive == null
+              ? null
+              : () => _openArchiveSheet(context),
+      icon: widget.duplicating
           ? const SizedBox(
               width: 18,
               height: 18,
@@ -257,7 +610,7 @@ class StepTypeTemplate extends StatelessWidget {
   /// Bottom sheet pencarian arsip surat `terbit`; memilih sumber
   /// memanggil [onPickDuplicateSource] (wizard mengeksekusi duplicateFrom).
   Future<void> _openArchiveSheet(BuildContext context) async {
-    final search = searchArchive;
+    final search = widget.searchArchive;
     if (search == null) return;
 
     final result = await showModalBottomSheet<DocumentModel>(
@@ -275,7 +628,123 @@ class StepTypeTemplate extends StatelessWidget {
         );
       },
     );
-    if (result != null) onPickDuplicateSource(result);
+    if (result != null) widget.onPickDuplicateSource(result);
+  }
+}
+
+/// Nilai dialog tambah jenis surat.
+class _NewLetterType {
+  final String name;
+  final String? code;
+
+  const _NewLetterType({required this.name, this.code});
+}
+
+/// Dialog "Tambah jenis surat" — nama wajib, kode opsional (huruf/angka,
+/// maks 8) yang bila kosong diturunkan backend dari nama.
+class _AddLetterTypeDialog extends StatefulWidget {
+  final String? initialName;
+
+  const _AddLetterTypeDialog({this.initialName});
+
+  @override
+  State<_AddLetterTypeDialog> createState() => _AddLetterTypeDialogState();
+}
+
+class _AddLetterTypeDialogState extends State<_AddLetterTypeDialog> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController =
+      TextEditingController(text: widget.initialName);
+  final TextEditingController _codeController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final name = _nameController.text.trim();
+    final code = _codeController.text.trim();
+    Navigator.of(context).pop(
+      _NewLetterType(
+        name: name,
+        code: code.isEmpty ? null : code.toUpperCase(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('Tambah jenis surat'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Dipakai bila jenis surat yang Anda butuhkan belum ada di '
+              'daftar. Jenis baru langsung bisa dipilih untuk surat ini.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextFormField(
+              controller: _nameController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nama jenis surat',
+                hintText: 'Mis. Surat Tanggapan',
+                prefixIcon: Icon(Icons.description_outlined),
+              ),
+              validator: (value) => (value ?? '').trim().isEmpty
+                  ? 'Nama jenis surat wajib diisi.'
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextFormField(
+              controller: _codeController,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 8,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Kode (opsional)',
+                hintText: 'STG',
+                helperText: 'Huruf/angka, maks. 8. Kosongkan untuk otomatis.',
+                prefixIcon: Icon(Icons.tag_rounded),
+              ),
+              validator: (value) {
+                final code = (value ?? '').trim();
+                if (code.isEmpty) return null;
+                if (!RegExp(r'^[A-Za-z0-9]{1,8}$').hasMatch(code)) {
+                  return 'Kode hanya huruf/angka, maks. 8 karakter.';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Batal'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Tambah'),
+        ),
+      ],
+    );
   }
 }
 
@@ -334,29 +803,26 @@ class _TemplateCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      color: selected
-          ? colorScheme.primaryContainer
-          : colorScheme.surfaceContainerLow,
+      color: selected ? colorScheme.primaryContainer : colorScheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         side: selected
             ? BorderSide(color: colorScheme.primary, width: 2)
             : BorderSide(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: InkWell(
-        borderRadius: AppSpacing.borderRadiusMD,
+        borderRadius: AppSpacing.borderRadiusLG,
         onTap: enabled ? onTap : null,
         child: Padding(
-          padding: AppSpacing.paddingSM,
+          padding: AppSpacing.cardPadding,
           child: Row(
             children: [
               Icon(
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color:
-                    selected ? colorScheme.primary : colorScheme.outline,
+                color: selected ? colorScheme.primary : colorScheme.outline,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -449,7 +915,11 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      // Keyboard (viewInsets) + inset sistem bawah (home indicator /
+      // gesture bar) — tanpa inset sistem, hasil terakhir tertutup.
+      padding: EdgeInsets.only(
+        bottom: mediaQuery.viewInsets.bottom + context.systemBottomInset,
+      ),
       child: SizedBox(
         height: mediaQuery.size.height * _sheetHeightFactor,
         child: Column(
@@ -487,8 +957,8 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
                               itemBuilder: (context, index) {
                                 final document = _results[index];
                                 return ListTile(
-                                  leading: const Icon(
-                                      Icons.description_outlined),
+                                  leading:
+                                      const Icon(Icons.description_outlined),
                                   title: Text(
                                     document.number ?? 'Tanpa nomor',
                                     maxLines: 1,
@@ -499,8 +969,8 @@ class _ArchiveSheetState extends State<_ArchiveSheet> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  onTap: () => Navigator.of(context)
-                                      .pop(document),
+                                  onTap: () =>
+                                      Navigator.of(context).pop(document),
                                 );
                               },
                             ),

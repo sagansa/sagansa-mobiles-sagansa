@@ -63,7 +63,8 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Synchronize system UI status bar overlay style (transparent status bar, proper contrast for iOS/Android)
+  /// Synchronize system UI status bar overlay style (transparent status bar,
+  /// proper contrast for iOS/Android, nav bar transparan edge-to-edge)
   void updateSystemOverlayStyle() {
     final isDark = isDarkMode;
     SystemChrome.setSystemUIOverlayStyle(
@@ -71,8 +72,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-        systemNavigationBarColor:
-            isDark ? AppColors.darkBackground : AppColors.background,
+        // Nav bar transparan: background apps yang terlihat di baliknya
+        // (dipasangkan dengan SystemUiMode.edgeToEdge di main()).
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
         systemNavigationBarIconBrightness:
             isDark ? Brightness.light : Brightness.dark,
       ),
@@ -157,12 +161,19 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Ubah AppTypography.lightTextColor / lightMutedColor untuk menyesuaikan.
       textTheme: AppTypography.lightTextTheme,
 
-      // App bar theme - Elegant white with black text
+      // App bar theme - Seragam dengan scaffold background (main)
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.surface,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
+        backgroundColor: AppColors.background,
         foregroundColor: AppColors.onSurface,
-        elevation: AppElevation.level1,
-        shadowColor: AppColors.shadow.withValues(alpha: 0.1),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         titleTextStyle: AppTypography.titleLarge.copyWith(
           color: AppColors.onSurface,
           fontWeight: FontWeight.w600,
@@ -193,6 +204,29 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           ),
         ),
         margin: AppSpacing.paddingMD,
+      ),
+
+      // Menu popup (⋮/aksi) — kartu rounded ala grup iOS drawer: sudut
+      // membulat, hairline border, shadow lembut; konsisten di seluruh app.
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.surface,
+        elevation: 3,
+        shadowColor: AppColors.shadow.withValues(alpha: 0.18),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: AppColors.outline.withValues(alpha: 0.14),
+            width: 0.8,
+          ),
+        ),
+        menuPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        labelTextStyle: WidgetStatePropertyAll(
+          AppTypography.lightTextTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: AppColors.onSurface,
+          ),
+        ),
       ),
 
       // Elevated button theme
@@ -389,12 +423,19 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Ubah AppTypography.darkTextColor / darkMutedColor untuk menyesuaikan.
       textTheme: AppTypography.darkTextTheme,
 
-      // App bar theme - Elegant dark with white text
+      // App bar theme - Seragam dengan scaffold background (main)
       appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.darkSurface,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        backgroundColor: AppColors.darkBackground,
         foregroundColor: AppColors.darkOnSurface,
-        elevation: AppElevation.level1,
-        shadowColor: AppColors.shadow.withValues(alpha: 0.3),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         titleTextStyle: AppTypography.titleLarge.copyWith(
           color: AppColors.darkOnSurface,
           fontWeight: FontWeight.w600,
@@ -425,6 +466,28 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
           ),
         ),
         margin: AppSpacing.paddingMD,
+      ),
+
+      // Menu popup (⋮/aksi) — kartu rounded ala grup iOS drawer (dark).
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.darkSurfaceVariant,
+        elevation: 3,
+        shadowColor: Colors.black.withValues(alpha: 0.45),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: 0.10),
+            width: 0.8,
+          ),
+        ),
+        menuPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        labelTextStyle: WidgetStatePropertyAll(
+          AppTypography.darkTextTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: AppColors.darkOnSurface,
+          ),
+        ),
       ),
 
       // Elevated button theme

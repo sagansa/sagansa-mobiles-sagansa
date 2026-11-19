@@ -3,8 +3,9 @@ plugins {
     id "kotlin-android"
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
-    // Firebase Cloud Messaging: DINONAKTIFKAN sementara (lihat settings.gradle).
-    // id "com.google.gms.google-services"
+    // Firebase Cloud Messaging (push notifikasi real-time; google-services.json
+    // sudah tersedia di android/app/).
+    id "com.google.gms.google-services"
 }
 
 def localProperties = new Properties()
@@ -56,10 +57,8 @@ android {
     }
 
     // Kotlin JVM target harus match Java (17) agar tidak "Inconsistent JVM
-    // Target Compatibility" saat compileReleaseKotlin.
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    // Target Compatibility" saat compileReleaseKotlin. DSL baru KGP 2.x
+    // (kotlinOptions deprecated) — konfigurasi di blok kotlin {} di bawah.
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
@@ -99,16 +98,21 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 flutter {
     source = "../.."
 }
 
 dependencies {
-    // Firebase BoM & messaging: DINONAKTIFKAN sementara sampai google-services.json
-    // tersedia (lihat settings.gradle). Native Firebase SDK tetap di-pull oleh plugin
-    // flutter firebase_messaging bila dipakai; di sini tidak perlu deklarasi eksplisit.
-    // implementation platform('com.google.firebase:firebase-bom:33.4.0')
-    // implementation 'com.google.firebase:firebase-messaging'
+    // Firebase BoM & messaging (push notifikasi real-time; google-services.json
+    // sudah tersedia di android/app/).
+    implementation platform('com.google.firebase:firebase-bom:33.4.0')
+    implementation 'com.google.firebase:firebase-messaging'
     // Desugaring library (wajib untuk flutter_local_notifications).
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }

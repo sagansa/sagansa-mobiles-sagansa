@@ -9,6 +9,13 @@
 //       * callbackDispatcher                   (workmanager)
 //     Background isolate mengeksekusi keduanya di luar instance aplikasi,
 //     sehingga tidak boleh menangkap state dari widget tree.
+//
+// Arsitektur notifikasi:
+//   Backend mengirim notification payload untuk tipe visible (invoice transfer,
+//   pembayaran, aset, dll.) sehingga OS menampilkan banner saat app bg/killed.
+//   Foreground handler tetap menampilkan notifikasi lokal karena OS tidak
+//   auto-display saat app di foreground.
+//   location_request tetap silent data-only (tanpa notification payload).
 // ====================================================================
 
 import 'dart:async';
@@ -19,6 +26,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:workmanager/workmanager.dart';
+import '../providers/notification_provider.dart';
 import 'asset_check_reminder_service.dart';
 import 'location_service.dart';
 import 'notification_router.dart';
@@ -39,6 +47,27 @@ const bool backgroundTrackingEnabled = false;
 
 /// Tipe payload FCM on-demand (konvensi sama dengan backend FcmService).
 const String _kFcmTypeLocationRequest = 'location_request';
+
+/// ID channel Android umum untuk notifikasi generik dari NotificationDispatcher
+/// backend (payload tak dikenal yang membawa title/body).
+const String kGeneralNotificationChannelId = 'sagansa_notifications';
+
+/// Top-level: fallback generik — payload FCM bertipe tak dikenal yang membawa
+/// `title`/`body` ditampilkan sebagai notifikasi lokal di channel umum.
+/// Dipanggil dari foreground listener. Kecuali tipe silent (`location_request`),
+/// SEMUA notifikasi dari NotificationDispatcher backend akan tampil real-time.
+@pragma('vm:entry-point')
+Future<void> handleGenericNotificationFcm(Map<String, dynamic> data) async {
+  final title = data['title'] as String?;
+  final body = data['body'] as String?;
+  if (title == null || title.isEmpty) return;
+
+  await LocationTrackingService.instance.showGenericNotification(
+    payload: data,
+    title: title,
+    body: body ?? '',
+  );
+}
 
 /// Mengambil satu titik GPS lalu mengunggahnya ke server. Dipakai bersama oleh
 /// handler FCM on-demand dan workmanager periodic. Mengembalikan true bila
@@ -84,9 +113,9 @@ Future<bool> _captureAndUploadLocation({
 /// TOP-LEVEL: dipanggil oleh FCM saat push masuk saat app di-terminate/background.
 /// Memerlukan anotasi @pragma('vm:entry-point') agar tidak di-tree-shake.
 ///
-/// Saat Firebase tidak dikonfigurasi (rilis publik awal), handler ini tidak
-/// akan pernah dipanggil oleh OS. Tetap di-guard dengan try/catch sebagai
-/// pengaman bila kondisi berubah.
+/// Backend sekarang mengirim notification payload untuk tipe visible (invoice
+/// transfer, pembayaran, aset, dll.) sehingga OS menampilkan banner secara
+/// native. Handler ini HANYA menangani `location_request` (silent data-only).
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -96,27 +125,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final data = message.data;
     final type = data['type'];
 
-    // Routing berdasar tipe payload.
+    // Hanya location_request yang perlu ditangani di background isolate.
+    // Tipe visible lainnya ditampilkan oleh OS lewat notification payload.
     if (type == _kFcmTypeLocationRequest) {
       final requestId = data['request_id'] as String?;
       if (requestId == null || requestId.isEmpty) return;
       // Ambil GPS lalu balas ke server dengan request_id korelasi.
       await _captureAndUploadLocation(source: 'on_demand', requestId: requestId);
-      return;
-    }
-
-    if (type == kFcmTypeAssetCheckDue) {
-      // Pengingat pemeriksaan aset → tampilkan notifikasi lokal.
-      await handleAssetCheckDueFcm(data);
-      return;
-    }
-
-    if (type == kFcmTypeInvoiceTransferCreated ||
-        type == kFcmTypePaymentReceiptPaid ||
-        type == kFcmTypeSalesOrderOnlineCreated) {
-      // Notifikasi procurement & sales online → tampilkan notifikasi lokal.
-      await handleNotificationFcm(data);
-      return;
     }
   } catch (e) {
     // No-op bersih bila Firebase tidak tersedia di background isolate.
@@ -202,6 +217,8 @@ class LocationTrackingService {
       await AssetCheckReminderService.instance.ensureChannel();
       // Channel notifikasi untuk procurement (invoice transfer & pembayaran).
       await ProcurementNotificationService.instance.ensureChannel();
+      // Channel umum untuk notifikasi generik dari NotificationDispatcher.
+      await _ensureGeneralChannel();
 
       // Cold-start: bila app diluncurkan dari tap notifikasi, arahkan setelah
       // frame pertama (Navigator baru siap).
@@ -222,6 +239,18 @@ class LocationTrackingService {
 
       // Respons saat app foreground & push masuk (jarang: biasanya app di-bg).
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+      // Tap notifikasi saat app di-background (bukan terminated) → navigasi.
+      FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpenedApp);
+
+      // Cold-start: app diluncurkan dari tap notifikasi (terminated state).
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null) {
+        // Tunda navigasi sampai frame pertama agar Navigator siap.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _onMessageOpenedApp(initialMessage);
+        });
+      }
 
       // Refresh token → daftarkan ulang ke server.
       FirebaseMessaging.instance.onTokenRefresh.listen(_onTokenRefresh);
@@ -285,6 +314,8 @@ class LocationTrackingService {
     } catch (_) {/* abaikan */}
   }
 
+  /// Tangani push saat app di foreground. OS tidak auto-display banner saat
+  /// foreground → tampilkan notifikasi lokal via flutter_local_notifications.
   void _handleForegroundMessage(RemoteMessage message) {
     final type = message.data['type'];
     // On-demand saat app terbuka: ambil & kirim lokasi langsung.
@@ -304,8 +335,26 @@ class LocationTrackingService {
         type == kFcmTypePaymentReceiptPaid ||
         type == kFcmTypeSalesOrderOnlineCreated) {
       handleNotificationFcm(message.data);
-      return;
+    } else {
+      // Fallback generik: payload tak dikenal dengan title/body ditampilkan
+      // sebagai notifikasi lokal di channel umum.
+      handleGenericNotificationFcm(message.data);
     }
+
+    // Refresh badge unread & daftar notifikasi secara live saat push masuk
+    // (fire-and-forget; tidak mengganggu handler di atas).
+    NotificationProvider.instance.onNotificationReceived();
+  }
+
+  /// Tap notifikasi OS saat app di-background (onMessageOpenedApp) atau
+  /// cold-start dari terminated (getInitialMessage). Routing ke halaman detail
+  /// terkait (sama dengan local notification tap).
+  void _onMessageOpenedApp(RemoteMessage message) {
+    final data = message.data;
+    if (data.isEmpty) return;
+    // location_request tidak perlu navigasi.
+    if (data['type'] == _kFcmTypeLocationRequest) return;
+    _navigateFromNotification(data);
   }
 
   Future<void> _onTokenRefresh(String token) async {
@@ -357,12 +406,13 @@ class LocationTrackingService {
 
   Future<void> _registerCurrentToken() async {
     try {
-      // Minta permission notifikasi (Android 13+). Bila ditolak, FCM tetap
-      // menerima data-message (yang tidak butuh permission notifikasi).
+      // Minta permission notifikasi (Android 13+). Alert/badge/sound WAJIB
+      // true agar notifikasi benar-benar tampil (banner & heads-up) saat FCM
+      // aktif. Bila ditolak, FCM tetap menerima data-message.
       final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: false,
-        badge: false,
-        sound: false,
+        alert: true,
+        badge: true,
+        sound: true,
       );
       debugPrint('FCM permission: ${settings.authorizationStatus}');
 
@@ -389,5 +439,60 @@ class LocationTrackingService {
               AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
     } catch (_) {/* abaikan */}
+  }
+
+  /// Channel umum untuk notifikasi NotificationDispatcher (Importance.high —
+  /// tampil heads-up). Idempoten.
+  Future<void> _ensureGeneralChannel() async {
+    try {
+      const channel = AndroidNotificationChannel(
+        kGeneralNotificationChannelId,
+        'Notifikasi',
+        description: 'Notifikasi umum dari Sagansa',
+        importance: Importance.high,
+        showBadge: true,
+      );
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+    } catch (_) {/* abaikan */}
+  }
+
+  /// Tampilkan notifikasi generik di channel umum. Payload disimpan sebagai
+  /// JSON agar saat di-tap bisa di-router ke halaman detail terkait.
+  Future<void> showGenericNotification({
+    required Map<String, dynamic> payload,
+    required String title,
+    required String body,
+  }) async {
+    await _ensureGeneralChannel();
+    try {
+      // FCM data payload selalu string (FcmService.stringify) — parse dulu.
+      final rawId = payload['notification_id'];
+      final parsedId = rawId is int
+          ? rawId
+          : int.tryParse(rawId?.toString() ?? '');
+      final notifId = parsedId ??
+          DateTime.now().millisecondsSinceEpoch.remainder(100000);
+      const androidDetails = AndroidNotificationDetails(
+        kGeneralNotificationChannelId,
+        'Notifikasi',
+        channelDescription: 'Notifikasi umum dari Sagansa',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/launcher_icon',
+      );
+      const notifDetails = NotificationDetails(android: androidDetails);
+      await _localNotifications.show(
+        id: notifId,
+        title: title,
+        body: body,
+        notificationDetails: notifDetails,
+        payload: jsonEncode(payload),
+      );
+    } catch (e) {
+      debugPrint('LocationTrackingService.showGenericNotification gagal: $e');
+    }
   }
 }

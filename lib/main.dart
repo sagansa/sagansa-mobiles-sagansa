@@ -18,18 +18,21 @@ import 'providers/asset_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/fuel_service_payment_provider.dart';
 import 'providers/home_dashboard_provider.dart';
+import 'providers/notification_provider.dart';
 import 'providers/presence_provider.dart';
 import 'providers/printer_provider.dart';
 import 'providers/theme_provider.dart';
 import 'services/asset_service.dart';
 import 'services/auth_service.dart';
 import 'services/auth_session.dart';
+import 'services/closing_store_service.dart';
 import 'services/inventory_anomaly_service.dart';
 import 'services/leave_service.dart';
 import 'services/location_tracking_service.dart';
 import 'services/navigator_service.dart';
 import 'services/presence_service.dart';
 import 'services/procurement_service.dart';
+import 'services/readiness_service.dart';
 import 'services/salary_service.dart';
 import 'services/sales_dashboard_service.dart';
 import 'services/storage_stock_service.dart';
@@ -48,47 +51,62 @@ class CustomErrorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      child: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                color: AppColors.error,
-                size: 48,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Terjadi kesalahan pada aplikasi',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (kDebugMode) ...[
-                const SizedBox(height: 16),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Text(
-                      errorDetails.toString(),
-                      style: TextStyle(color: Colors.redAccent),
+    // Widget ini dipakai sebagai `ErrorWidget.builder`, sehingga di-inflate
+    // pada posisi widget yang error — BISA JADI tanpa ancestor Directionality,
+    // Theme, ataupun MediaQuery (mis. di atas MaterialApp). Semua dependensi
+    // harus disediakan sendiri agar error screen tidak ikut crash → layar hitam.
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: MediaQuery.fromView(
+        view: View.of(context),
+        child: Theme(
+          data: ThemeData(brightness: Brightness.dark),
+          child: Material(
+            color: AppColors.darkBackground,
+            child: SafeArea(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.error,
+                      size: 48,
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Terjadi kesalahan pada aplikasi',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Text(
+                            errorDetails.toString(),
+                            style: TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        // Restart app
+                        SystemChannels.platform
+                            .invokeMethod('SystemNavigator.pop');
+                      },
+                      child: const Text('Tutup Aplikasi'),
+                    ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  // Restart app
-                  SystemChannels.platform.invokeMethod('SystemNavigator.pop');
-                },
-                child: const Text('Tutup Aplikasi'),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -107,15 +125,20 @@ class ErrorBoundaryWidget extends StatefulWidget {
 
 class ErrorBoundaryWidgetState extends State<ErrorBoundaryWidget>
     with WidgetsBindingObserver {
-  bool hasError = false;
-  FlutterErrorDetails? errorDetails;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Set up error handling
+    // Set up error handling.
+    //
+    // PENTING: JANGAN pernah setState() di sini. onError bisa terpanggil
+    // DI TENGAH fase build (termasuk untuk error diagnostik non-fatal seperti
+    // "ListTile background may be invisible" yang hanya reportError). setState
+    // saat itu → "setState() or markNeedsBuild() called during build" berulang
+    // (exception storm) → frame gagal total → layar hitam.
+    // Ganti tampilan error saat build error adalah tugas ErrorWidget.builder
+    // (per-subtree), bukan tugas handler ini (global).
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       developer.log(
@@ -123,10 +146,6 @@ class ErrorBoundaryWidgetState extends State<ErrorBoundaryWidget>
         error: details.exception,
         stackTrace: details.stack,
       );
-      setState(() {
-        hasError = true;
-        errorDetails = details;
-      });
     };
 
     // Handle platform channel errors
@@ -159,9 +178,6 @@ class ErrorBoundaryWidgetState extends State<ErrorBoundaryWidget>
 
   @override
   Widget build(BuildContext context) {
-    if (hasError) {
-      return CustomErrorWidget(errorDetails: errorDetails!);
-    }
     return widget.child;
   }
 }
@@ -185,14 +201,18 @@ void main() {
       return CustomErrorWidget(errorDetails: details);
     };
 
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
+    // Inisialisasi orientasi dan migrasi token secara paralel untuk optimasi cold boot
+    await Future.wait([
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]),
+      TokenStore.instance.migrateFromPrefs(),
     ]);
 
-    // Migrasi one-shot: pindahkan token dari SharedPreferences lama ke secure
-    // storage (idempotent — aman dijalankan setiap startup).
-    await TokenStore.instance.migrateFromPrefs();
+    // Edge-to-edge: konten digambar di belakang status bar & nav bar Android,
+    // sehingga nav bar sistem otomatis mengikuti warna background aplikasi.
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     final String? token = await TokenStore.instance.readToken();
     final bool isSalesOnly = token != null &&
@@ -249,6 +269,11 @@ class _MyAppState extends State<MyApp> {
   final GlobalKey<NavigatorState> _navigatorKey = NavigatorService.navigatorKey;
 
   @override
+  void reassemble() {
+    super.reassemble();
+  }
+
+  @override
   void initState() {
     super.initState();
     _themeProvider.initialize();
@@ -265,6 +290,8 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider<AuthProvider>.value(value: _authProvider),
         ChangeNotifierProvider<FuelServicePaymentProvider>.value(
             value: _fuelServicePaymentProvider),
+        ChangeNotifierProvider<NotificationProvider>.value(
+            value: NotificationProvider.instance),
         ChangeNotifierProvider<HomeDashboardProvider>(
           create: (_) => HomeDashboardProvider(
             procurementService: ProcurementService(),
@@ -276,6 +303,8 @@ class _MyAppState extends State<MyApp> {
             userService: UserService(),
             leaveService: LeaveService(),
             salaryService: SalaryService(),
+            readinessService: ReadinessService(),
+            closingStoreService: ClosingStoreService(),
           ),
         ),
         // PresenceProvider dipakai oleh PresencePage (check-in & check-out).
@@ -300,8 +329,13 @@ class _MyAppState extends State<MyApp> {
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
             statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-            systemNavigationBarColor:
-                isDark ? AppColors.darkBackground : AppColors.background,
+            // Nav bar transparan + tanpa scrim kontras otomatis agar
+            // background aplikasi terlihat sampai ke tepi bawah layar
+            // (mengikuti warna background apps, lihat SystemUiMode.edgeToEdge
+            // di main()).
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarContrastEnforced: false,
             systemNavigationBarIconBrightness:
                 isDark ? Brightness.light : Brightness.dark,
           );

@@ -85,8 +85,7 @@ class LetterThreadTimeline extends StatelessWidget {
             key: ValueKey('thread-node-${node.type}-${node.id}'),
             node: node,
             dateFormat: _dateFormat,
-            isCurrent:
-                node.type == currentNodeType && node.id == currentNodeId,
+            isCurrent: node.type == currentNodeType && node.id == currentNodeId,
             isLast: index == thread.nodes.length - 1,
             onTap: onNodeTap == null ? null : () => onNodeTap!(node),
           ),
@@ -281,31 +280,35 @@ class _NodeCard extends StatelessWidget {
               Row(
                 children: [
                   if (isIncoming) ...[
-                    directionChip,
+                    Flexible(child: directionChip),
                     const SizedBox(width: AppSpacing.sm),
                   ],
                   Expanded(child: numberText),
                   if (isCurrent) ...[
                     const SizedBox(width: AppSpacing.sm),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary,
-                        borderRadius: AppSpacing.borderRadiusFull,
-                      ),
-                      child: Text(
-                        'Surat ini',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onPrimary,
-                          fontWeight: FontWeight.bold,
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          borderRadius: AppSpacing.borderRadiusFull,
+                        ),
+                        child: Text(
+                          'Surat ini',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
                   ],
                   if (!isIncoming) ...[
                     const SizedBox(width: AppSpacing.sm),
-                    directionChip,
+                    Flexible(child: directionChip),
                   ],
                 ],
               ),
@@ -366,13 +369,17 @@ class _DirectionChip extends StatelessWidget {
                 : colorScheme.onPrimaryContainer,
           ),
           const SizedBox(width: 4),
-          Text(
-            isIncoming ? 'Masuk' : 'Keluar',
-            style: textTheme.labelSmall?.copyWith(
-              color: isIncoming
-                  ? colorScheme.onSecondaryContainer
-                  : colorScheme.onPrimaryContainer,
-              fontWeight: FontWeight.bold,
+          Flexible(
+            child: Text(
+              isIncoming ? 'Masuk' : 'Keluar',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.labelSmall?.copyWith(
+                color: isIncoming
+                    ? colorScheme.onSecondaryContainer
+                    : colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
